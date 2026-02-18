@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =============================================================
+   CSS Design Tokens
+   Dark mode is the default (html has class="dark" by default).
+   Light mode activated by toggling html.light via ThemeProvider.
+   ============================================================= */
+
+/* Dark mode (default) */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --canvas:        #0F0F0F;   /* Page background */
+  --surface-1:     #1E1E1E;   /* Cards, panels */
+  --surface-2:     #2D2D2D;   /* Hover, active surface, dropdowns */
+  --surface-input: #111111;   /* Form inputs (inset feel) */
+
+  /* Text */
+  --ink:   #F8F8F8;   /* Primary text */
+  --ink-2: #94A3B8;   /* Secondary — labels, supporting */
+  --ink-3: #64748B;   /* Tertiary — metadata, timestamps */
+  --ink-4: #475569;   /* Muted — disabled, placeholder */
+
+  /* Borders */
+  --line:   #2A2A2A;  /* Standard separation (whisper-quiet) */
+  --line-2: #1E1E1E;  /* Softer — internal grouping */
+  --line-3: #475569;  /* Emphasis — focused inputs, dropdowns */
+
+  /* Brand */
+  --spark:        #00D084;              /* Primary accent — live, growing, active */
+  --spark-dim:    #00B86D;              /* Pressed state */
+  --spark-subtle: rgba(0, 208, 132, 0.08); /* Background tint */
+
+  /* Semantic */
+  --up:      #10B981;  /* Success / positive trend */
+  --down:    #EF4444;  /* Error / negative trend */
+  --warn:    #F59E0B;  /* Warning */
+  --neutral: #3B82F6;  /* Info / second data series */
+}
+
+/* Light mode override */
+html.light {
+  color-scheme: light;
+
+  /* Surfaces */
+  --canvas:        #FFFFFF;
+  --surface-1:     #F8FAFC;
+  --surface-2:     #F1F5F9;
+  --surface-input: #FFFFFF;
+
+  /* Text */
+  --ink:   #0F172A;
+  --ink-2: #475569;
+  --ink-3: #94A3B8;
+  --ink-4: #CBD5E1;
+
+  /* Borders */
+  --line:   #E2E8F0;
+  --line-2: #F1F5F9;
+  --line-3: #CBD5E1;
+
+  /* Brand — unchanged in light mode */
+  --spark:        #00D084;
+  --spark-dim:    #00B86D;
+  --spark-subtle: rgba(0, 208, 132, 0.08);
+
+  /* Semantic — unchanged */
+  --up:      #10B981;
+  --down:    #EF4444;
+  --warn:    #F59E0B;
+  --neutral: #3B82F6;
+}
+
+/* =============================================================
+   Base Styles
+   ============================================================= */
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 22px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Code blocks are always dark — even in light mode */
+code,
+pre {
+  background: #0F0F0F;
+  color: #F8F8F8;
+  font-family: 'IBM Plex Mono', Menlo, monospace;
+}
+
+/* =============================================================
+   Focus Ring
+   Spark green outline — 2px, 2px offset, no box-shadow
+   ============================================================= */
+
+:focus-visible {
+  outline: 2px solid var(--spark);
+  outline-offset: 2px;
+}
+
+/* =============================================================
+   Depth Strategy: Borders Only
+   No box-shadow on cards — shadows invisible on dark bg.
+   ============================================================= */
+
+@layer components {
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    box-shadow: none;
+  }
+}
+
+/* =============================================================
+   Animations
+   ============================================================= */
+
+/* Live/realtime pulse — used by ActiveIndicator component */
+@keyframes pulse-spark {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.animate-pulse-spark {
+  animation: pulse-spark 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Smooth pulse for skeletons and loading states */
+@keyframes pulse-smooth {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.animate-pulse-smooth {
+  animation: pulse-smooth 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* =============================================================
+   Utility: Tabular numbers
+   All analytics values use IBM Plex Mono with tabular figures
+   so digits stay column-aligned.
+   ============================================================= */
+
+.tabular {
+  font-family: 'IBM Plex Mono', Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,193 @@
+/// DuckDB initialization SQL.
+///
+/// Executed once at database open time via `Connection::execute_batch`.
+/// All statements use `IF NOT EXISTS` so they are safe to re-run on every
+/// startup (idempotent).
+///
+/// IMPORTANT (CLAUDE.md critical fact #12):
+///   - `SET memory_limit = '128MB'` — prevents DuckDB from consuming 80% of
+///     system RAM on a shared VPS. Idle usage target is <150 MB.
+///   - `SET threads = 2` — limits background thread pool; safe for single-
+///     writer embedded use.
+///
+/// IMPORTANT (CLAUDE.md critical fact #4):
+///   - Bounce-rate queries MUST use CTEs. Correlated subqueries do not work
+///     in DuckDB. See bounce_rate CTE patterns in the query layer.
+///
+/// NOTE: DuckDB parses FOREIGN KEY syntax but does NOT enforce referential
+/// integrity. Constraints are included for documentation purposes only.
+/// Application code must validate foreign key relationships before
+/// INSERT / UPDATE / DELETE.
+pub const INIT_SQL: &str = r#"
+SET memory_limit = '128MB';
+SET threads = 2;
+
+-- ===========================================
+-- SETTINGS (self-hosted only)
+-- ===========================================
+-- Keys stored in this table:
+--   'daily_salt'     – 32-byte random hex for visitor_id hashing (rotated daily at midnight UTC)
+--   'previous_salt'  – Previous day's salt, kept for 5-minute grace period after midnight UTC rotation
+--   'version'        – Database schema version (for migrations)
+--   'install_id'     – Unique installation identifier
+CREATE TABLE IF NOT EXISTS settings (
+    key             VARCHAR PRIMARY KEY,
+    value           VARCHAR NOT NULL
+);
+
+-- ===========================================
+-- WEBSITES
+-- ===========================================
+CREATE TABLE IF NOT EXISTS websites (
+    id              VARCHAR PRIMARY KEY,           -- 'site_' + nanoid(10)
+    tenant_id       VARCHAR,                       -- NULL in self-hosted mode; Clerk org_id in cloud
+    name            VARCHAR NOT NULL,
+    domain          VARCHAR NOT NULL,
+    timezone        VARCHAR(64) NOT NULL DEFAULT 'UTC',  -- IANA timezone string
+    share_id        VARCHAR(50) UNIQUE,            -- V1.1: public read-only link (NULL until enabled)
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Track last modification
+);
+CREATE INDEX IF NOT EXISTS idx_websites_tenant ON websites(tenant_id);
+
+-- ===========================================
+-- SESSIONS (derived, updated on each event)
+-- ===========================================
+-- Session deduplication strategy:
+-- To handle concurrent event processing, session updates use DuckDB's
+-- INSERT OR REPLACE semantics. When multiple events for the same session
+-- arrive in the same buffer flush batch, the UNIQUE constraint on session_id
+-- ensures only the latest state is preserved. The event buffer (in Rust) orders
+-- events by timestamp before flushing, so pageview_count increments correctly.
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id      VARCHAR PRIMARY KEY,
+    website_id      VARCHAR NOT NULL,
+    tenant_id       VARCHAR,                       -- NULL in self-hosted; Clerk org_id in cloud
+    visitor_id      VARCHAR NOT NULL,
+    first_seen      TIMESTAMP NOT NULL,
+    last_seen       TIMESTAMP NOT NULL,
+    pageview_count  INTEGER NOT NULL DEFAULT 1,    -- Incremented on upsert
+    entry_page      VARCHAR NOT NULL
+);
+-- Optimised for "active visitors in last N minutes" query (realtime endpoint)
+CREATE INDEX IF NOT EXISTS idx_sessions_website_visitor
+    ON sessions(website_id, visitor_id, last_seen DESC);
+-- Optimised for realtime active-visitors query
+CREATE INDEX IF NOT EXISTS idx_sessions_realtime
+    ON sessions(website_id, last_seen DESC);
+
+-- ===========================================
+-- EVENTS (main analytics table)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS events (
+    -- Identity
+    id              VARCHAR NOT NULL,              -- UUID v4
+    website_id      VARCHAR NOT NULL,
+    tenant_id       VARCHAR,                       -- NULL in self-hosted; Clerk org_id in cloud
+    session_id      VARCHAR NOT NULL,
+    visitor_id      VARCHAR NOT NULL,              -- sha256(daily_salt + ip + ua)[0:16]
+
+    -- Event data
+    event_type      VARCHAR NOT NULL,              -- 'pageview' | 'event'
+    url             VARCHAR NOT NULL,
+    referrer_url    VARCHAR,
+    referrer_domain VARCHAR,
+    event_name      VARCHAR,                       -- custom event name (nullable)
+    event_data      VARCHAR,                       -- JSON string for custom properties (nullable)
+
+    -- GeoIP
+    country         VARCHAR(2),                    -- ISO 3166-1 alpha-2
+    region          VARCHAR,
+    city            VARCHAR,
+
+    -- User Agent
+    browser         VARCHAR,
+    browser_version VARCHAR,
+    os              VARCHAR,
+    os_version      VARCHAR,
+    device_type     VARCHAR,                       -- 'desktop' | 'mobile' | 'tablet'
+
+    -- Client
+    screen          VARCHAR,                       -- e.g. '1920x1080'
+    language        VARCHAR,
+
+    -- UTM parameters
+    utm_source      VARCHAR,
+    utm_medium      VARCHAR,
+    utm_campaign    VARCHAR,
+    utm_term        VARCHAR,
+    utm_content     VARCHAR,
+
+    -- Timestamp
+    created_at      TIMESTAMP NOT NULL,
+
+    FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE
+);
+
+-- Primary query pattern: website + date range
+CREATE INDEX IF NOT EXISTS idx_events_website_time
+    ON events(website_id, created_at DESC);
+
+-- Accelerates session-level aggregations
+CREATE INDEX IF NOT EXISTS idx_events_website_session
+    ON events(website_id, session_id);
+
+-- Accelerates per-visitor history lookups
+CREATE INDEX IF NOT EXISTS idx_events_visitor
+    ON events(website_id, visitor_id, created_at);
+
+-- Accelerates event-type breakdowns (pageviews vs custom events) within a date range
+CREATE INDEX IF NOT EXISTS idx_events_type_date
+    ON events(website_id, event_type, created_at);
+
+-- Partial index: accelerates country breakdown queries (skips NULL country rows)
+CREATE INDEX IF NOT EXISTS idx_events_country_date
+    ON events(website_id, country, created_at)
+    WHERE country IS NOT NULL;
+
+-- Schema-parity index with ClickHouse cloud schema (tenant_id always NULL in self-hosted)
+CREATE INDEX IF NOT EXISTS idx_events_tenant
+    ON events(tenant_id, created_at DESC);
+
+-- ===========================================
+-- LOCAL API KEYS (self-hosted only)
+-- Cloud equivalent lives in PostgreSQL api_keys table.
+-- Self-hosted key prefix: 'spk_selfhosted_' (15 chars) + display chars = 25 chars total.
+-- ===========================================
+CREATE TABLE IF NOT EXISTS local_api_keys (
+    id              VARCHAR PRIMARY KEY,           -- 'key_' + nanoid(10)
+    name            VARCHAR NOT NULL,
+    key_hash        VARCHAR(64) NOT NULL UNIQUE,   -- sha256(raw_key); never stored raw
+    key_prefix      VARCHAR(25) NOT NULL,          -- first 25 chars: 'spk_selfhosted_' + display
+    created_at      TIMESTAMP NOT NULL,
+    last_used_at    TIMESTAMP,                     -- NULL until first use
+    revoked_at      TIMESTAMP                      -- NULL = active; set to revoke
+);
+CREATE INDEX IF NOT EXISTS idx_local_api_keys_hash ON local_api_keys(key_hash);
+
+-- ===========================================
+-- LOGIN ATTEMPTS (self-hosted only)
+-- Used for brute-force protection on POST /api/auth/login.
+-- Cleanup: DELETE WHERE attempted_at < NOW() - INTERVAL 24 HOURS (daily maintenance task).
+-- Rate limiter: SELECT COUNT(*) WHERE ip_address = ? AND attempted_at > ? AND succeeded = false
+-- ===========================================
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id           VARCHAR PRIMARY KEY,              -- nanoid(10)
+    ip_address   VARCHAR NOT NULL,
+    attempted_at TIMESTAMP NOT NULL,
+    succeeded    BOOLEAN NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time
+    ON login_attempts(ip_address, attempted_at DESC);
+"#;
+
+/// Migrations tracking table SQL.
+///
+/// Run before INIT_SQL migrations are applied. Tracks which numbered migrations
+/// have been applied so restarts don't re-run them.
+pub const MIGRATIONS_TABLE_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS _migrations (
+    id          VARCHAR PRIMARY KEY,
+    applied_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"#;

@@ -1,0 +1,105 @@
+# =============================================================
+# Rust
+# =============================================================
+
+# Build output
+/target/
+
+# Cargo.lock is kept for binary crates (sparklytics-server).
+# Do NOT add Cargo.lock here.
+
+# =============================================================
+# Node / npm
+# =============================================================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# =============================================================
+# Database & data files
+# =============================================================
+
+*.db
+*.db-wal
+*.db-shm
+*.duckdb
+*.duckdb.wal
+
+# MaxMind GeoIP database
+*.mmdb
+
+# =============================================================
+# Environment & secrets — NEVER commit these
+# =============================================================
+
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# =============================================================
+# Editor & OS
+# =============================================================
+
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# JetBrains IDEs
+.idea/
+*.iml
+
+# VS Code (keep .vscode/settings.json if the team uses it,
+# but never commit personal snippets or extensions)
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Vim
+*.swp
+*.swo
+*~
+
+# =============================================================
+# Misc
+# =============================================================
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Coverage reports
+coverage/
+lcov.info
+*.lcov
+
+# =============================================================
+# SDK
+# =============================================================
+
+sdk/dist/
+sdk/node_modules/
+
+# =============================================================
+# Dashboard
+# =============================================================
+
+dashboard/dist/
+dashboard/node_modules/

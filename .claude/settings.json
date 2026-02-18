@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import sys,json,subprocess; d=json.load(sys.stdin); f=d.get('tool_input',{}).get('file_path',''); subprocess.run(['cargo','fmt','--manifest-path','/Users/jakub/Coding/sparklytics/Cargo.toml'],capture_output=True) if f.endswith('.rs') else None\""
+          },
+          {
+            "type": "command",
+            "command": "python3 -c \"import sys,json,subprocess; d=json.load(sys.stdin); f=d.get('tool_input',{}).get('file_path',''); r=subprocess.run(['cargo','clippy','--manifest-path','/Users/jakub/Coding/sparklytics/Cargo.toml','--all-targets','--','--deny','warnings','--deny','clippy::unwrap_used','--deny','clippy::expect_used','--deny','clippy::panic'],capture_output=True,text=True) if f.endswith('.rs') else None; print(r.stderr) if r and r.returncode != 0 else None\""
+          }
+        ]
+      }
+    ]
+  }
+}
