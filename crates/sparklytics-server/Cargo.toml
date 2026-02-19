@@ -42,6 +42,7 @@ clerk-rs = { workspace = true, optional = true }
 sqlx    = { workspace = true, optional = true }
 svix    = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
+bytes   = { workspace = true, optional = true }
 
 [dev-dependencies]
 axum = { workspace = true }
@@ -53,4 +54,4 @@ http-body-util = "0.1"
 [features]
 default = ["selfhosted"]
 selfhosted = []
-cloud = ["dep:clerk-rs", "dep:sqlx", "dep:svix", "dep:reqwest"]
+cloud = ["dep:clerk-rs", "dep:sqlx", "dep:svix", "dep:reqwest", "dep:bytes"]

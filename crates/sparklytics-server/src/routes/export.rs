@@ -104,6 +104,19 @@ pub async fn export_events(
     Ok(response)
 }
 
+/// Sanitize a CSV field value against formula injection.
+///
+/// Spreadsheet apps (Excel, Google Sheets, LibreOffice) interpret values that
+/// begin with `=`, `+`, `-`, `@`, TAB, or CR as formula expressions. Prepending
+/// a single quote (`'`) causes them to treat the value as a literal string.
+fn sanitize_csv_field(val: &str) -> std::borrow::Cow<'_, str> {
+    if val.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        std::borrow::Cow::Owned(format!("'{val}"))
+    } else {
+        std::borrow::Cow::Borrowed(val)
+    }
+}
+
 fn build_csv(rows: &[sparklytics_duckdb::share::ExportRow]) -> anyhow::Result<Vec<u8>> {
     let mut wtr = csv::Writer::from_writer(Vec::new());
 
@@ -128,22 +141,24 @@ fn build_csv(rows: &[sparklytics_duckdb::share::ExportRow]) -> anyhow::Result<Ve
     .map_err(|e| anyhow::anyhow!("csv write_record failed: {e}"))?;
 
     for row in rows {
+        let s = |v: &str| sanitize_csv_field(v).into_owned();
+        let sopt = |v: Option<&str>| sanitize_csv_field(v.unwrap_or("")).into_owned();
         wtr.write_record([
-            &row.id,
-            &row.website_id,
-            &row.event_type,
-            &row.url,
-            row.referrer_domain.as_deref().unwrap_or(""),
-            row.event_name.as_deref().unwrap_or(""),
-            row.country.as_deref().unwrap_or(""),
-            row.browser.as_deref().unwrap_or(""),
-            row.os.as_deref().unwrap_or(""),
-            row.device_type.as_deref().unwrap_or(""),
-            row.language.as_deref().unwrap_or(""),
-            row.utm_source.as_deref().unwrap_or(""),
-            row.utm_medium.as_deref().unwrap_or(""),
-            row.utm_campaign.as_deref().unwrap_or(""),
-            &row.created_at,
+            s(&row.id),
+            s(&row.website_id),
+            s(&row.event_type),
+            s(&row.url),
+            sopt(row.referrer_domain.as_deref()),
+            sopt(row.event_name.as_deref()),
+            sopt(row.country.as_deref()),
+            sopt(row.browser.as_deref()),
+            sopt(row.os.as_deref()),
+            sopt(row.device_type.as_deref()),
+            sopt(row.language.as_deref()),
+            sopt(row.utm_source.as_deref()),
+            sopt(row.utm_medium.as_deref()),
+            sopt(row.utm_campaign.as_deref()),
+            s(&row.created_at),
         ])
         .map_err(|e| anyhow::anyhow!("csv write_record failed: {e}"))?;
     }
@@ -158,7 +173,7 @@ pub async fn usage_not_found() -> impl IntoResponse {
         Json(json!({
             "error": {
                 "code": "not_found",
-                "message": "usage tracking is only available in cloud mode",
+                "message": "Usage tracking unavailable in self-hosted mode",
                 "field": null
             }
         })),

@@ -21,7 +21,7 @@ function TrendBadge({ delta }: { delta: number }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-sm font-mono tabular-nums',
+        'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-[2px] font-mono tabular-nums',
         isUp && 'bg-up/10 text-up',
         isDown && 'bg-down/10 text-down',
         !isUp && !isDown && 'bg-surface-2 text-ink-3'

@@ -160,11 +160,11 @@ pub async fn auth_login(
                 .await
                 .map_err(AppError::Internal)?;
 
-            let cookie = build_session_cookie(&token, state.config.https);
+            let cookie = build_session_cookie(&token, state.config.https, state.config.session_days);
             return Ok((
                 StatusCode::OK,
                 [(header::SET_COOKIE, cookie)],
-                Json(json!({ "data": { "token": token, "expires_at": expires_at } })),
+                Json(json!({ "data": { "expires_at": expires_at } })),
             ));
         }
         AuthMode::Local => {
@@ -207,11 +207,11 @@ pub async fn auth_login(
     let (token, expires_at) =
         encode_jwt(&jwt_secret, state.config.session_days).map_err(AppError::Internal)?;
 
-    let cookie = build_session_cookie(&token, state.config.https);
+    let cookie = build_session_cookie(&token, state.config.https, state.config.session_days);
     Ok((
         StatusCode::OK,
         [(header::SET_COOKIE, cookie)],
-        Json(json!({ "data": { "token": token, "expires_at": expires_at } })),
+        Json(json!({ "data": { "expires_at": expires_at } })),
     ))
 }
 
@@ -455,12 +455,12 @@ fn extract_client_ip(headers: &HeaderMap) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn build_session_cookie(token: &str, https: bool) -> String {
+fn build_session_cookie(token: &str, https: bool, session_days: u32) -> String {
     let secure = if https { "; Secure" } else { "" };
     format!(
         "spk_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
         token,
-        30 * 24 * 60 * 60, // 30 days max
+        u64::from(session_days) * 86_400,
         secure,
     )
 }

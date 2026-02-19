@@ -89,6 +89,14 @@ impl DuckDbBackend {
     ///
     /// IMPORTANT: CAST(created_at AS VARCHAR) — DuckDB cannot read TIMESTAMP
     /// columns as `String` via `row.get()` (MEMORY.md critical pattern).
+    ///
+    /// ⚠ CONTENTION: The DuckDB mutex is held for the full duration of this
+    /// query — including all 500K row iterations. While the export runs, every
+    /// other DuckDB operation (buffer flushes, analytics queries, session
+    /// lookups) is blocked. For large exports this can take 3–8 seconds.
+    /// A proper fix requires streaming via a temp file or DuckDB `COPY TO`,
+    /// but is deferred given the 90-day / 500K-row cap that limits worst-case
+    /// duration. Operators should avoid scheduling exports during peak traffic.
     pub async fn export_events(
         &self,
         website_id: &str,

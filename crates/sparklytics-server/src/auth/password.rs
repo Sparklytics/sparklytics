@@ -29,10 +29,10 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
         .is_ok()
 }
 
-/// Validate password strength: minimum 8 characters.
+/// Validate password strength: minimum 12 characters.
 pub fn validate_password_strength(password: &str) -> Result<()> {
-    if password.len() < 8 {
-        return Err(anyhow!("password must be at least 8 characters"));
+    if password.len() < 12 {
+        return Err(anyhow!("password must be at least 12 characters"));
     }
     Ok(())
 }

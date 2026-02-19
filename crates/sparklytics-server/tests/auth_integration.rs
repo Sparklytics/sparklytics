@@ -238,11 +238,12 @@ async fn test_login_sets_httponly_cookie() {
         "cookie should not have Secure flag when https=false"
     );
 
-    // Response body should contain token and expires_at.
+    // Response body must NOT expose the raw token (JWT is HttpOnly-cookie only).
+    // It should contain expires_at so the client can schedule re-auth.
     let json = json_body(response).await;
     assert!(
-        json["data"]["token"].is_string(),
-        "response should contain token"
+        json["data"]["token"].is_null(),
+        "token must not be present in response body (security: HttpOnly cookie only)"
     );
     assert!(
         json["data"]["expires_at"].is_string(),

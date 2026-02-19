@@ -93,7 +93,7 @@ impl ClickHouseClient {
         &self,
         sql: &str,
         named_params: &[(&str, &str)],
-    ) -> Result<Vec<u8>> {
+    ) -> Result<bytes::Bytes> {
         let param_pairs: Vec<(String, &str)> = named_params
             .iter()
             .map(|(k, v)| (format!("param_{k}"), *v))
@@ -123,8 +123,9 @@ impl ClickHouseClient {
             anyhow::bail!("ClickHouse error {status}: {body}");
         }
 
-        let bytes = resp.bytes().await.context("ClickHouse response read failed")?;
-        Ok(bytes.to_vec())
+        // Return reqwest's Bytes directly — zero-copy. Body::from(bytes::Bytes) is also
+        // zero-copy, so the ClickHouse buffer flows to the TCP send without any allocation.
+        resp.bytes().await.context("ClickHouse response read failed")
     }
 
     /// Execute a DDL statement (no rows returned).
