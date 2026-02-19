@@ -131,7 +131,7 @@ These are the things most likely to create contradictions if not checked:
 9. **`@sparklytics/next`**: this is the npm package name. NOT `@sparklytics/web` (old name, changed).
 10. **Umami stars**: ~6,400, NOT 35K. Don't revert this.
 11. **Visitor ID generation**: `sha256(salt_epoch + ip + user_agent)[0:16]` where `salt_epoch = floor(unix_timestamp / 86400)`. The ID is generated on first visit and **materialized client-side in localStorage with a 24h TTL**. The salt epoch is only used when generating a *new* visitor ID (empty localStorage). Existing IDs are read from localStorage directly — they do NOT get recalculated on each request. This means midnight UTC salt rotation never breaks in-progress sessions.
-12. **DuckDB memory limit**: always set `SET memory_limit = '128MB'` at DuckDB init. The default (80% of system RAM) is not acceptable for a self-hosted binary on shared VPS. Note: DuckDB minimum is ~125MB per thread — this is a floor, not a target. Actual memory usage will be profiled during Sprint 4 benchmarks.
+12. **DuckDB memory limit**: configurable via `SPARKLYTICS_DUCKDB_MEMORY` env var (default `"1GB"`). Always set an explicit limit — the DuckDB default (80% of system RAM) is not acceptable for a server process. Accepts any DuckDB size string: `"512MB"`, `"1GB"`, `"4GB"`, etc. Modern 4–32 GB VPS instances can safely set 2–8 GB for better query performance. DuckDB minimum is ~125MB per thread.
 13. **Billing code is private**: `sparklytics-billing` (Stripe, plan enforcement, usage counters) lives in the private `sparklytics-cloud` repo. NEVER add billing logic to the public `sparklytics` repo. Plan limits are enforced via the `BillingGate` trait — `NullBillingGate` (public, always allows) vs `StripeBillingGate` (private, checks PostgreSQL). See [`docs/15-REPO-STRATEGY.md`](docs/15-REPO-STRATEGY.md).
 14. **Marketing site tech**: sparklytics.dev is Next.js 15 App Router, deployed on Vercel, uses `@sparklytics/next` SDK on the site itself (dog food). Full spec in [`docs/16-MARKETING-SITE.md`](docs/16-MARKETING-SITE.md).
 15. **`GET /api/auth/status` response**: Returns `{ "mode": "...", "setup_required": bool, "authenticated": bool }`. Returns 404 in `none` mode (endpoint not registered). Never returns 401. This is the only endpoint the frontend calls without auth to determine redirect destination.
@@ -180,6 +180,7 @@ If you cannot start the dev server (e.g., no Node installed), describe the chang
 | `SPARKLYTICS_RETENTION_DAYS` | `365` | DuckDB data retention |
 | `SPARKLYTICS_CORS_ORIGINS` | — | Allowed origins for query endpoints |
 | `SPARKLYTICS_ARGON2_MEMORY_KB` | `65536` | Argon2id memory parameter in KB (64MB default). Only relevant when `SPARKLYTICS_AUTH=local`. |
+| `SPARKLYTICS_DUCKDB_MEMORY` | `1GB` | DuckDB memory limit. Any DuckDB size string (`"512MB"`, `"2GB"`, `"8GB"`). Set higher on 16–32 GB VPS for better analytics query performance. |
 | `SPARKLYTICS_GEOIP_PATH` | `./dbip-city-lite.mmdb` | Path to MMDB GeoIP file (DB-IP City Lite by default; MaxMind GeoLite2 also supported). Docker images bundle DB-IP automatically at `/geoip/dbip-city-lite.mmdb`. If missing, geo fields stored as NULL (server still runs). |
 
 ### Cloud Mode (additional)

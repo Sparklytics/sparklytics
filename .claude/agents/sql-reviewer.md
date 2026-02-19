@@ -50,7 +50,7 @@ JOIN session_counts sc ON e.session_id = sc.session_id
 - [ ] All timestamps stored as UTC — no timezone conversion inside queries unless explicitly bucketing for display
 
 ### Initialisation
-- [ ] `SET memory_limit = '128MB'` appears at DuckDB connection init before any query
+- [ ] `SET memory_limit = '...'` appears at DuckDB connection init before any query — value comes from `SPARKLYTICS_DUCKDB_MEMORY` env var (default `"1GB"`); never omitted, never left at DuckDB's default (80% of system RAM)
 - [ ] `SET threads = N` set explicitly — not left at default (which uses all CPU cores, bad on shared VPS)
 
 ### Performance

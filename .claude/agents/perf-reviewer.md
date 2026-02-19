@@ -55,7 +55,7 @@ DuckDB performs poorly with single-row inserts. ClickHouse is catastrophically s
 
 ## DuckDB Memory & Threading
 
-- [ ] `SET memory_limit = '128MB'` at connection init — check `crates/sparklytics-duckdb/src/lib.rs` or wherever the connection is opened
+- [ ] `SET memory_limit = '...'` at connection init — check `crates/sparklytics-duckdb/src/schema.rs::init_sql()`. Value comes from `Config.duckdb_memory_limit` (env `SPARKLYTICS_DUCKDB_MEMORY`, default `"1GB"`). Verify it is NOT left at DuckDB's default (80% of system RAM)
 - [ ] `SET threads = 2` (or a small fixed number) — DuckDB defaults to all CPU cores, unacceptable on shared VPS
 - [ ] DuckDB connection is **not** opened per request — it's opened once at startup and held in `AppState`
 - [ ] DuckDB connection is protected by a `tokio::sync::Mutex` or connection pool — concurrent writes require serialisation
@@ -88,7 +88,7 @@ DuckDB performs poorly with single-row inserts. ClickHouse is catastrophically s
 
 | Component | Target | Notes |
 |-----------|--------|-------|
-| DuckDB idle | <150MB | DuckDB minimum is 125MB per thread; `SET memory_limit='128MB'` enforces this |
+| DuckDB idle | <`SPARKLYTICS_DUCKDB_MEMORY` | Default `"1GB"`. DuckDB minimum is 125MB per thread. On low-RAM VPS use `"512MB"`; on 16–32 GB VPS set 2–8 GB for better analytics query performance |
 | Event buffer | <10MB | At 1KB/event avg, 10K buffered events = 10MB; flush threshold should prevent exceeding |
 | Axum server baseline | <30MB | Tokio runtime + connection pool overhead |
 | **Total self-hosted idle** | **<200MB** | Target for shared VPS deployments |

@@ -36,9 +36,9 @@ Read `CLAUDE.md` for the full critical facts list. The most common violations ar
 - [ ] **Grace period**: 5-minute window after midnight where old IDs remain valid
 
 ### DuckDB
-- [ ] **Memory limit**: `SET memory_limit = '128MB'` must appear at DuckDB init — never omitted, never set higher than 256MB without comment
+- [ ] **Memory limit**: `SET memory_limit = '...'` must appear at DuckDB init — value from `SPARKLYTICS_DUCKDB_MEMORY` env var (default `"1GB"`); never omitted, never left at DuckDB's default (80% of system RAM). Default of 1GB is fine; users with 16–32 GB VPS can set 2–8 GB for better query perf
 - [ ] **Bounce rate SQL**: uses CTEs — correlated subqueries are broken in DuckDB, never use them
-- [ ] **Idle RAM target**: <150MB (not <50MB — DuckDB minimum is 125MB per thread)
+- [ ] **Idle RAM target**: at or below configured `SPARKLYTICS_DUCKDB_MEMORY` limit (DuckDB minimum is 125MB per thread)
 
 ### Billing (Public Repo Guard)
 - [ ] **No billing logic here**: Stripe, plan limits, usage counters, subscription checks must NOT appear in any file in the public `sparklytics` repo

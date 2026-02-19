@@ -64,7 +64,7 @@ Because you can browse the web and execute commands, you are responsible for tes
 These constraints are critical and often subject to AI hallucinations. Never violate them:
 
 - **Repository Boundary:** You are in the public, MIT-licensed `sparklytics/sparklytics` repo. **DO NOT** write or implement billing logic here. Billing logic (`sparklytics-billing` using Stripe) lives exclusively in the private `sparklytics-cloud` repo. We use a `BillingGate` trait (`NullBillingGate`) in this repository.
-- **DuckDB Limits:** DuckDB memory limit must always be set explicitly to `128MB`.
+- **DuckDB Limits:** DuckDB memory limit must always be set explicitly. Configurable via `SPARKLYTICS_DUCKDB_MEMORY` env var (default `"1GB"`). Never omit it — the DuckDB default (80% of system RAM) is unacceptable for a server process. Values of 2–8 GB are fine on modern 16–32 GB VPS instances.
 - **Database Multi-tenancy:** In self-hosted scenarios, the `tenant_id` column must ALWAYS remain `NULL`.
 - **Competitor Data:** If discussing competitors, note that Umami has **~6,400 GitHub stars** (not 35K!).
 - **Bounce Rate Logic:** Always use CTE (Common Table Expressions) for Bounce rate SQL in DuckDB. Over-correlated subqueries fail in DuckDB.
