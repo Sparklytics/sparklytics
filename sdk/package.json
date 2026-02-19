@@ -7,25 +7,32 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     }
   },
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "test": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
+  "files": ["dist"],
   "peerDependencies": {
     "next": ">=13.0.0",
     "react": ">=18.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.3",
+    "@testing-library/react": "^16.0.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "happy-dom": "^14.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
     "tsup": "^8.2.4",
-    "vitest": "^1.6.0",
-    "@types/react": "^18.3.3"
+    "typescript": "^5.5.3",
+    "vitest": "^1.6.0"
   },
   "keywords": ["analytics", "nextjs", "sparklytics", "privacy"],
   "license": "MIT"
