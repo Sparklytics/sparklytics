@@ -29,6 +29,7 @@ out/
 # =============================================================
 
 *.db
+*.db.wal
 *.db-wal
 *.db-shm
 *.duckdb
@@ -84,6 +85,7 @@ logs/
 tmp/
 temp/
 .tmp/
+*.tsbuildinfo
 
 # Coverage reports
 coverage/
