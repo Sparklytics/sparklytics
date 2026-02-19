@@ -22,7 +22,7 @@ This repository is under active development. See [`docs/`](docs/) for the full s
 ## Tech Stack
 
 - **Backend**: Rust (Axum 0.8, Tokio), DuckDB (self-hosted)
-- **Frontend**: React 18 + Vite + TailwindCSS + shadcn/ui
+- **Frontend**: React 18 + Next.js 16 (static export) + TailwindCSS + shadcn/ui
 - **SDK**: `@sparklytics/next` (npm, Next.js App + Pages Router)
 - **Auth**: Argon2id password hashing, JWT HttpOnly cookies
 
