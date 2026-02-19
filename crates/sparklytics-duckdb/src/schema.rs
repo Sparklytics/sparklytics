@@ -4,9 +4,15 @@
 /// All statements use `IF NOT EXISTS` so they are safe to re-run on every
 /// startup (idempotent).
 ///
+/// `memory_limit` is passed at runtime from `Config.duckdb_memory_limit`
+/// (env `SPARKLYTICS_DUCKDB_MEMORY`, default `"1GB"`). DuckDB accepts any
+/// size string it supports — e.g. `"512MB"`, `"1GB"`, `"4GB"`.
+/// Modern VPS instances with 4–32 GB RAM can comfortably set 2–8 GB;
+/// minimal 1 GB instances should keep it at `"512MB"`.
+///
 /// IMPORTANT (CLAUDE.md critical fact #12):
-///   - `SET memory_limit = '128MB'` — prevents DuckDB from consuming 80% of
-///     system RAM on a shared VPS. Idle usage target is <150 MB.
+///   - Always set an explicit memory limit — the DuckDB default (80% of
+///     system RAM) is not acceptable for a server process.
 ///   - `SET threads = 2` — limits background thread pool; safe for single-
 ///     writer embedded use.
 ///
@@ -18,8 +24,9 @@
 /// integrity. Constraints are included for documentation purposes only.
 /// Application code must validate foreign key relationships before
 /// INSERT / UPDATE / DELETE.
-pub const INIT_SQL: &str = r#"
-SET memory_limit = '128MB';
+pub fn init_sql(memory_limit: &str) -> String {
+    format!(
+        r#"SET memory_limit = '{memory_limit}';
 SET threads = 2;
 
 -- ===========================================
@@ -179,7 +186,9 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time
     ON login_attempts(ip_address, attempted_at DESC);
-"#;
+"#
+    )
+}
 
 /// Migrations tracking table SQL.
 ///

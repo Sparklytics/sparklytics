@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
     let db_path = format!("{}/sparklytics.db", cfg.data_dir);
 
     // Open DuckDB — initialises schema and seeds settings table.
-    let db = sparklytics_duckdb::DuckDbBackend::open(&db_path)?;
+    let db = sparklytics_duckdb::DuckDbBackend::open(&db_path, &cfg.duckdb_memory_limit)?;
 
     // Log a warning (not panic) if GeoIP database is absent — Sprint 0 requirement.
     // Events will be stored with NULL country/region/city fields.

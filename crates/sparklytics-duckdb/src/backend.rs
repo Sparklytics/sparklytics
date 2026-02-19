@@ -7,7 +7,7 @@ use tracing::info;
 
 use sparklytics_core::event::Event;
 
-use crate::schema::{INIT_SQL, MIGRATIONS_TABLE_SQL};
+use crate::schema::{init_sql, MIGRATIONS_TABLE_SQL};
 
 /// Generate a cryptographically random hex string of `n` bytes (2n hex chars).
 pub(crate) fn rand_hex(n: usize) -> String {
@@ -24,9 +24,9 @@ pub(crate) fn rand_hex(n: usize) -> String {
 /// runtime serialises all writes through the buffer-flush task while still
 /// allowing the struct to be cheaply cloned and shared across Axum handlers.
 ///
-/// Memory and thread limits are enforced by [`INIT_SQL`] at open time
-/// (`SET memory_limit = '128MB'; SET threads = 2;`) per CLAUDE.md critical
-/// fact #12.
+/// Memory and thread limits are enforced by [`init_sql`] at open time.
+/// The memory limit is configurable via `SPARKLYTICS_DUCKDB_MEMORY`
+/// (default `"1GB"`). See CLAUDE.md critical fact #12.
 ///
 /// `tenant_id` is always `NULL` in self-hosted mode (critical fact #2).
 pub struct DuckDbBackend {
@@ -36,19 +36,19 @@ pub struct DuckDbBackend {
 impl DuckDbBackend {
     /// Open (or create) a DuckDB database file at `path`.
     ///
-    /// Runs [`MIGRATIONS_TABLE_SQL`] then [`INIT_SQL`] on the connection so
-    /// all tables and indexes are created if they do not already exist.
-    /// The memory limit and thread cap defined in [`INIT_SQL`] are applied
-    /// at this point.
-    pub fn open(path: &str) -> Result<Self> {
+    /// `memory_limit` is a DuckDB size string such as `"1GB"` or `"512MB"`.
+    /// It is read from `Config.duckdb_memory_limit` at the call site.
+    /// Runs [`MIGRATIONS_TABLE_SQL`] then the schema init SQL on the connection
+    /// so all tables and indexes are created if they do not already exist.
+    pub fn open(path: &str, memory_limit: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
         conn.execute_batch(MIGRATIONS_TABLE_SQL)?;
-        conn.execute_batch(INIT_SQL)?;
+        conn.execute_batch(&init_sql(memory_limit))?;
         // Seed settings (daily_salt, install_id, etc.) if this is a fresh database.
         Self::seed_settings_sync(&conn)?;
         info!(
-            "DuckDB opened at {} with memory_limit=128MB, threads=2",
-            path
+            "DuckDB opened at {} with memory_limit={}, threads=2",
+            path, memory_limit
         );
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -58,11 +58,11 @@ impl DuckDbBackend {
     /// Open an **in-memory** DuckDB database.
     ///
     /// Intended for unit tests only — data is discarded when the struct is
-    /// dropped.
+    /// dropped. Uses a 1GB memory limit (tests are not memory-constrained).
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(MIGRATIONS_TABLE_SQL)?;
-        conn.execute_batch(INIT_SQL)?;
+        conn.execute_batch(&init_sql("1GB"))?;
         Self::seed_settings_sync(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),

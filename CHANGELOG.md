@@ -63,7 +63,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Payload limits: 100KB total body, 4KB per `event_data`
 - CORS: `/api/collect` allows `*`; analytics endpoints enforce `SPARKLYTICS_CORS_ORIGINS`
 - SQL injection safe: all user input stored via parameterized DuckDB queries
-- DuckDB memory limit: 128MB at init
+- DuckDB memory limit: configurable via `SPARKLYTICS_DUCKDB_MEMORY` (default `1GB`; set 2–8 GB on high-RAM VPS for better query performance)
 
 **Infrastructure**
 - Multi-stage Dockerfile: musl static binary → `distroless/static:nonroot` (uid 65532)

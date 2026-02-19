@@ -18,6 +18,11 @@ pub struct Config {
     /// When true, skip the rate limiter on /api/collect. For benchmarking only.
     /// Controlled by SPARKLYTICS_RATE_LIMIT_DISABLE=true. Never document in README.
     pub rate_limit_disable: bool,
+    /// DuckDB memory limit passed to `SET memory_limit = '...'` at init.
+    /// Accepts any DuckDB size string: `"512MB"`, `"1GB"`, `"4GB"`, etc.
+    /// Controlled by `SPARKLYTICS_DUCKDB_MEMORY` (default `"1GB"`).
+    /// Modern 4–32 GB VPS instances can set 2–8 GB for better query performance.
+    pub duckdb_memory_limit: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -91,6 +96,8 @@ impl Config {
             rate_limit_disable: std::env::var("SPARKLYTICS_RATE_LIMIT_DISABLE")
                 .map(|v| v == "true")
                 .unwrap_or(false),
+            duckdb_memory_limit: std::env::var("SPARKLYTICS_DUCKDB_MEMORY")
+                .unwrap_or_else(|_| "1GB".to_string()),
         })
     }
 
