@@ -105,9 +105,10 @@ Self-hosted auth BDD is in [`docs/13-SELF-HOSTED-AUTH.md`](docs/13-SELF-HOSTED-A
 
 ### "How are the repos structured? What's open source vs private?"
 → [`docs/15-REPO-STRATEGY.md`](docs/15-REPO-STRATEGY.md)
-Two repos:
-- **`sparklytics/sparklytics`** (public, MIT): all core code including Clerk auth + ClickHouse queries
-- **`sparklytics/sparklytics-cloud`** (private): `sparklytics-billing` crate (Stripe), admin UI, ops configs
+Two repos (three after Sprint 7 SDK split):
+- **`sparklytics/sparklytics`** (public, MIT): core Rust crates, dashboard, DuckDB backend. Pre-Sprint 7 also contains Clerk auth + ClickHouse code behind `--features cloud` (temporary).
+- **`sparklytics/sparklytics-cloud`** (private): cloud binary (`main.rs`), `cloud/src/auth/` (Clerk JWT middleware), `sparklytics-clickhouse` crate (ClickHouseBackend), `sparklytics-billing` crate (Stripe), ops configs, PostgreSQL migrations. Sprint 7 moves Clerk + ClickHouse here and removes `--features cloud` from public repo.
+- **`sparklytics/sparklytics-next`** (public): `@sparklytics/next` npm SDK (extracted in Sprint 7 from `sdk/`).
 Billing is injected via the `BillingGate` trait defined in `sparklytics-core`. Self-hosted uses `NullBillingGate`. Cloud injects `StripeBillingGate` from the private crate.
 
 ### "What does the marketing site look like / what pages does it need?"
@@ -193,10 +194,71 @@ If you cannot start the dev server (e.g., no Node installed), describe the chang
 | `CLICKHOUSE_URL` | ClickHouse HTTP endpoint |
 | `CLICKHOUSE_USER` | ClickHouse user |
 | `CLICKHOUSE_PASSWORD` | ClickHouse password |
+| `SPARKLYTICS_ENFORCE_BILLING` | **Required** in cloud binary. `stub` = Sprint 7 stub active (warns at startup, all tenants allowed). `true` = Sprint 8 enforcement active. Unset/other value = binary refuses to start. Never deploy cloud without setting this explicitly. |
 
 ---
 
-## Repo Layout (planned)
+## Multi-Repo Commit Workflow
+
+This project uses **nested git repos** — the target architecture defined in Sprint 7. All repos live under `sparklytics/` on disk; each subdirectory has its own `.git/` and pushes to a separate GitHub remote. The parent `.gitignore` hides nested repos from the public tree.
+
+> **Current on-disk state (pre-Sprint 7 setup):**
+> - `cloud/` directory does NOT exist yet — created and initialized during Sprint 7
+> - `sdk/next/` does NOT exist yet — SDK code currently lives at `sdk/` and is tracked by the parent repo
+> - Parent `.gitignore` does NOT yet exclude `cloud/` or `sdk/next/` — must be added during Sprint 7 setup
+
+### Repo layout on disk (target after Sprint 7 setup)
+
+```
+sparklytics/                    ← .git → github.com/Sparklytics/sparklytics  (PUBLIC CANONICAL)
+├── .gitignore                  ← must add: cloud/   sdk/next/   (gitignores nested repos)
+├── crates/
+├── dashboard/
+├── cloud/                      ← .git → github.com/Sparklytics/sparklytics-cloud  (PRIVATE)
+│   ├── crates/sparklytics-clickhouse/
+│   ├── crates/sparklytics-billing/
+│   ├── src/main.rs
+│   ├── ops/                    ← fly.toml, clickhouse-setup.sh live here, NOT in public tree
+│   └── migrations/             ← PostgreSQL migrations live here, NOT in public tree
+└── sdk/
+    └── next/                   ← .git → github.com/Sparklytics/sparklytics-next  (PUBLIC)
+        └── package.json        ← @sparklytics/next
+```
+
+### One-time setup (Sprint 7)
+
+```bash
+# Create nested repos:
+mkdir -p cloud && git -C cloud init && git -C cloud remote add origin git@github.com:Sparklytics/sparklytics-cloud.git
+mkdir -p sdk/next && git -C sdk/next init && git -C sdk/next remote add origin git@github.com:Sparklytics/sparklytics-next.git
+
+# Update parent .gitignore — add:
+#   cloud/
+#   sdk/next/
+# Remove: sdk/dist/  sdk/node_modules/  (move these to sdk/next/.gitignore)
+
+# Verify:
+git ls-files cloud/ sdk/next/   # must return empty
+```
+
+### Rules for committing
+
+| Where you are | `git commit` goes to | Remote |
+|---------------|----------------------|--------|
+| `sparklytics/` (root) | Public canonical repo | `github.com/Sparklytics/sparklytics` |
+| `sparklytics/cloud/` | Private cloud repo | `github.com/Sparklytics/sparklytics-cloud` |
+| `sparklytics/sdk/next/` | Public SDK repo | `github.com/Sparklytics/sparklytics-next` |
+
+**Critical rules:**
+1. **Never `git add -A` or `git add .` from `sparklytics/` root.** `cloud/` and `sdk/next/` are gitignored, but other new files at the root can be staged accidentally. Always stage by explicit path: `git add crates/ dashboard/ Cargo.toml`.
+2. **Always check `git remote -v` before pushing** to confirm you are in the right nested repo.
+3. **`cloud/` and `sdk/next/` must appear in `.gitignore`** — verify with `git ls-files cloud/ sdk/next/` (must return empty).
+4. **Billing, ClickHouseBackend code, Clerk auth, ops configs, and PostgreSQL migrations belong in `cloud/`** — never commit them to the public `sparklytics/` root. Pre-Sprint 7, Clerk code exists in the public repo behind `--features cloud` as a temporary state; Sprint 7 moves it to `cloud/src/auth/`.
+5. **`cloud/Cargo.toml` uses path deps** (`../../crates/sparklytics-core`) for local development. These work because `cloud/` is nested inside `sparklytics/`. CI overrides with git tags via `cloud/.cargo/config.toml` (which must be in `cloud/.gitignore`).
+
+### Repo Layout (public tree)
+
+Current state shown; post-Sprint-7 additions noted with `[Sprint 7]`.
 
 ```
 sparklytics/
@@ -205,23 +267,23 @@ sparklytics/
 ├── README.md
 ├── Cargo.toml                 # workspace root
 ├── crates/
-│   ├── sparklytics-core/      # Event structs, visitor ID, buffer
-│   ├── sparklytics-duckdb/    # DuckDB backend + queries
+│   ├── sparklytics-core/      # AnalyticsBackend trait, BillingGate trait, Event structs
+│   ├── sparklytics-duckdb/    # DuckDB backend + queries, implements AnalyticsBackend
 │   └── sparklytics-server/    # Axum server, routes, auth middleware
 ├── dashboard/                 # Next.js 16 App Router (static export → out/)
 │   ├── app/
 │   ├── components/
 │   ├── hooks/
 │   └── lib/
-├── sdk/                       # @sparklytics/next npm package
-│   └── src/
-├── migrations/                # sqlx PostgreSQL migrations (cloud)
+├── sdk/                       # @sparklytics/next SDK (tracked by parent repo pre-Sprint 7)
+│   └── next/                  # [Sprint 7] GITIGNORED — becomes independent nested repo
+├── cloud/                     # [Sprint 7] GITIGNORED — nested private repo (cloud binary)
 ├── GeoLite2-City.mmdb         # NOT included — user-provided (see SPARKLYTICS_GEOIP_PATH)
 ├── docs/
 │   ├── INDEX.md               ← master doc index
 │   ├── sprints/
 │   │   ├── sprint-index.md    ← data model + API contracts
-│   │   └── sprint-{0..5}.md
+│   │   └── sprint-{0..7}.md
 │   └── *.md                   ← all other docs
 └── .github/
     └── workflows/

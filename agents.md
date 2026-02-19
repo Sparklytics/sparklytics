@@ -78,3 +78,80 @@ These constraints are critical and often subject to AI hallucinations. Never vio
 2. **Implement:** Execute code modifications iteratively.
 3. **Verify:** Compile (`cargo check`), Lint (`npm run lint` in dashboard), Test UI (via browser subagent).
 4. **Report:** Provide a clean, structured summary of what was accomplished, issues mitigated, and (if applicable) where the user needs to step in to provide approval.
+
+---
+
+## 7. Multi-Repo Commit Rules (CRITICAL)
+
+This project uses **nested git repos** — the target architecture defined in Sprint 7. Once fully set up, three separate `.git/` directories live under `sparklytics/` on disk, each pushing to an independent GitHub remote. **Always verify which git repo you are committing to before running `git commit` or `git push`.**
+
+> **Current on-disk state (pre-Sprint 7 setup):**
+> - `sparklytics/` — parent `.git/` exists ✓
+> - `sparklytics/cloud/` — directory does NOT exist yet (created in Sprint 7)
+> - `sparklytics/sdk/next/` — does NOT exist yet; SDK code lives at `sdk/` and is currently tracked by the parent repo
+> - `.gitignore` does NOT yet exclude `cloud/` or `sdk/next/` — this is part of Sprint 7 setup
+
+### Repo map (target after Sprint 7 setup)
+
+| Directory | Remote | Visibility |
+|-----------|--------|------------|
+| `sparklytics/` (root) | `github.com/Sparklytics/sparklytics` | **Public** — community can see every commit |
+| `sparklytics/cloud/` | `github.com/Sparklytics/sparklytics-cloud` | **Private** — cloud binary, ClickHouseBackend, StripeBillingGate |
+| `sparklytics/sdk/next/` | `github.com/Sparklytics/sparklytics-next` | **Public** — `@sparklytics/next` npm package |
+
+### One-time setup (run once when starting Sprint 7)
+
+```bash
+# 1. Set up cloud/ nested repo
+mkdir -p sparklytics/cloud
+git -C sparklytics/cloud init
+git -C sparklytics/cloud remote add origin git@github.com:Sparklytics/sparklytics-cloud.git
+
+# 2. Set up sdk/next/ nested repo (moves existing sdk/ code there)
+mkdir -p sparklytics/sdk/next
+# move sdk/ contents into sdk/next/, then:
+git -C sparklytics/sdk/next init
+git -C sparklytics/sdk/next remote add origin git@github.com:Sparklytics/sparklytics-next.git
+
+# 3. Update parent .gitignore — add these lines:
+#   cloud/
+#   sdk/next/
+# And remove: sdk/dist/  sdk/node_modules/  (now owned by nested repo's .gitignore)
+
+# 4. Verify parent repo no longer tracks nested paths:
+git ls-files cloud/ sdk/next/   # must return empty
+```
+
+### Rules you must never violate
+
+1. **Verify git context before committing.** Run `git remote -v` from the directory you are in. Never assume you are in the right repo.
+2. **Never use `git add -A` or `git add .` from `sparklytics/` root.** `cloud/` and `sdk/next/` are gitignored but stray new files can still be staged. Always stage by explicit path: `git add crates/ dashboard/ Cargo.toml CHANGELOG.md` etc.
+3. **Never commit billing logic, ClickHouse backend code, Clerk auth, or ops configs to `sparklytics/` root.** Those belong in `cloud/`. Note: pre-Sprint 7, Clerk code temporarily lives in `sparklytics-server/src/cloud/` behind `--features cloud` — Sprint 7 migrates it to `cloud/src/auth/` and removes the feature flag from the public repo entirely.
+4. **Never commit `ops/`, `migrations/`, `.env` files, or any secrets to `sparklytics/` root.** Run `git ls-files cloud/ sdk/next/ ops/ migrations/` before pushing — must return empty.
+5. **`cloud/.cargo/config.toml` must be in `cloud/.gitignore`.** It contains local path overrides (`../../crates/sparklytics-*`) that work only on your machine and must never reach the private remote.
+6. **SDK changes go in `sparklytics/sdk/next/` once Sprint 7 setup is complete.** Until then, `sdk/` is tracked by the parent repo — commit SDK changes there as normal files.
+
+### Correct commit flow (post-Sprint 7 setup)
+
+```bash
+# Committing backend/dashboard changes (public):
+cd sparklytics/           # make sure you're at root
+git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics
+git add crates/ dashboard/ Cargo.toml
+git commit -m "feat: ..."
+git push origin main
+
+# Committing cloud changes (private):
+cd sparklytics/cloud/
+git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics-cloud
+git add crates/ src/
+git commit -m "feat: clickhouse sessions"
+git push origin main
+
+# Committing SDK changes (public):
+cd sparklytics/sdk/next/
+git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics-next
+git add src/ package.json
+git commit -m "fix: spa navigation"
+git push origin main
+```
