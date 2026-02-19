@@ -30,6 +30,7 @@ fn auth_config() -> Config {
         argon2_memory_kb: 4096, // Low memory for fast tests.
         public_url: "http://localhost:3000".to_string(),
         rate_limit_disable: false,
+        duckdb_memory_limit: "1GB".to_string(),
     }
 }
 
@@ -50,6 +51,7 @@ fn none_config() -> Config {
         argon2_memory_kb: 4096,
         public_url: "http://localhost:3000".to_string(),
         rate_limit_disable: false,
+        duckdb_memory_limit: "1GB".to_string(),
     }
 }
 

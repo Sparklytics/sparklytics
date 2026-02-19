@@ -7,6 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "json"] }
 tokio = { version = "1", features = ["full"] }
 duckdb = { version = "1.0", features = ["bundled"] }

@@ -10,7 +10,7 @@ use axum::{
 use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
-use sparklytics_duckdb::queries::{metrics::is_valid_metric_type, stats::StatsParams};
+use sparklytics_core::analytics::AnalyticsFilter;
 
 use crate::{error::AppError, state::AppState};
 
@@ -103,24 +103,27 @@ pub async fn share_stats(
     let website_id = resolve_share(&state, &share_id, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
 
-    let params = StatsParams {
-        website_id,
-        start_date,
-        end_date,
-        filter_country: None,
-        filter_page: None,
-        filter_referrer: None,
-        filter_browser: None,
-        filter_os: None,
-        filter_device: None,
-        filter_utm_source: None,
-        filter_utm_medium: None,
-        filter_utm_campaign: None,
-    };
-
     let result = state
-        .db
-        .get_stats(&params)
+        .analytics
+        .get_stats(
+            &website_id,
+            None,
+            &AnalyticsFilter {
+                start_date,
+                end_date,
+                timezone: None,
+                filter_country: None,
+                filter_page: None,
+                filter_referrer: None,
+                filter_browser: None,
+                filter_os: None,
+                filter_device: None,
+                filter_language: None,
+                filter_utm_source: None,
+                filter_utm_medium: None,
+                filter_utm_campaign: None,
+            },
+        )
         .await
         .map_err(AppError::Internal)?;
 
@@ -139,8 +142,27 @@ pub async fn share_pageviews(
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
 
     let result = state
-        .db
-        .get_timeseries(&website_id, &start_date, &end_date, None, None, None)
+        .analytics
+        .get_timeseries(
+            &website_id,
+            None,
+            &AnalyticsFilter {
+                start_date,
+                end_date,
+                timezone: None,
+                filter_country: None,
+                filter_page: None,
+                filter_referrer: None,
+                filter_browser: None,
+                filter_os: None,
+                filter_device: None,
+                filter_language: None,
+                filter_utm_source: None,
+                filter_utm_medium: None,
+                filter_utm_campaign: None,
+            },
+            None,
+        )
         .await
         .map_err(AppError::Internal)?;
 
@@ -167,7 +189,7 @@ pub async fn share_metrics(
         None => return Err(AppError::BadRequest("type parameter is required".to_string())),
     };
 
-    if !is_valid_metric_type(metric_type) {
+    if !sparklytics_core::analytics::VALID_METRIC_TYPES.contains(&metric_type) {
         return Err(AppError::BadRequest(format!(
             "invalid metric type: {metric_type}"
         )));
@@ -177,24 +199,44 @@ pub async fn share_metrics(
     let limit = q.limit.unwrap_or(10).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).max(0);
 
-    let (result, pagination) = state
-        .db
+    let page = state
+        .analytics
         .get_metrics(
             &website_id,
-            &start_date,
-            &end_date,
+            None,
             metric_type,
             limit,
             offset,
-            None,
-            None,
+            &AnalyticsFilter {
+                start_date,
+                end_date,
+                timezone: None,
+                filter_country: None,
+                filter_page: None,
+                filter_referrer: None,
+                filter_browser: None,
+                filter_os: None,
+                filter_device: None,
+                filter_language: None,
+                filter_utm_source: None,
+                filter_utm_medium: None,
+                filter_utm_campaign: None,
+            },
         )
         .await
         .map_err(AppError::Internal)?;
 
     Ok(Json(json!({
-        "data": result,
-        "pagination": pagination,
+        "data": {
+            "type": metric_type,
+            "rows": page.rows,
+        },
+        "pagination": {
+            "total": page.total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < page.total,
+        },
     })))
 }
 

@@ -169,7 +169,7 @@ cargo run
 cd dashboard && npm run dev
 
 # SDK
-cd sdk && npm run dev
+cd sdk/next && npm run dev
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for full setup instructions.
@@ -182,7 +182,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full setup instructions.
 - [API Specification](docs/07-API-SPECIFICATION.md)
 - [Database Schema](docs/08-DATABASE-SCHEMA.md)
 - [Self-Hosted Auth](docs/13-SELF-HOSTED-AUTH.md)
-- [SDK (`@sparklytics/next`)](sdk/README.md)
+- [SDK (`@sparklytics/next`)](https://github.com/Sparklytics/sparklytics-next)
 - [Sprint Plan](docs/sprints/sprint-index.md)
 
 ---

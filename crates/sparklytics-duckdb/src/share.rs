@@ -97,7 +97,7 @@ impl DuckDbBackend {
     /// A proper fix requires streaming via a temp file or DuckDB `COPY TO`,
     /// but is deferred given the 90-day / 500K-row cap that limits worst-case
     /// duration. Operators should avoid scheduling exports during peak traffic.
-    pub async fn export_events(
+    pub async fn export_events_raw(
         &self,
         website_id: &str,
         start: NaiveDate,

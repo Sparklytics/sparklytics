@@ -11,14 +11,12 @@ use chrono::Utc;
 use serde_json::json;
 
 use sparklytics_core::{
+    billing::BillingOutcome,
     event::{CollectOrBatch, CollectPayload, Event},
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
 
-use crate::{billing::BillingOutcome, error::AppError, state::AppState};
-
-#[cfg(feature = "cloud")]
-use crate::cloud::api_keys::authenticate_api_key;
+use crate::{error::AppError, state::AppState};
 
 /// `POST /api/collect` — ingest a single event or a batch of up to 50 events.
 ///
@@ -73,31 +71,6 @@ pub async fn collect(
         }
     }
 
-    // --- Cloud mode: extract tenant_id from API key if present ---
-    // In self-hosted mode tenant_id is always None (critical fact #2).
-    #[cfg(feature = "cloud")]
-    let cloud_tenant_id: Option<String> = {
-        use sparklytics_core::config::AppMode;
-        if state.config.mode == AppMode::Cloud {
-            let bearer = headers
-                .get(axum::http::header::AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.strip_prefix("Bearer "))
-                .map(|s| s.to_string());
-
-            if let Some(key) = bearer {
-                let pool = state.cloud_pg().map_err(AppError::Internal)?;
-                authenticate_api_key(pool, &key)
-                    .await
-                    .map_err(AppError::Internal)?
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    };
-    #[cfg(not(feature = "cloud"))]
     let cloud_tenant_id: Option<String> = None;
 
     // --- BillingGate check (cloud mode) ---
@@ -153,9 +126,9 @@ pub async fn collect(
         let referrer_domain = p.referrer.as_deref().and_then(extract_referrer_domain);
 
         // Session management: look up or create a session for this visitor.
-        let session_result = state
-            .db
-            .get_or_create_session(&visitor_id, &p.website_id, &p.url, now)
+        let session_id = state
+            .analytics
+            .get_or_create_session(&p.website_id, &visitor_id, referrer_domain.as_deref(), &p.url)
             .await
             .map_err(AppError::Internal)?;
 
@@ -176,7 +149,7 @@ pub async fn collect(
             website_id: p.website_id,
             // tenant_id is always NULL in self-hosted mode (CLAUDE.md critical fact #2).
             tenant_id: None,
-            session_id: session_result.session_id,
+            session_id,
             visitor_id,
             event_type: p.event_type,
             url: p.url,
@@ -207,28 +180,6 @@ pub async fn collect(
                 .or_else(|| url_utm.get("utm_content").cloned()),
             created_at: now,
         });
-    }
-
-    // Fire-and-forget usage increment for cloud mode (critical: never fail the response on error).
-    #[cfg(feature = "cloud")]
-    {
-        use sparklytics_core::config::AppMode;
-        if state.config.mode == AppMode::Cloud {
-            if let Some(ref tid) = cloud_tenant_id {
-                let tid = tid.clone();
-                let state_clone = Arc::clone(&state);
-                let event_count = events.len() as i64;
-                tokio::spawn(async move {
-                    if let Ok(pool) = state_clone.cloud_pg() {
-                        if let Err(e) =
-                            crate::cloud::usage::increment_usage(pool, &tid, event_count).await
-                        {
-                            tracing::warn!(error = %e, "usage increment failed (non-fatal)");
-                        }
-                    }
-                });
-            }
-        }
     }
 
     state.push_events(events).await;

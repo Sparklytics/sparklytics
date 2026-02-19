@@ -19,8 +19,8 @@ pub async fn get_realtime(
     }
 
     let result = state
-        .db
-        .get_realtime(&website_id)
+        .analytics
+        .get_realtime(&website_id, None)
         .await
         .map_err(AppError::Internal)?;
 

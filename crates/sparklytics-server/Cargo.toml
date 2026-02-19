@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 sparklytics-core = { path = "../sparklytics-core" }
 sparklytics-duckdb = { path = "../sparklytics-duckdb" }
+async-trait = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
@@ -37,12 +38,6 @@ hex = { workspace = true }
 csv = { workspace = true }
 include_dir = "0.7"
 ureq = "2"
-# Cloud-only optional deps (gated by the `cloud` feature).
-clerk-rs = { workspace = true, optional = true }
-sqlx    = { workspace = true, optional = true }
-svix    = { workspace = true, optional = true }
-reqwest = { workspace = true, optional = true }
-bytes   = { workspace = true, optional = true }
 
 [dev-dependencies]
 axum = { workspace = true }
@@ -50,8 +45,3 @@ tower = { workspace = true, features = ["util"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
 serde_json = { workspace = true }
 http-body-util = "0.1"
-
-[features]
-default = ["selfhosted"]
-selfhosted = []
-cloud = ["dep:clerk-rs", "dep:sqlx", "dep:svix", "dep:reqwest", "dep:bytes"]

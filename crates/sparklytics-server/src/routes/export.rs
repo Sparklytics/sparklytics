@@ -68,9 +68,15 @@ pub async fn export_events(
         }
     }
 
+    let _permit = state
+        .export_semaphore
+        .acquire()
+        .await
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("export semaphore closed")))?;
+
     let rows = state
-        .db
-        .export_events(&website_id, start, end)
+        .analytics
+        .export_events(&website_id, None, start, end)
         .await
         .map_err(AppError::Internal)?;
 
@@ -117,7 +123,7 @@ fn sanitize_csv_field(val: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-fn build_csv(rows: &[sparklytics_duckdb::share::ExportRow]) -> anyhow::Result<Vec<u8>> {
+fn build_csv(rows: &[sparklytics_core::analytics::ExportRow]) -> anyhow::Result<Vec<u8>> {
     let mut wtr = csv::Writer::from_writer(Vec::new());
 
     // Write CSV headers.

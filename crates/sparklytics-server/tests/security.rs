@@ -34,7 +34,8 @@ fn base_config() -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 65536,
         public_url: "http://localhost:3000".to_string(),
-        rate_limit_disable: true, // disable for tests that send many requests
+        rate_limit_disable: true,
+        duckdb_memory_limit: "1GB".to_string(), // disable for tests that send many requests
     }
 }
 
@@ -416,6 +417,7 @@ async fn test_rate_limit_60_per_minute() {
     // Use rate_limit_disable: false for this specific test.
     let config = Config {
         rate_limit_disable: false,
+        duckdb_memory_limit: "1GB".to_string(),
         ..base_config()
     };
     let (_state, app) = setup_with_config(config).await;
