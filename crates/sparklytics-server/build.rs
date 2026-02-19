@@ -20,8 +20,5 @@ fn main() {
     }
 
     // Re-run this script if the dashboard output changes.
-    println!(
-        "cargo:rerun-if-changed={}",
-        out_dir.display()
-    );
+    println!("cargo:rerun-if-changed={}", out_dir.display());
 }

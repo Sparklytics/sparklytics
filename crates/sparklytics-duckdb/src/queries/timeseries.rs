@@ -161,7 +161,11 @@ fn generate_buckets(start: &NaiveDate, end: &NaiveDate, gran: &str) -> Vec<Strin
                 .and_hms_opt(0, 0, 0)
                 .unwrap_or_default();
             while current < end_dt {
-                buckets.push(format!("{}T{:02}:00:00Z", current.format("%Y-%m-%d"), current.hour()));
+                buckets.push(format!(
+                    "{}T{:02}:00:00Z",
+                    current.format("%Y-%m-%d"),
+                    current.hour()
+                ));
                 current += chrono::Duration::hours(1);
             }
         }

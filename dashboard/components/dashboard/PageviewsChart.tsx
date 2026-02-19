@@ -25,7 +25,7 @@ function CustomTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-surface-2 border border-line-3 rounded px-3 py-2 text-xs">
+    <div className="bg-surface-2 border border-line-3 rounded-lg px-3 py-2 text-xs">
       <p className="text-ink-3 mb-1">{label}</p>
       {payload.map((p) => (
         <p key={p.name} className="font-mono tabular-nums" style={{ color: p.color }}>

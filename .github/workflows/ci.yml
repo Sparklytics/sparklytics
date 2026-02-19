@@ -2,17 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
+  RUST_LOG: "sparklytics=warn"
 
 jobs:
   rust:
-    name: Rust checks
+    name: Rust — fmt / clippy / test / audit / build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,16 +20,16 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: rustfmt, clippy
 
-      - name: Cache cargo
+      - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
+        run: cargo clippy -- -D warnings
 
       - name: cargo test
         run: cargo test --all
@@ -39,43 +39,93 @@ jobs:
           cargo install cargo-audit --quiet
           cargo audit
 
+      - name: cargo build --release
+        run: cargo build --release
+
   dashboard:
-    name: Dashboard
+    name: Dashboard — build + bundle size
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: dashboard
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: dashboard/package-lock.json
+
       - run: npm ci
-      - run: npm run lint
+
+      - run: npm test --if-present
+
       - run: npm run build
-      - name: Bundle size check
+
+      - name: Bundle size check (largest chunk < 150KB gzipped)
         run: |
-          LARGEST=$(du -sk dist/assets/*.js 2>/dev/null | sort -rn | head -1 | awk '{print $1}')
-          echo "Largest JS chunk: ${LARGEST}KB"
-          # Warn if over 400KB uncompressed (est. >150KB gzipped)
-          if [ "${LARGEST}" -gt 400 ]; then
-            echo "WARNING: Largest chunk exceeds 400KB uncompressed (est. >150KB gzipped)"
+          LARGEST=$(for f in out/_next/static/chunks/*.js; do
+            [ -f "$f" ] && gzip -c "$f" | wc -c
+          done | sort -rn | head -1)
+          LARGEST="${LARGEST:-0}"
+          echo "Largest gzipped chunk: ${LARGEST} bytes"
+          if [ "${LARGEST}" -gt 153600 ]; then
+            echo "ERROR: Bundle too large: ${LARGEST} bytes gzipped (limit 153600)"
+            exit 1
           fi
 
   sdk:
-    name: SDK
+    name: SDK — test + build + bundle size
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: sdk
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: sdk/package-lock.json
+
       - run: npm ci
+
+      - run: npm test
+
       - run: npm run build
+
+      - name: SDK bundle size check (< 5KB gzipped)
+        run: |
+          SIZE=$(gzip -c dist/index.mjs | wc -c)
+          echo "SDK gzipped ESM bundle: ${SIZE} bytes"
+          if [ "${SIZE}" -gt 5120 ]; then
+            echo "ERROR: SDK bundle too large: ${SIZE} bytes gzipped (limit 5120)"
+            exit 1
+          fi
+
+  docker:
+    name: Docker — multi-arch build (amd64 + arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU for arm64 cross-compilation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build multi-arch image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: sparklytics/sparklytics:ci

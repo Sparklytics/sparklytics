@@ -46,7 +46,10 @@ impl DuckDbBackend {
         conn.execute_batch(INIT_SQL)?;
         // Seed settings (daily_salt, install_id, etc.) if this is a fresh database.
         Self::seed_settings_sync(&conn)?;
-        info!("DuckDB opened at {} with memory_limit=128MB, threads=2", path);
+        info!(
+            "DuckDB opened at {} with memory_limit=128MB, threads=2",
+            path
+        );
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -204,11 +207,8 @@ impl DuckDbBackend {
     /// enter the event buffer.
     pub async fn website_exists(&self, website_id: &str) -> Result<bool> {
         let conn = self.conn.lock().await;
-        let mut stmt = conn.prepare(
-            "SELECT COUNT(*) FROM websites WHERE id = ?1",
-        )?;
-        let count: i64 =
-            stmt.query_row(duckdb::params![website_id], |row| row.get(0))?;
+        let mut stmt = conn.prepare("SELECT COUNT(*) FROM websites WHERE id = ?1")?;
+        let count: i64 = stmt.query_row(duckdb::params![website_id], |row| row.get(0))?;
         Ok(count > 0)
     }
 

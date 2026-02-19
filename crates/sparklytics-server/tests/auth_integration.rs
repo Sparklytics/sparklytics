@@ -29,6 +29,7 @@ fn auth_config() -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 4096, // Low memory for fast tests.
         public_url: "http://localhost:3000".to_string(),
+        rate_limit_disable: false,
     }
 }
 
@@ -48,6 +49,7 @@ fn none_config() -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 4096,
         public_url: "http://localhost:3000".to_string(),
+        rate_limit_disable: false,
     }
 }
 
@@ -238,8 +240,14 @@ async fn test_login_sets_httponly_cookie() {
 
     // Response body should contain token and expires_at.
     let json = json_body(response).await;
-    assert!(json["data"]["token"].is_string(), "response should contain token");
-    assert!(json["data"]["expires_at"].is_string(), "response should contain expires_at");
+    assert!(
+        json["data"]["token"].is_string(),
+        "response should contain token"
+    );
+    assert!(
+        json["data"]["expires_at"].is_string(),
+        "response should contain expires_at"
+    );
 }
 
 // ============================================================
@@ -452,6 +460,12 @@ async fn test_auth_status_returns_mode() {
 
     // Flat response (no {"data":...} wrapper) per CLAUDE.md critical fact #15.
     assert_eq!(json["mode"], "local");
-    assert_eq!(json["setup_required"], true, "setup_required should be true before setup");
-    assert_eq!(json["authenticated"], false, "authenticated should be false without cookie");
+    assert_eq!(
+        json["setup_required"], true,
+        "setup_required should be true before setup"
+    );
+    assert_eq!(
+        json["authenticated"], false,
+        "authenticated should be false without cookie"
+    );
 }

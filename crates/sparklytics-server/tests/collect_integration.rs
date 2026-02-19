@@ -27,6 +27,7 @@ fn test_config() -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 65536,
         public_url: "http://localhost:3000".to_string(),
+        rate_limit_disable: false,
     }
 }
 
@@ -56,7 +57,12 @@ fn collect_request(body: &str) -> Request<Body> {
 
 /// Helper: extract JSON body from response.
 async fn json_body(response: axum::http::Response<Body>) -> Value {
-    let bytes = response.into_body().collect().await.expect("read body").to_bytes();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("read body")
+        .to_bytes();
     serde_json::from_slice(&bytes).expect("parse JSON")
 }
 
@@ -69,8 +75,10 @@ async fn event_count(state: &AppState, website_id: &str) -> i64 {
     let mut stmt = conn
         .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1")
         .expect("prepare count query");
-    stmt.query_row(sparklytics_duckdb::duckdb::params![website_id], |row| row.get(0))
-        .expect("count events")
+    stmt.query_row(sparklytics_duckdb::duckdb::params![website_id], |row| {
+        row.get(0)
+    })
+    .expect("count events")
 }
 
 // ============================================================
@@ -144,10 +152,7 @@ async fn test_collect_batch_too_large() {
         .collect();
     let body = serde_json::to_string(&events).expect("serialize");
 
-    let response = app
-        .oneshot(collect_request(&body))
-        .await
-        .expect("request");
+    let response = app.oneshot(collect_request(&body)).await.expect("request");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let json = json_body(response).await;
@@ -264,13 +269,18 @@ async fn test_visitor_id_deterministic_within_day() {
         .prepare("SELECT visitor_id FROM events WHERE website_id = ?1 ORDER BY url")
         .expect("prepare");
     let visitor_ids: Vec<String> = stmt
-        .query_map(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_map(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("query")
         .collect::<Result<Vec<_>, _>>()
         .expect("collect");
 
     assert_eq!(visitor_ids.len(), 2);
-    assert_eq!(visitor_ids[0], visitor_ids[1], "same IP+UA on same day must produce same visitor_id");
+    assert_eq!(
+        visitor_ids[0], visitor_ids[1],
+        "same IP+UA on same day must produce same visitor_id"
+    );
 
     // Verify 16 hex chars.
     let vid = &visitor_ids[0];
@@ -343,7 +353,9 @@ async fn test_referrer_domain_extracted() {
         .prepare("SELECT referrer_domain FROM events WHERE website_id = ?1")
         .expect("prepare");
     let domain: Option<String> = stmt
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("query");
 
     assert_eq!(domain.as_deref(), Some("news.ycombinator.com"));
@@ -391,7 +403,9 @@ async fn test_buffer_flush_on_threshold() {
         .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1")
         .expect("prepare");
     let count: i64 = stmt
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("count");
 
     assert_eq!(count, 100, "all 100 events should be flushed to DuckDB");
@@ -406,7 +420,11 @@ async fn test_schema_initialization_on_first_run() {
 
     // Settings should be populated with default values.
     let salt = db.get_daily_salt().await.expect("get salt");
-    assert_eq!(salt.len(), 64, "daily_salt should be 32-byte hex (64 chars)");
+    assert_eq!(
+        salt.len(),
+        64,
+        "daily_salt should be 32-byte hex (64 chars)"
+    );
     assert!(
         salt.chars().all(|c| c.is_ascii_hexdigit()),
         "daily_salt should be hex"
@@ -425,7 +443,11 @@ async fn test_schema_initialization_on_first_run() {
         .prepare("SELECT value FROM settings WHERE key = 'install_id'")
         .expect("prepare");
     let install_id: String = stmt.query_row([], |row| row.get(0)).expect("query");
-    assert_eq!(install_id.len(), 16, "install_id should be 8-byte hex (16 chars)");
+    assert_eq!(
+        install_id.len(),
+        16,
+        "install_id should be 8-byte hex (16 chars)"
+    );
 }
 
 // ============================================================
@@ -434,9 +456,7 @@ async fn test_schema_initialization_on_first_run() {
 #[tokio::test]
 async fn test_seed_website_helper() {
     let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
-    db.seed_website("site_foo", "foo.com")
-        .await
-        .expect("seed");
+    db.seed_website("site_foo", "foo.com").await.expect("seed");
 
     let exists = db.website_exists("site_foo").await.expect("check");
     assert!(exists);
@@ -471,10 +491,15 @@ async fn test_session_id_is_populated() {
         .prepare("SELECT session_id FROM events WHERE website_id = ?1")
         .expect("prepare");
     let session_id: String = stmt
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("query");
 
-    assert!(!session_id.is_empty(), "session_id should be populated by session management");
+    assert!(
+        !session_id.is_empty(),
+        "session_id should be populated by session management"
+    );
     assert_eq!(session_id.len(), 16, "session_id should be 16 hex chars");
 }
 
@@ -506,7 +531,9 @@ async fn test_event_data_serialized_to_json_string() {
         .prepare("SELECT event_data FROM events WHERE website_id = ?1")
         .expect("prepare");
     let data: Option<String> = stmt
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("query");
 
     let data = data.expect("event_data should not be NULL");
@@ -540,8 +567,13 @@ async fn test_tenant_id_null_in_self_hosted() {
         .prepare("SELECT tenant_id FROM events WHERE website_id = ?1")
         .expect("prepare");
     let tenant_id: Option<String> = stmt
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("query");
 
-    assert!(tenant_id.is_none(), "tenant_id must be NULL in self-hosted mode");
+    assert!(
+        tenant_id.is_none(),
+        "tenant_id must be NULL in self-hosted mode"
+    );
 }

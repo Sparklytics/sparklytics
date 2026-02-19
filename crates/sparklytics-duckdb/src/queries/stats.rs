@@ -59,13 +59,8 @@ impl DuckDbBackend {
         let prev_end = params.start_date - chrono::Duration::days(1);
         let prev_start = prev_end - chrono::Duration::days(range_days - 1);
 
-        let prev = query_stats_for_period(
-            &conn,
-            &params.website_id,
-            &prev_start,
-            &prev_end,
-            params,
-        )?;
+        let prev =
+            query_stats_for_period(&conn, &params.website_id, &prev_start, &prev_end, params)?;
 
         Ok(StatsResult {
             pageviews: current.pageviews,
@@ -199,7 +194,8 @@ fn query_stats_for_period(
         "#
     );
 
-    let param_refs: Vec<&dyn duckdb::types::ToSql> = filter_params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn duckdb::types::ToSql> =
+        filter_params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
     let result = stmt.query_row(param_refs.as_slice(), |row| {
         Ok(PeriodStats {

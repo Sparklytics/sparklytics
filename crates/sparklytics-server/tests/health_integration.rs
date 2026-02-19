@@ -26,11 +26,17 @@ fn test_config() -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 65536,
         public_url: "http://localhost:3000".to_string(),
+        rate_limit_disable: false,
     }
 }
 
 async fn json_body(response: axum::http::Response<Body>) -> Value {
-    let bytes = response.into_body().collect().await.expect("read body").to_bytes();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("read body")
+        .to_bytes();
     serde_json::from_slice(&bytes).expect("parse JSON")
 }
 

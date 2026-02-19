@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
+
+/// Maximum allowed body size for POST /api/collect (100 KB).
+pub const COLLECT_BODY_LIMIT: usize = 102_400;
+/// Maximum allowed size for a single event's `event_data` JSON string (4 KB).
+const EVENT_DATA_MAX_BYTES: usize = 4_096;
 use chrono::Utc;
 use serde_json::json;
 
@@ -61,6 +61,15 @@ pub async fn collect(
         return Err(AppError::BadRequest("empty batch".to_string()));
     }
 
+    // --- Validation: per-event event_data size (max 4KB serialised) ---
+    for p in &payloads {
+        if let Some(data) = &p.event_data {
+            if data.to_string().len() > EVENT_DATA_MAX_BYTES {
+                return Err(AppError::PayloadTooLarge);
+            }
+        }
+    }
+
     // --- Validation: all website_ids must be known ---
     for p in &payloads {
         if !state.is_valid_website(&p.website_id).await {
@@ -76,7 +85,8 @@ pub async fn collect(
     let client_ip = extract_client_ip(&headers);
 
     // --- Rate limiting: 60 req/min per IP ---
-    if !state.check_rate_limit(&client_ip).await {
+    // SPARKLYTICS_RATE_LIMIT_DISABLE bypasses this for load testing only.
+    if !state.config.rate_limit_disable && !state.check_rate_limit(&client_ip).await {
         return Err(AppError::RateLimited);
     }
 
@@ -116,12 +126,12 @@ pub async fn collect(
 
         // Build screen string: prefer combined "WxH" payload field,
         // fall back to screen_width + screen_height.
-        let screen = p.screen.or_else(|| {
-            match (p.screen_width, p.screen_height) {
+        let screen = p
+            .screen
+            .or_else(|| match (p.screen_width, p.screen_height) {
                 (Some(w), Some(h)) => Some(format!("{}x{}", w, h)),
                 _ => None,
-            }
-        });
+            });
 
         events.push(Event {
             id: uuid::Uuid::new_v4().to_string(),
@@ -150,9 +160,13 @@ pub async fn collect(
             // Explicit payload fields take precedence over URL-extracted params.
             utm_source: p.utm_source.or_else(|| url_utm.get("utm_source").cloned()),
             utm_medium: p.utm_medium.or_else(|| url_utm.get("utm_medium").cloned()),
-            utm_campaign: p.utm_campaign.or_else(|| url_utm.get("utm_campaign").cloned()),
+            utm_campaign: p
+                .utm_campaign
+                .or_else(|| url_utm.get("utm_campaign").cloned()),
             utm_term: p.utm_term.or_else(|| url_utm.get("utm_term").cloned()),
-            utm_content: p.utm_content.or_else(|| url_utm.get("utm_content").cloned()),
+            utm_content: p
+                .utm_content
+                .or_else(|| url_utm.get("utm_content").cloned()),
             created_at: now,
         });
     }

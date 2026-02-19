@@ -83,10 +83,7 @@ impl AppState {
         loop {
             let now = Utc::now();
             let tomorrow = now.date_naive() + chrono::Duration::days(1);
-            let next_midnight = tomorrow
-                .and_hms_opt(0, 0, 0)
-                .expect("valid time")
-                .and_utc();
+            let next_midnight = tomorrow.and_hms_opt(0, 0, 0).expect("valid time").and_utc();
             let secs_until = (next_midnight - now).num_seconds().max(1) as u64;
             tokio::time::sleep(std::time::Duration::from_secs(secs_until)).await;
             match self.db.rotate_salt().await {

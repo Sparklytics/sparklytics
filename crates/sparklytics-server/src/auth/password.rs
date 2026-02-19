@@ -9,7 +9,8 @@ use argon2::{
 /// `m_cost` is the memory cost in KB (default 65536 = 64MB per CLAUDE.md).
 pub fn hash_password(password: &str, m_cost: u32) -> Result<String> {
     let salt = SaltString::generate(&mut OsRng);
-    let params = Params::new(m_cost, 3, 1, Some(32)).map_err(|e| anyhow!("argon2 params: {}", e))?;
+    let params =
+        Params::new(m_cost, 3, 1, Some(32)).map_err(|e| anyhow!("argon2 params: {}", e))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let hash = argon2
         .hash_password(password.as_bytes(), &salt)

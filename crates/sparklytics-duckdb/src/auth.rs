@@ -115,11 +115,7 @@ impl DuckDbBackend {
     }
 
     /// List API keys (paginated). Includes revoked keys.
-    pub async fn list_api_keys(
-        &self,
-        limit: i64,
-        offset: i64,
-    ) -> Result<(Vec<ApiKeyRecord>, i64)> {
+    pub async fn list_api_keys(&self, limit: i64, offset: i64) -> Result<(Vec<ApiKeyRecord>, i64)> {
         let conn = self.conn.lock().await;
 
         let total: i64 = conn
@@ -152,11 +148,7 @@ impl DuckDbBackend {
     }
 
     /// Record a login attempt for rate limiting.
-    pub async fn record_login_attempt(
-        &self,
-        ip: &str,
-        succeeded: bool,
-    ) -> Result<()> {
+    pub async fn record_login_attempt(&self, ip: &str, succeeded: bool) -> Result<()> {
         let id = rand_hex(5);
         let conn = self.conn.lock().await;
         conn.execute(

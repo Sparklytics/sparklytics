@@ -87,7 +87,9 @@ impl DuckDbBackend {
             .prepare("SELECT COUNT(*) FROM websites")?
             .query_row([], |row| row.get(0))?;
 
-        let (sql, params): (String, Vec<Box<dyn duckdb::types::ToSql>>) = if let Some(cursor) = cursor {
+        let (sql, params): (String, Vec<Box<dyn duckdb::types::ToSql>>) = if let Some(cursor) =
+            cursor
+        {
             (
                 "SELECT id, tenant_id, name, domain, timezone, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
                  FROM websites WHERE id > ?1 ORDER BY id LIMIT ?2"
@@ -106,7 +108,8 @@ impl DuckDbBackend {
             )
         };
 
-        let param_refs: Vec<&dyn duckdb::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let param_refs: Vec<&dyn duckdb::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(param_refs.as_slice(), |row| {
             Ok(Website {

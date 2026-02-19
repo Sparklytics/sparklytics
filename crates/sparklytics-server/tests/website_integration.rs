@@ -27,6 +27,7 @@ fn test_config() -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 65536,
         public_url: "http://localhost:3000".to_string(),
+        rate_limit_disable: false,
     }
 }
 
@@ -144,10 +145,16 @@ async fn test_create_website_selfhosted() {
 
     // ID must start with "site_".
     let id = data["id"].as_str().expect("id should be a string");
-    assert!(id.starts_with("site_"), "website id must start with 'site_'");
+    assert!(
+        id.starts_with("site_"),
+        "website id must start with 'site_'"
+    );
 
     // tenant_id must be null in self-hosted mode (critical fact #2).
-    assert!(data["tenant_id"].is_null(), "tenant_id must be null in self-hosted mode");
+    assert!(
+        data["tenant_id"].is_null(),
+        "tenant_id must be null in self-hosted mode"
+    );
 
     assert_eq!(data["name"], "My Blog");
     assert_eq!(data["domain"], "blog.example.com");
@@ -155,7 +162,10 @@ async fn test_create_website_selfhosted() {
 
     // tracking_snippet should contain the website ID.
     let snippet = data["tracking_snippet"].as_str().expect("tracking_snippet");
-    assert!(snippet.contains(id), "tracking snippet must contain website ID");
+    assert!(
+        snippet.contains(id),
+        "tracking snippet must contain website ID"
+    );
 }
 
 // ============================================================
@@ -291,9 +301,18 @@ async fn test_stats_returns_data() {
     let data = &json["data"];
 
     // Stats should contain standard fields.
-    assert!(data["pageviews"].is_number(), "stats should contain pageviews");
-    assert!(data["visitors"].is_number(), "stats should contain visitors");
-    assert!(data["sessions"].is_number(), "stats should contain sessions");
+    assert!(
+        data["pageviews"].is_number(),
+        "stats should contain pageviews"
+    );
+    assert!(
+        data["visitors"].is_number(),
+        "stats should contain visitors"
+    );
+    assert!(
+        data["sessions"].is_number(),
+        "stats should contain sessions"
+    );
 
     // We sent 3 pageviews.
     assert_eq!(data["pageviews"].as_i64().unwrap(), 3);
@@ -326,8 +345,14 @@ async fn test_pageviews_returns_series() {
     let data = &json["data"];
 
     // Should contain series array and granularity.
-    assert!(data["series"].is_array(), "data should contain series array");
-    assert!(data["granularity"].is_string(), "data should contain granularity");
+    assert!(
+        data["series"].is_array(),
+        "data should contain series array"
+    );
+    assert!(
+        data["granularity"].is_string(),
+        "data should contain granularity"
+    );
 
     let series = data["series"].as_array().expect("series is array");
     assert!(!series.is_empty(), "series should not be empty");
@@ -365,7 +390,10 @@ async fn test_metrics_top_pages() {
     assert_eq!(rows.len(), 3, "should have 3 page entries");
 
     // Pagination metadata should be present.
-    assert!(json["pagination"].is_object(), "pagination should be present");
+    assert!(
+        json["pagination"].is_object(),
+        "pagination should be present"
+    );
 }
 
 // ============================================================

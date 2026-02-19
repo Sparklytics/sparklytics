@@ -42,10 +42,9 @@ impl DuckDbBackend {
         let now_str = now.format("%Y-%m-%d %H:%M:%S%.f").to_string();
 
         let existing: Option<(String, i32)> = stmt
-            .query_row(
-                duckdb::params![visitor_id, website_id, cutoff_str],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
+            .query_row(duckdb::params![visitor_id, website_id, cutoff_str], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .ok();
 
         if let Some((session_id, pageview_count)) = existing {
@@ -89,7 +88,10 @@ fn compute_session_id(
     entry_page: &str,
     first_seen_ms: i64,
 ) -> String {
-    let input = format!("{}{}{}{}", visitor_id, website_id, entry_page, first_seen_ms);
+    let input = format!(
+        "{}{}{}{}",
+        visitor_id, website_id, entry_page, first_seen_ms
+    );
     let hash = Sha256::digest(input.as_bytes());
     hex::encode(&hash[..8])
 }

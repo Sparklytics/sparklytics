@@ -180,7 +180,7 @@ If you cannot start the dev server (e.g., no Node installed), describe the chang
 | `SPARKLYTICS_RETENTION_DAYS` | `365` | DuckDB data retention |
 | `SPARKLYTICS_CORS_ORIGINS` | — | Allowed origins for query endpoints |
 | `SPARKLYTICS_ARGON2_MEMORY_KB` | `65536` | Argon2id memory parameter in KB (64MB default). Only relevant when `SPARKLYTICS_AUTH=local`. |
-| `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | Path to MaxMind GeoLite2-City.mmdb file. If missing, geo fields stored as NULL (server still runs). |
+| `SPARKLYTICS_GEOIP_PATH` | `./dbip-city-lite.mmdb` | Path to MMDB GeoIP file (DB-IP City Lite by default; MaxMind GeoLite2 also supported). Docker images bundle DB-IP automatically at `/geoip/dbip-city-lite.mmdb`. If missing, geo fields stored as NULL (server still runs). |
 
 ### Cloud Mode (additional)
 | Variable | Description |

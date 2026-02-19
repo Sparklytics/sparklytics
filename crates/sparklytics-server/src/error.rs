@@ -39,6 +39,9 @@ pub enum AppError {
     #[error("rate limited")]
     RateLimited,
 
+    #[error("payload too large")]
+    PayloadTooLarge,
+
     #[error("internal error: {0}")]
     Internal(#[from] anyhow::Error),
 }
@@ -72,6 +75,11 @@ impl IntoResponse for AppError {
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",
                 "Rate limit exceeded",
+            ),
+            AppError::PayloadTooLarge => (
+                StatusCode::BAD_REQUEST,
+                "payload_too_large",
+                "Payload exceeds size limit",
             ),
             AppError::Internal(e) => {
                 tracing::error!("Internal error: {e}");

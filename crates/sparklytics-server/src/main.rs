@@ -5,8 +5,27 @@ use tracing::info;
 
 use sparklytics_server::state::AppState;
 
+/// `sparklytics health` — liveness probe for Docker HEALTHCHECK.
+///
+/// Calls `GET http://localhost:$SPARKLYTICS_PORT/health`.
+/// Exits 0 if the server responds with HTTP 200, exits 1 otherwise.
+fn run_health_check() -> ! {
+    let port = std::env::var("SPARKLYTICS_PORT").unwrap_or_else(|_| "3000".to_string());
+    let url = format!("http://localhost:{}/health", port);
+    match ureq::get(&url).call() {
+        Ok(resp) if resp.status() == 200 => std::process::exit(0),
+        _ => std::process::exit(1),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Health-check subcommand — must be handled before tokio runtime initialisation
+    // so the binary stays small and fast when used as a Docker HEALTHCHECK probe.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(|s| s.as_str()) == Some("health") {
+        run_health_check();
+    }
     // Initialise structured JSON logging. Level controlled via RUST_LOG env var.
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -31,7 +50,8 @@ async fn main() -> Result<()> {
         tracing::warn!(
             geoip_path = %cfg.geoip_path,
             "GeoIP database not found. Events stored with NULL geo fields. \
-             Download GeoLite2-City.mmdb from MaxMind and set SPARKLYTICS_GEOIP_PATH."
+             Run scripts/download-geoip.sh to fetch DB-IP City Lite (free, no key required), \
+             then set SPARKLYTICS_GEOIP_PATH. Docker images bundle DB-IP automatically."
         );
     }
 
@@ -45,7 +65,8 @@ async fn main() -> Result<()> {
 
     // Auth initialization for password/local modes.
     match &cfg.auth_mode {
-        sparklytics_core::config::AuthMode::Password(_) | sparklytics_core::config::AuthMode::Local => {
+        sparklytics_core::config::AuthMode::Password(_)
+        | sparklytics_core::config::AuthMode::Local => {
             match db.ensure_jwt_secret().await {
                 Ok(_) => info!("JWT secret ready"),
                 Err(e) => tracing::error!(error = %e, "Failed to ensure JWT secret"),
@@ -54,7 +75,9 @@ async fn main() -> Result<()> {
             if let sparklytics_core::config::AuthMode::Local = &cfg.auth_mode {
                 match db.is_admin_configured().await {
                     Ok(true) => info!("Admin password configured"),
-                    Ok(false) => info!("Admin not configured — setup required via POST /api/auth/setup"),
+                    Ok(false) => {
+                        info!("Admin not configured — setup required via POST /api/auth/setup")
+                    }
                     Err(e) => tracing::error!(error = %e, "Failed to check admin configured"),
                 }
             }

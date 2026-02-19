@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  sparklytics:
+    image: sparklytics/sparklytics:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - sparklytics-data:/data
+      # Optional: mount your MaxMind GeoLite2 database for geo analytics.
+      # Register free at maxmind.com, download GeoLite2-City.mmdb, then uncomment:
+      # - /path/to/GeoLite2-City.mmdb:/data/GeoLite2-City.mmdb:ro
+    environment:
+      - SPARKLYTICS_AUTH=local
+      # Set to false when running behind an HTTPS reverse proxy (Nginx, Caddy, etc.)
+      - SPARKLYTICS_HTTPS=false
+      # Comma-separated origins allowed to query analytics from a browser.
+      # Example: SPARKLYTICS_CORS_ORIGINS=https://yoursite.com
+    restart: unless-stopped
+
+volumes:
+  sparklytics-data:

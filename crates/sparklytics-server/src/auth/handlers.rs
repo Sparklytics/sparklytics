@@ -73,7 +73,11 @@ pub async fn auth_setup(
 ) -> Result<impl IntoResponse, AppError> {
     match &state.config.auth_mode {
         AuthMode::Local => {}
-        _ => return Err(AppError::BadRequest("setup only available in local mode".to_string())),
+        _ => {
+            return Err(AppError::BadRequest(
+                "setup only available in local mode".to_string(),
+            ))
+        }
     }
 
     // Check if already configured.
@@ -86,11 +90,10 @@ pub async fn auth_setup(
         return Err(AppError::Gone);
     }
 
-    validate_password_strength(&req.password)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    validate_password_strength(&req.password).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let hash = hash_password(&req.password, state.config.argon2_memory_kb)
-        .map_err(AppError::Internal)?;
+    let hash =
+        hash_password(&req.password, state.config.argon2_memory_kb).map_err(AppError::Internal)?;
 
     state
         .db
@@ -217,11 +220,13 @@ pub async fn auth_login(
 // ---------------------------------------------------------------------------
 
 /// `POST /api/auth/logout` — Clear session cookie. Always 200.
-pub async fn auth_logout(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn auth_logout(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let cookie = clear_session_cookie(state.config.https);
-    (StatusCode::OK, [(header::SET_COOKIE, cookie)], Json(json!({ "data": { "ok": true } })))
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie)],
+        Json(json!({ "data": { "ok": true } })),
+    )
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,9 @@ pub struct Config {
     pub mode: AppMode,
     pub argon2_memory_kb: u32,
     pub public_url: String,
+    /// When true, skip the rate limiter on /api/collect. For benchmarking only.
+    /// Controlled by SPARKLYTICS_RATE_LIMIT_DISABLE=true. Never document in README.
+    pub rate_limit_disable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,8 +46,7 @@ impl Config {
             geoip_path: std::env::var("SPARKLYTICS_GEOIP_PATH")
                 .unwrap_or_else(|_| "./GeoLite2-City.mmdb".to_string()),
             auth_mode: {
-                let raw = std::env::var("SPARKLYTICS_AUTH")
-                    .unwrap_or_else(|_| "local".to_string());
+                let raw = std::env::var("SPARKLYTICS_AUTH").unwrap_or_else(|_| "local".to_string());
                 match raw.as_str() {
                     "none" => AuthMode::None,
                     "password" => {
@@ -73,8 +75,8 @@ impl Config {
             buffer_flush_interval_ms: 5000, // Sprint-0 spec: flush every 5s
             buffer_max_size: 100,           // Sprint-0 spec: flush immediately at 100 events
             mode: {
-                let raw = std::env::var("SPARKLYTICS_MODE")
-                    .unwrap_or_else(|_| "selfhosted".to_string());
+                let raw =
+                    std::env::var("SPARKLYTICS_MODE").unwrap_or_else(|_| "selfhosted".to_string());
                 match raw.as_str() {
                     "cloud" => AppMode::Cloud,
                     _ => AppMode::SelfHosted,
@@ -86,6 +88,9 @@ impl Config {
                 .unwrap_or(65536),
             public_url: std::env::var("SPARKLYTICS_PUBLIC_URL")
                 .unwrap_or_else(|_| "http://localhost:3000".to_string()),
+            rate_limit_disable: std::env::var("SPARKLYTICS_RATE_LIMIT_DISABLE")
+                .map(|v| v == "true")
+                .unwrap_or(false),
         })
     }
 

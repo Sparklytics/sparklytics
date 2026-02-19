@@ -31,7 +31,7 @@ export function EmptyState({ websiteId, domain = 'yourdomain.com' }: EmptyStateP
           Add the tracking snippet to your site. Once your first pageview arrives, data will appear here.
         </p>
 
-        <div className="bg-surface-input border border-line rounded-lg text-left relative group">
+        <div className="bg-surface-2 border border-line rounded-lg text-left relative group">
           <div className="flex items-center justify-between px-4 py-2 border-b border-line">
             <span className="text-xs text-ink-3">HTML</span>
             <button

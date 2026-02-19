@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use axum::{
     body::Body,
-    extract::Request,
-    http::{header::CONTENT_TYPE, StatusCode, Uri},
+    extract::{DefaultBodyLimit, Request},
+    http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode, Uri},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post, put},
@@ -11,7 +11,7 @@ use axum::{
 };
 use include_dir::{include_dir, Dir};
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::{AllowOrigin, Any, CorsLayer},
     trace::TraceLayer,
 };
 
@@ -64,10 +64,7 @@ async fn serve_dashboard(uri: Uri) -> Response {
     let candidates: Vec<String> = if raw_path.is_empty() {
         vec!["index.html".to_string()]
     } else if raw_path.ends_with('/') {
-        vec![
-            format!("{}index.html", raw_path),
-            "index.html".to_string(),
-        ]
+        vec![format!("{}index.html", raw_path), "index.html".to_string()]
     } else {
         vec![
             raw_path.to_string(),
@@ -92,19 +89,55 @@ async fn serve_dashboard(uri: Uri) -> Response {
     StatusCode::NOT_FOUND.into_response()
 }
 
+/// Build the CORS layer for analytics query + auth routes.
+///
+/// If `SPARKLYTICS_CORS_ORIGINS` is set, only those origins are allowed.
+/// If it's empty, no cross-origin requests are allowed at all (same-origin only).
+fn restricted_cors(origins: &[String]) -> CorsLayer {
+    if origins.is_empty() {
+        // No allowed origins configured — block all cross-origin requests.
+        CorsLayer::new()
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_headers(Any)
+    } else {
+        let parsed: Vec<HeaderValue> = origins
+            .iter()
+            .filter_map(|o| o.parse::<HeaderValue>().ok())
+            .collect();
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(parsed))
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_headers(Any)
+    }
+}
+
 /// Construct the Axum [`Router`] with all routes and middleware attached.
 pub fn build_app(state: Arc<AppState>) -> Router {
     let auth_mode = state.config.auth_mode.clone();
 
+    // CORS: /api/collect allows any origin; analytics/auth routes enforce allowlist.
+    let collect_cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::POST, Method::OPTIONS])
+        .allow_headers(Any);
+    let query_cors = restricted_cors(&state.config.cors_origins);
+
+    // /api/collect in its own sub-router so layer() type inference works cleanly.
+    let collect_router = Router::new()
+        .route("/api/collect", post(routes::collect::collect))
+        .layer(collect_cors)
+        .layer(DefaultBodyLimit::max(routes::collect::COLLECT_BODY_LIMIT));
+
     // Always-public routes.
     let mut app = Router::new()
         .route("/health", get(routes::health::health))
-        .route("/api/collect", post(routes::collect::collect));
+        .merge(collect_router);
 
     match auth_mode {
         AuthMode::None => {
             // No auth: all routes open, no auth endpoints.
-            app = app
+            // Apply query_cors to the analytics sub-router.
+            let analytics = Router::new()
                 .route("/api/websites", post(routes::websites::create_website))
                 .route("/api/websites", get(routes::websites::list_websites))
                 .route(
@@ -123,16 +156,18 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/realtime",
                     get(routes::realtime::get_realtime),
-                );
+                )
+                .layer(query_cors);
+            app = app.merge(analytics);
         }
         _ => {
-            // Public auth routes.
+            // Public auth routes (no CORS — dashboard same-origin only).
             app = app
                 .route("/api/auth/status", get(auth::handlers::auth_status))
                 .route("/api/auth/setup", post(auth::handlers::auth_setup))
                 .route("/api/auth/login", post(auth::handlers::auth_login));
 
-            // Protected routes (cookie or API key).
+            // Protected routes (cookie or API key) — enforce CORS origins.
             let auth_state = Arc::clone(&state);
             let protected = Router::new()
                 .route("/api/websites", post(routes::websites::create_website))
@@ -154,12 +189,13 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     "/api/websites/{id}/realtime",
                     get(routes::realtime::get_realtime),
                 )
+                .layer(query_cors)
                 .layer(middleware::from_fn(move |req: Request, next: Next| {
                     let s = auth_state.clone();
                     async move { auth::middleware::require_auth(s, req, next).await }
                 }));
 
-            // Cookie-only routes (auth management).
+            // Cookie-only routes (auth management — same-origin, no CORS needed).
             let cookie_state = Arc::clone(&state);
             let cookie_only = Router::new()
                 .route("/api/auth/logout", post(auth::handlers::auth_logout))
@@ -188,11 +224,5 @@ pub fn build_app(state: Arc<AppState>) -> Router {
 
     app.fallback(serve_dashboard)
         .layer(TraceLayer::new_for_http())
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
         .with_state(state)
 }
