@@ -10,7 +10,7 @@ Read this file first. Then follow the pointers below to find what you need.
 Sparklytics is an open-source, self-hosted web analytics platform built in Rust.
 
 - **Backend**: Rust (Axum 0.8, Tokio), DuckDB (self-hosted) or PostgreSQL + ClickHouse (cloud)
-- **Frontend**: React 18 + Vite + TailwindCSS + shadcn/ui
+- **Frontend**: Next 16 + TailwindCSS + shadcn/ui
 - **SDK**: `@sparklytics/next` (npm package, Next.js App Router + Pages Router)
 - **Self-hosted auth**: Argon2id password, JWT HttpOnly cookie, 3 modes (none/password/local)
 - **Cloud auth**: Clerk (clerk-rs crate), Organizations = multi-tenancy
@@ -43,7 +43,7 @@ Individual sprint files:
 |--------|------|-------|
 | 0 | [`docs/sprints/sprint-0.md`](docs/sprints/sprint-0.md) | Rust workspace, event collect, DuckDB |
 | 1 | [`docs/sprints/sprint-1.md`](docs/sprints/sprint-1.md) | Query API, sessions, self-hosted auth |
-| 2 | [`docs/sprints/sprint-2.md`](docs/sprints/sprint-2.md) | React dashboard, login UI |
+| 2 | [`docs/sprints/sprint-2.md`](docs/sprints/sprint-2.md) | Next.js 16 dashboard, login UI |
 | 3 | [`docs/sprints/sprint-3.md`](docs/sprints/sprint-3.md) | `@sparklytics/next` npm SDK |
 | 4 | [`docs/sprints/sprint-4.md`](docs/sprints/sprint-4.md) | OSS launch, load tests, Docker |
 | 5 | [`docs/sprints/sprint-5.md`](docs/sprints/sprint-5.md) | Clerk auth, cloud, PostgreSQL |
@@ -126,7 +126,7 @@ These are the things most likely to create contradictions if not checked:
 4. **Bounce rate SQL**: must use CTEs. Correlated subqueries don't work in DuckDB. See [`docs/06-UMAMI-MIGRATION-PLAN.md`](docs/06-UMAMI-MIGRATION-PLAN.md) Part 3.
 5. **Rate limit**: 60 req/min per IP on `/api/collect`. NOT 100.
 6. **Session timeout**: 30 minutes inactivity, server-side, no cookies.
-7. **Visitor ID**: `sha256(daily_salt + ip + user_agent)[0:16]` — 16 hex chars. Salt rotated at midnight UTC with 5-min grace period.
+7. **Visitor ID**: `sha256(salt_epoch + ip + user_agent)[0:16]` — 16 hex chars. `salt_epoch = floor(unix_timestamp / 86400)` — changes at midnight UTC. The `daily_salt` and `previous_salt` entries in the `settings` table are retained for documentation/grace-period purposes but are NOT used in the visitor ID computation (live code uses salt_epoch integer directly).
 8. **ClickHouse ORDER BY**: `(tenant_id, website_id, created_at)` — tenant_id FIRST. Critical for multi-tenant isolation.
 9. **`@sparklytics/next`**: this is the npm package name. NOT `@sparklytics/web` (old name, changed).
 10. **Umami stars**: ~6,400, NOT 35K. Don't revert this.
@@ -136,6 +136,34 @@ These are the things most likely to create contradictions if not checked:
 14. **Marketing site tech**: sparklytics.dev is Next.js 15 App Router, deployed on Vercel, uses `@sparklytics/next` SDK on the site itself (dog food). Full spec in [`docs/16-MARKETING-SITE.md`](docs/16-MARKETING-SITE.md).
 15. **`GET /api/auth/status` response**: Returns `{ "mode": "...", "setup_required": bool, "authenticated": bool }`. Returns 404 in `none` mode (endpoint not registered). Never returns 401. This is the only endpoint the frontend calls without auth to determine redirect destination.
 16. **DuckDB does not enforce foreign keys**: `ON DELETE CASCADE` is declared in schema for documentation but DuckDB does not enforce it. Application code must explicitly delete child rows: events → sessions → website, in that order. Same for login_attempts cleanup.
+
+---
+
+## UI Change Verification Protocol
+
+**Any change to dashboard UI (components, layout, styles, tokens) must be verified visually before marking done.**
+
+Steps after every UI edit:
+
+1. **Start the dev server** — `cd dashboard && npm run dev` (Next.js dev server on :3001; `/api` rewrites to :3000 via `next.config.ts`)
+2. **Take a desktop screenshot** — full viewport at 1440px wide. Use the `/screenshot` skill or system screenshot tool.
+3. **Take a mobile screenshot** — viewport at 390px wide (iPhone 14 size). Toggle DevTools responsive mode.
+4. **Check against design system** — run `/interface-design:audit` to catch spacing/color/depth violations before they accumulate.
+5. **Verify these specifically**:
+   - No box-shadows (borders-only depth strategy)
+   - Numbers use IBM Plex Mono (`font-mono tabular-nums`)
+   - Labels use Inter
+   - Spacing on 4px grid (no off-grid values like py-2.5, px-1.5, mb-5)
+   - Badge radius 2px (`rounded-sm`), card radius 8px (`rounded-lg`)
+   - Active nav: 2px `--spark` left border, transparent background, `--ink` text
+   - No hardcoded rgba colors outside the defined token set
+
+**Mobile breakpoints to verify** (dashboard is responsive):
+- 390px — single column, stat cards stack 1-col
+- 768px — 2-col stat grid, sidebar collapses
+- 1280px+ — 4-col stat grid, full sidebar
+
+If you cannot start the dev server (e.g., no Node installed), describe the changes made and flag that visual verification is pending.
 
 ---
 
@@ -158,7 +186,7 @@ These are the things most likely to create contradictions if not checked:
 | Variable | Description |
 |----------|-------------|
 | `CLERK_SECRET_KEY` | Clerk backend secret |
-| `CLERK_PUBLISHABLE_KEY` | Clerk frontend key |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk frontend key (inlined at `next build` time) |
 | `CLERK_WEBHOOK_SIGNING_SECRET` | Svix webhook verification |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `CLICKHOUSE_URL` | ClickHouse HTTP endpoint |
@@ -179,8 +207,11 @@ sparklytics/
 │   ├── sparklytics-core/      # Event structs, visitor ID, buffer
 │   ├── sparklytics-duckdb/    # DuckDB backend + queries
 │   └── sparklytics-server/    # Axum server, routes, auth middleware
-├── dashboard/                 # React + Vite frontend
-│   └── src/
+├── dashboard/                 # Next.js 16 App Router (static export → out/)
+│   ├── app/
+│   ├── components/
+│   ├── hooks/
+│   └── lib/
 ├── sdk/                       # @sparklytics/next npm package
 │   └── src/
 ├── migrations/                # sqlx PostgreSQL migrations (cloud)

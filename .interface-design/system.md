@@ -143,7 +143,7 @@ Sidebar:        200px wide
 Content:        padding: 24px (desktop), 16px (mobile)
 Header:         height: 56px, border-bottom: 1px --line
 
-Stat card grid: 1 col → 2 col (sm) → 4 col (lg)
+Stat card grid: 1 col → 2 col (sm) → 5 col (lg)
 Card padding:   16px (stat cards), 24px (chart cards)
 ```
 
@@ -258,7 +258,7 @@ Lighthouse: `>90`
 ## Tech Stack
 
 ```
-Framework:       React 18 + Vite
+Framework:       Next 16
 Styling:         TailwindCSS + shadcn/ui (do not hand-edit ui/ components)
 State:           TanStack Query (server), Zustand (UI)
 Charts:          Recharts

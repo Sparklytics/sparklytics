@@ -1,7 +1,7 @@
 # Frontend Requirements Specification
 
 **Component:** Sparklytics Dashboard (SPA)
-**Framework:** React 18+ with Vite
+**Framework:** React 18+ with Next.js 16 (App Router, `output: 'export'`)
 **Styling:** TailwindCSS 3+
 **Charts:** Recharts
 **State:** TanStack Query (server) + zustand (UI)
@@ -11,68 +11,78 @@
 
 ```
 dashboard/
-├── index.html
-├── vite.config.ts
+├── next.config.ts            # output: 'export'; /api rewrite → localhost:3000 in dev
 ├── tailwind.config.js
 ├── tsconfig.json
 ├── package.json
-├── src/
-│   ├── main.tsx              # Entry point
-│   ├── App.tsx               # Root component, routing
-│   ├── api/                  # API client
-│   │   ├── client.ts         # Fetch wrapper with auth
-│   │   ├── types.ts          # API response types
-│   │   └── hooks.ts          # TanStack Query hooks
-│   ├── components/
-│   │   ├── layout/
-│   │   │   ├── Header.tsx    # Website selector, date picker
-│   │   │   ├── Sidebar.tsx   # Navigation (if needed)
-│   │   │   └── Layout.tsx    # Page wrapper
-│   │   ├── charts/
-│   │   │   ├── LineChart.tsx  # Pageviews over time
-│   │   │   ├── BarChart.tsx   # Breakdown charts
-│   │   │   └── PieChart.tsx   # Device/browser breakdown
-│   │   ├── tables/
-│   │   │   ├── DataTable.tsx  # Generic sortable table
-│   │   │   ├── PagesTable.tsx
-│   │   │   ├── ReferrersTable.tsx
-│   │   │   └── CountriesTable.tsx
-│   │   ├── stats/
-│   │   │   ├── StatCard.tsx   # Summary stat with change %
-│   │   │   └── StatsRow.tsx   # Row of 4-5 stat cards
-│   │   ├── filters/
-│   │   │   ├── DateRangePicker.tsx
-│   │   │   ├── FilterBar.tsx
-│   │   │   └── FilterChip.tsx
-│   │   └── ui/
-│   │       ├── Button.tsx
-│   │       ├── Input.tsx
-│   │       ├── Modal.tsx
-│   │       ├── Dropdown.tsx
-│   │       ├── Tabs.tsx
-│   │       └── Loading.tsx
-│   ├── pages/
-│   │   ├── Dashboard.tsx      # Main analytics view
-│   │   ├── Realtime.tsx       # Real-time visitors
-│   │   ├── Settings.tsx       # Website management
-│   │   ├── Login.tsx          # Auth (cloud only)
-│   │   ├── Register.tsx       # Auth (cloud only)
-│   │   └── Account.tsx        # Account settings (cloud only)
-│   ├── stores/
-│   │   ├── dateRange.ts       # Date range state (zustand)
-│   │   ├── filters.ts         # Active filters state
-│   │   └── website.ts         # Selected website
-│   ├── utils/
-│   │   ├── format.ts          # Number/date formatting
-│   │   ├── countries.ts       # Country code -> name + flag
-│   │   └── colors.ts          # Chart color palette
-│   └── hooks/
-│       ├── useStats.ts
-│       ├── usePageviews.ts
-│       ├── useMetrics.ts
-│       └── useRealtime.ts
+├── app/                      # Next.js App Router
+│   ├── layout.tsx            # Root layout (QueryClientProvider, fonts, dark class)
+│   ├── page.tsx              # Root → redirect to /dashboard
+│   ├── globals.css
+│   ├── (auth)/
+│   │   └── login/
+│   │       └── page.tsx      # Login page (client component)
+│   ├── setup/
+│   │   └── page.tsx          # First-run setup wizard (client component)
+│   └── dashboard/
+│       └── [websiteId]/
+│           └── page.tsx      # Main analytics view (client component, websiteId via useParams())
+├── components/
+│   ├── layout/
+│   │   ├── AppShell.tsx      # Sidebar + header shell
+│   │   ├── Sidebar.tsx       # Navigation (includes WebsitePicker)
+│   │   ├── Header.tsx        # Date range picker, filter bar, logout
+│   │   └── WebsitePicker.tsx # Dropdown: website selector; shows "Add your first website →" if empty array returned
+│   ├── dashboard/
+│   │   ├── StatsRow.tsx      # 5 stat cards: Pageviews, Visitors, Sessions, Bounce Rate, Avg Duration
+│   │   ├── StatCard.tsx      # KPI with trend % and sparkline (sparkline: number[] from pageviews API)
+│   │   ├── PageviewsChart.tsx # Recharts LineChart, dual series
+│   │   ├── DataTable.tsx     # Generic sortable table
+│   │   ├── RealtimePanel.tsx # Active visitors + recent events
+│   │   └── EmptyState.tsx    # No-data state with tracking snippet
+│   ├── filters/
+│   │   ├── DateRangePicker.tsx  # Presets: Last 7 days, Last 30 days, Last 90 days, Custom; URL params: ?start=&end=
+│   │   ├── FilterBar.tsx
+│   │   └── FilterChip.tsx
+│   └── ui/                   # shadcn/ui (auto-generated, don't hand-edit)
+├── hooks/
+│   ├── useAuth.ts            # GET /api/auth/status → redirect logic. If 404 → treat as authenticated (none mode)
+│   ├── useFilters.ts         # zustand store: { dateRange: { start_date, end_date }, filters: Record<string,string> }
+│   │                         # URL params: ?start=&end= (mapped to start_date/end_date when calling API)
+│   │                         # Filters: ?filter_page=&filter_country= etc. (AND-ed together)
+│   ├── useStats.ts
+│   ├── usePageviews.ts
+│   ├── useMetrics.ts
+│   └── useRealtime.ts
+├── lib/
+│   ├── api.ts                # fetch wrapper with base URL + auth cookie
+│   ├── config.ts             # NEXT_PUBLIC_* env var exports (IS_CLOUD, etc.)
+│   └── utils.ts              # cn(), formatNumber(), formatDuration()
 └── public/
     └── favicon.svg
+```
+
+## Next.js Configuration
+
+```typescript
+// next.config.ts
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  output: 'export',
+  trailingSlash: true,         // generates out/dashboard/[id]/index.html per route
+  images: { unoptimized: true }, // required for static export
+  async rewrites() {           // dev-only API proxy (ignored in static export build)
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:3000/api/:path*',
+      },
+    ];
+  },
+};
+
+export default nextConfig;
 ```
 
 ## Page Specifications
@@ -168,24 +178,25 @@ export function useStats(websiteId: string) {
 - Stats: stale after 1 minute, refetch every minute
 - Pageviews: stale after 1 minute
 - Metrics: stale after 1 minute
-- Realtime: refetch every 5 seconds (polling)
+- Realtime: refetch every 30 seconds (polling)
 
 ## Design System
 
 **Color palette:**
-- Primary: #6366f1 (indigo-500)
-- Background: #ffffff (light) / #0f172a (dark future)
-- Text: #1e293b (slate-800)
-- Muted: #94a3b8 (slate-400)
-- Success: #22c55e (green-500)
-- Danger: #ef4444 (red-500)
-- Chart colors: ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd']
+- Primary: #00D084 (`spark` — electric green)
+- Background (dark default): #0F0F0F (`--canvas`)
+- Surface: #1E1E1E (`--surface-1`), #2D2D2D (`--surface-2`)
+- Text: #F8F8F8 (`--ink`), #94A3B8 (`--ink-2`)
+- Success/up: #10B981, Danger/down: #EF4444, Warn: #F59E0B
+- Chart colors: `chart-0` through `chart-5` (defined in tailwind.config.js)
+- → Full token set in `docs/14-BRAND-STYLE-GUIDE.md` and `app/globals.css`
 
 **Typography:**
-- Font: Inter (system font stack fallback)
+- Body font: Inter (400/500/600/700)
+- Mono font: IBM Plex Mono (400/500/600) — used for all numbers and code
 - Headings: font-semibold
 - Body: font-normal
-- Numbers: tabular-nums (monospace for alignment)
+- Numbers: `font-mono tabular-nums` (IBM Plex Mono, not generic monospace)
 
 **Spacing:**
 - Consistent use of Tailwind spacing scale
@@ -195,26 +206,34 @@ export function useStats(websiteId: string) {
 
 ## Build & Embedding
 
-Dashboard builds to static files via Vite:
+Dashboard builds to static files via Next.js:
 ```bash
 cd dashboard && npm run build
-# Output: dashboard/dist/
+# Runs: next build (with output: 'export' in next.config.ts)
+# Output: dashboard/out/
 ```
 
 These files are embedded into the Rust binary at compile time:
 ```rust
 use include_dir::{include_dir, Dir};
-static DASHBOARD: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../dashboard/dist");
+static DASHBOARD: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../dashboard/out");
 ```
 
-Axum serves them as a fallback route (SPA routing):
+Next.js static export creates one `index.html` per route directory. Axum serves them with a multi-level fallback:
 ```rust
 async fn serve_dashboard(uri: Uri) -> impl IntoResponse {
     let path = uri.path().trim_start_matches('/');
-    match DASHBOARD.get_file(path) {
-        Some(file) => { /* serve file with correct content-type */ },
-        None => { /* serve index.html for SPA routing */ },
+    // Try exact file first (JS chunks, CSS, images, favicon)
+    if let Some(file) = DASHBOARD.get_file(path) {
+        return serve_file(file);
     }
+    // Try path/index.html (Next.js generates one per route)
+    let index_path = format!("{}/index.html", path.trim_end_matches('/'));
+    if let Some(file) = DASHBOARD.get_file(&index_path) {
+        return serve_file(file);
+    }
+    // Fallback: root index.html (client handles 404)
+    serve_file(DASHBOARD.get_file("index.html").unwrap())
 }
 ```
 
