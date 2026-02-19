@@ -41,10 +41,12 @@ pub async fn export_events(
     }
 
     // Validate and parse dates.
-    let start = NaiveDate::parse_from_str(&q.start_date, "%Y-%m-%d")
-        .map_err(|_| AppError::BadRequest("invalid start_date format, expected YYYY-MM-DD".to_string()))?;
-    let end = NaiveDate::parse_from_str(&q.end_date, "%Y-%m-%d")
-        .map_err(|_| AppError::BadRequest("invalid end_date format, expected YYYY-MM-DD".to_string()))?;
+    let start = NaiveDate::parse_from_str(&q.start_date, "%Y-%m-%d").map_err(|_| {
+        AppError::BadRequest("invalid start_date format, expected YYYY-MM-DD".to_string())
+    })?;
+    let end = NaiveDate::parse_from_str(&q.end_date, "%Y-%m-%d").map_err(|_| {
+        AppError::BadRequest("invalid end_date format, expected YYYY-MM-DD".to_string())
+    })?;
 
     if end < start {
         return Err(AppError::BadRequest(
@@ -90,12 +92,7 @@ pub async fn export_events(
     // Serialise rows to CSV in memory.
     let csv_bytes = build_csv(&rows).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
-    let filename = format!(
-        "events-{}-{}-{}.csv",
-        website_id,
-        q.start_date,
-        q.end_date
-    );
+    let filename = format!("events-{}-{}-{}.csv", website_id, q.start_date, q.end_date);
 
     let response = Response::builder()
         .status(StatusCode::OK)
@@ -169,7 +166,8 @@ fn build_csv(rows: &[sparklytics_core::analytics::ExportRow]) -> anyhow::Result<
         .map_err(|e| anyhow::anyhow!("csv write_record failed: {e}"))?;
     }
 
-    wtr.into_inner().map_err(|e| anyhow::anyhow!("csv flush failed: {e}"))
+    wtr.into_inner()
+        .map_err(|e| anyhow::anyhow!("csv flush failed: {e}"))
 }
 
 /// `GET /api/usage` — not available in self-hosted mode (returns 404).

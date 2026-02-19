@@ -6,6 +6,7 @@ use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
+use sparklytics_core::billing::{BillingGate, BillingOutcome, NullBillingGate};
 use sparklytics_core::config::{AppMode, AuthMode, Config};
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
@@ -471,4 +472,10 @@ async fn test_auth_status_returns_mode() {
         json["authenticated"], false,
         "authenticated should be false without cookie"
     );
+}
+
+#[tokio::test]
+async fn test_null_billing_gate_test_in_server_still_passes() {
+    let gate = NullBillingGate;
+    assert_eq!(gate.check("org_any").await, BillingOutcome::Allowed);
 }

@@ -61,7 +61,9 @@ fn sample_event(website_id: &str, session_id: String) -> Event {
 #[tokio::test]
 async fn test_analytics_backend_dyn_dispatch() {
     let db = Arc::new(DuckDbBackend::open_in_memory().expect("db"));
-    db.seed_website("site_1", "example.com").await.expect("seed");
+    db.seed_website("site_1", "example.com")
+        .await
+        .expect("seed");
 
     let backend: Arc<dyn AnalyticsBackend> = db.clone();
     let today = Utc::now().date_naive();
@@ -77,7 +79,9 @@ async fn test_analytics_backend_dyn_dispatch() {
 #[tokio::test]
 async fn test_analytics_filter_all_dimensions_accepted() {
     let db = Arc::new(DuckDbBackend::open_in_memory().expect("db"));
-    db.seed_website("site_1", "example.com").await.expect("seed");
+    db.seed_website("site_1", "example.com")
+        .await
+        .expect("seed");
     let backend: Arc<dyn AnalyticsBackend> = db.clone();
 
     let today = Utc::now().date_naive();
@@ -93,7 +97,10 @@ async fn test_analytics_filter_all_dimensions_accepted() {
     filter.filter_utm_medium = Some("email".to_string());
     filter.filter_utm_campaign = Some("launch".to_string());
 
-    backend.get_stats("site_1", None, &filter).await.expect("stats");
+    backend
+        .get_stats("site_1", None, &filter)
+        .await
+        .expect("stats");
     backend
         .get_timeseries("site_1", None, &filter, None)
         .await
@@ -107,7 +114,9 @@ async fn test_analytics_filter_all_dimensions_accepted() {
 #[tokio::test]
 async fn test_timeseries_all_filters_accepted() {
     let db = Arc::new(DuckDbBackend::open_in_memory().expect("db"));
-    db.seed_website("site_1", "example.com").await.expect("seed");
+    db.seed_website("site_1", "example.com")
+        .await
+        .expect("seed");
     let backend: Arc<dyn AnalyticsBackend> = db.clone();
 
     let today = Utc::now().date_naive();
@@ -125,7 +134,9 @@ async fn test_timeseries_all_filters_accepted() {
 #[tokio::test]
 async fn test_realtime_includes_pagination() {
     let db = Arc::new(DuckDbBackend::open_in_memory().expect("db"));
-    db.seed_website("site_1", "example.com").await.expect("seed");
+    db.seed_website("site_1", "example.com")
+        .await
+        .expect("seed");
 
     let backend: Arc<dyn AnalyticsBackend> = db.clone();
     let session_id = backend
@@ -148,7 +159,9 @@ async fn test_realtime_includes_pagination() {
 #[tokio::test]
 async fn test_stats_result_includes_timezone() {
     let db = Arc::new(DuckDbBackend::open_in_memory().expect("db"));
-    db.seed_website("site_1", "example.com").await.expect("seed");
+    db.seed_website("site_1", "example.com")
+        .await
+        .expect("seed");
 
     {
         let conn = db.conn_for_test().await;
@@ -173,7 +186,9 @@ async fn test_stats_result_includes_timezone() {
 #[tokio::test]
 async fn test_session_rename_no_infinite_recursion() {
     let db = Arc::new(DuckDbBackend::open_in_memory().expect("db"));
-    db.seed_website("site_1", "example.com").await.expect("seed");
+    db.seed_website("site_1", "example.com")
+        .await
+        .expect("seed");
     let backend: Arc<dyn AnalyticsBackend> = db.clone();
 
     let session = backend

@@ -37,8 +37,7 @@ impl DuckDbBackend {
         share_id: &str,
     ) -> Result<Option<(String, Option<String>)>> {
         let conn = self.conn.lock().await;
-        let mut stmt =
-            conn.prepare("SELECT id, tenant_id FROM websites WHERE share_id = ?1")?;
+        let mut stmt = conn.prepare("SELECT id, tenant_id FROM websites WHERE share_id = ?1")?;
         match stmt.query_row(duckdb::params![share_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         }) {

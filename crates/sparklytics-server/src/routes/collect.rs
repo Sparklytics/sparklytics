@@ -128,7 +128,12 @@ pub async fn collect(
         // Session management: look up or create a session for this visitor.
         let session_id = state
             .analytics
-            .get_or_create_session(&p.website_id, &visitor_id, referrer_domain.as_deref(), &p.url)
+            .get_or_create_session(
+                &p.website_id,
+                &visitor_id,
+                referrer_domain.as_deref(),
+                &p.url,
+            )
             .await
             .map_err(AppError::Internal)?;
 
@@ -232,28 +237,18 @@ fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
     let reader = maxminddb::Reader::open_readfile(path).ok()?;
     let ip_addr = IpAddr::from_str(ip).ok()?;
 
-    let record: maxminddb::geoip2::City = reader.lookup(ip_addr).ok()?;
+    let lookup = reader.lookup(ip_addr).ok()?;
+    let record = lookup.decode::<maxminddb::geoip2::City>().ok().flatten()?;
 
-    let country = record
-        .country
-        .as_ref()
-        .and_then(|c| c.iso_code)
-        .map(|s| s.to_string());
+    let country = record.country.iso_code.map(|s| s.to_string());
 
     let region = record
         .subdivisions
-        .as_ref()
-        .and_then(|subs| subs.first())
-        .and_then(|sub| sub.names.as_ref())
-        .and_then(|names| names.get("en"))
+        .first()
+        .and_then(|sub| sub.names.english)
         .map(|s| s.to_string());
 
-    let city = record
-        .city
-        .as_ref()
-        .and_then(|c| c.names.as_ref())
-        .and_then(|names| names.get("en"))
-        .map(|s| s.to_string());
+    let city = record.city.names.english.map(|s| s.to_string());
 
     Some(GeoInfo {
         country,

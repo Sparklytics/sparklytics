@@ -21,17 +21,12 @@ anyhow = "1"
 thiserror = "1"
 sha2 = "0.10"
 hex = "0.4"
-maxminddb = "0.23"
+maxminddb = "0.27"
 woothee = "0.13"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
-clerk-rs = { version = "0.4", features = ["axum"] }
-svix = "1"
 jsonwebtoken = "9"
 rand = "0.8"
-reqwest = { version = "0.12", features = ["json"] }
-bytes   = "1"
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "chrono"] }
 argon2 = "0.5"
 base64 = "0.22"
 csv = "1.3"

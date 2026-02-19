@@ -69,8 +69,16 @@ pub(crate) async fn get_or_create_session_inner(
 /// Compute a deterministic session ID.
 ///
 /// `session_id = sha256(visitor_id + website_id + entry_page + first_seen_ms)[0:16]`
-fn compute_session_id(visitor_id: &str, website_id: &str, entry_page: &str, first_seen_ms: i64) -> String {
-    let input = format!("{}{}{}{}", visitor_id, website_id, entry_page, first_seen_ms);
+fn compute_session_id(
+    visitor_id: &str,
+    website_id: &str,
+    entry_page: &str,
+    first_seen_ms: i64,
+) -> String {
+    let input = format!(
+        "{}{}{}{}",
+        visitor_id, website_id, entry_page, first_seen_ms
+    );
     let hash = Sha256::digest(input.as_bytes());
     hex::encode(&hash[..8])
 }

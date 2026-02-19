@@ -27,6 +27,9 @@ pub enum AppError {
     #[error("forbidden")]
     Forbidden,
 
+    #[error("organization context required")]
+    OrganizationContextRequired,
+
     #[error("setup required")]
     SetupRequired,
 
@@ -64,6 +67,11 @@ impl IntoResponse for AppError {
             ),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", "Unauthorized"),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "forbidden", "Forbidden"),
+            AppError::OrganizationContextRequired => (
+                StatusCode::FORBIDDEN,
+                "organization_context_required",
+                "Organization context required",
+            ),
             AppError::SetupRequired => (
                 StatusCode::FORBIDDEN,
                 "setup_required",

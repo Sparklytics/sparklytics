@@ -160,7 +160,8 @@ pub async fn auth_login(
                 .await
                 .map_err(AppError::Internal)?;
 
-            let cookie = build_session_cookie(&token, state.config.https, state.config.session_days);
+            let cookie =
+                build_session_cookie(&token, state.config.https, state.config.session_days);
             return Ok((
                 StatusCode::OK,
                 [(header::SET_COOKIE, cookie)],

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build: compile a static musl binary, then copy into distroless.
-FROM --platform=$BUILDPLATFORM rust:1.82-slim AS builder
+FROM --platform=$BUILDPLATFORM rust:slim AS builder
 
 ARG TARGETARCH
 

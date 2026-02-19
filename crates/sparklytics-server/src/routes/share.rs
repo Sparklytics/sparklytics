@@ -186,7 +186,11 @@ pub async fn share_metrics(
 
     let metric_type = match q.metric_type.as_deref() {
         Some(t) => t,
-        None => return Err(AppError::BadRequest("type parameter is required".to_string())),
+        None => {
+            return Err(AppError::BadRequest(
+                "type parameter is required".to_string(),
+            ))
+        }
     };
 
     if !sparklytics_core::analytics::VALID_METRIC_TYPES.contains(&metric_type) {

@@ -208,7 +208,8 @@ impl DuckDbBackend {
         offset: i64,
         filter: &AnalyticsFilter,
     ) -> Result<MetricsPage> {
-        let (result, pagination) = get_metrics_inner(self, website_id, metric_type, limit, offset, filter).await?;
+        let (result, pagination) =
+            get_metrics_inner(self, website_id, metric_type, limit, offset, filter).await?;
         Ok(MetricsPage {
             rows: result.rows,
             total: pagination.total,

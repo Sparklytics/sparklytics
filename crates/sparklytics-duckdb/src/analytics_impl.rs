@@ -45,7 +45,8 @@ impl AnalyticsBackend for DuckDbBackend {
         filter: &AnalyticsFilter,
         granularity: Option<&str>,
     ) -> anyhow::Result<TimeseriesResult> {
-        crate::queries::timeseries::get_timeseries_inner(self, website_id, filter, granularity).await
+        crate::queries::timeseries::get_timeseries_inner(self, website_id, filter, granularity)
+            .await
     }
 
     async fn get_metrics(
@@ -57,9 +58,15 @@ impl AnalyticsBackend for DuckDbBackend {
         offset: i64,
         filter: &AnalyticsFilter,
     ) -> anyhow::Result<MetricsPage> {
-        let (result, pagination) =
-            crate::queries::metrics::get_metrics_inner(self, website_id, metric_type, limit, offset, filter)
-                .await?;
+        let (result, pagination) = crate::queries::metrics::get_metrics_inner(
+            self,
+            website_id,
+            metric_type,
+            limit,
+            offset,
+            filter,
+        )
+        .await?;
         Ok(MetricsPage {
             rows: result
                 .rows

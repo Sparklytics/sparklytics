@@ -72,10 +72,7 @@ async fn serve_dashboard(uri: Uri) -> Response {
     } else if raw_path.ends_with('/') {
         vec![format!("{}index.html", raw_path), "index.html".to_string()]
     } else {
-        let mut v = vec![
-            raw_path.to_string(),
-            format!("{}/index.html", raw_path),
-        ];
+        let mut v = vec![raw_path.to_string(), format!("{}/index.html", raw_path)];
         // parent directory index — e.g. "share/abc123" → "share/index.html"
         if let Some(parent) = raw_path.rfind('/').map(|i| &raw_path[..i]) {
             if !parent.is_empty() {
@@ -188,8 +185,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 )
                 .route(
                     "/api/websites/{id}/share",
-                    post(routes::share::enable_sharing)
-                        .delete(routes::share::disable_sharing),
+                    post(routes::share::enable_sharing).delete(routes::share::disable_sharing),
                 )
                 .route(
                     "/api/websites/{id}/export",
@@ -230,8 +226,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 )
                 .route(
                     "/api/websites/{id}/share",
-                    post(routes::share::enable_sharing)
-                        .delete(routes::share::disable_sharing),
+                    post(routes::share::enable_sharing).delete(routes::share::disable_sharing),
                 )
                 .route(
                     "/api/websites/{id}/export",
