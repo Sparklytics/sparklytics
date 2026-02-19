@@ -32,11 +32,6 @@ reqwest = { version = "0.12", features = ["json"] }
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "chrono"] }
 argon2 = "0.5"
 
-[features]
-default = ["selfhosted"]
-selfhosted = []
-cloud = ["clerk-rs", "sqlx", "clickhouse-rs"]
-
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"

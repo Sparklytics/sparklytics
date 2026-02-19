@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS events (
     website_id      VARCHAR NOT NULL,
     tenant_id       VARCHAR,                       -- NULL in self-hosted; Clerk org_id in cloud
     session_id      VARCHAR NOT NULL,
-    visitor_id      VARCHAR NOT NULL,              -- sha256(daily_salt + ip + ua)[0:16]
+    visitor_id      VARCHAR NOT NULL,              -- sha256(salt_epoch + ip + ua)[0:16]
 
     -- Event data
     event_type      VARCHAR NOT NULL,              -- 'pageview' | 'event'
@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS events (
     -- Timestamp
     created_at      TIMESTAMP NOT NULL,
 
-    FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE
+    FOREIGN KEY (website_id) REFERENCES websites(id)
 );
 
 -- Primary query pattern: website + date range
@@ -140,10 +140,9 @@ CREATE INDEX IF NOT EXISTS idx_events_visitor
 CREATE INDEX IF NOT EXISTS idx_events_type_date
     ON events(website_id, event_type, created_at);
 
--- Partial index: accelerates country breakdown queries (skips NULL country rows)
+-- Accelerates country breakdown queries
 CREATE INDEX IF NOT EXISTS idx_events_country_date
-    ON events(website_id, country, created_at)
-    WHERE country IS NOT NULL;
+    ON events(website_id, country, created_at);
 
 -- Schema-parity index with ClickHouse cloud schema (tenant_id always NULL in self-hosted)
 CREATE INDEX IF NOT EXISTS idx_events_tenant

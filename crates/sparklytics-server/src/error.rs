@@ -18,11 +18,23 @@ pub enum AppError {
     #[error("bad request: {0}")]
     BadRequest(String),
 
+    #[error("batch too large: {0} events (max 50)")]
+    BatchTooLarge(usize),
+
     #[error("unauthorized")]
     Unauthorized,
 
     #[error("forbidden")]
     Forbidden,
+
+    #[error("setup required")]
+    SetupRequired,
+
+    #[error("gone")]
+    Gone,
+
+    #[error("method not allowed")]
+    MethodNotAllowed,
 
     #[error("rate limited")]
     RateLimited,
@@ -38,8 +50,24 @@ impl IntoResponse for AppError {
             AppError::BadRequest(msg) => {
                 (StatusCode::BAD_REQUEST, "validation_error", msg.as_str())
             }
+            AppError::BatchTooLarge(_) => (
+                StatusCode::BAD_REQUEST,
+                "batch_too_large",
+                "Batch exceeds maximum of 50 events",
+            ),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", "Unauthorized"),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "forbidden", "Forbidden"),
+            AppError::SetupRequired => (
+                StatusCode::FORBIDDEN,
+                "setup_required",
+                "Admin setup required. POST /api/auth/setup first.",
+            ),
+            AppError::Gone => (StatusCode::GONE, "gone", "Setup already completed"),
+            AppError::MethodNotAllowed => (
+                StatusCode::METHOD_NOT_ALLOWED,
+                "method_not_allowed",
+                "Method not allowed for this auth mode",
+            ),
             AppError::RateLimited => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",

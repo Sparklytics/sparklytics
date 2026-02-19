@@ -9,6 +9,14 @@ use sparklytics_core::event::Event;
 
 use crate::schema::{INIT_SQL, MIGRATIONS_TABLE_SQL};
 
+/// Generate a cryptographically random hex string of `n` bytes (2n hex chars).
+pub(crate) fn rand_hex(n: usize) -> String {
+    use rand::RngCore;
+    let mut buf = vec![0u8; n];
+    rand::thread_rng().fill_bytes(&mut buf);
+    hex::encode(buf)
+}
+
 /// A DuckDB backend for Sparklytics.
 ///
 /// DuckDB is single-writer: concurrent reads are fine, but concurrent writes
@@ -22,7 +30,7 @@ use crate::schema::{INIT_SQL, MIGRATIONS_TABLE_SQL};
 ///
 /// `tenant_id` is always `NULL` in self-hosted mode (critical fact #2).
 pub struct DuckDbBackend {
-    conn: Arc<Mutex<Connection>>,
+    pub(crate) conn: Arc<Mutex<Connection>>,
 }
 
 impl DuckDbBackend {
@@ -36,6 +44,8 @@ impl DuckDbBackend {
         let conn = Connection::open(path)?;
         conn.execute_batch(MIGRATIONS_TABLE_SQL)?;
         conn.execute_batch(INIT_SQL)?;
+        // Seed settings (daily_salt, install_id, etc.) if this is a fresh database.
+        Self::seed_settings_sync(&conn)?;
         info!("DuckDB opened at {} with memory_limit=128MB, threads=2", path);
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -50,9 +60,63 @@ impl DuckDbBackend {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(MIGRATIONS_TABLE_SQL)?;
         conn.execute_batch(INIT_SQL)?;
+        Self::seed_settings_sync(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
+    }
+
+    /// Seed the `settings` table with initial values if they don't already exist.
+    ///
+    /// Uses `INSERT OR IGNORE` so re-runs on every startup are safe.
+    /// - `daily_salt`:    32-byte random hex, used for visitor_id hashing
+    /// - `previous_salt`: same as daily_salt initially; updated by midnight rotation
+    /// - `version`:       schema version "1"
+    /// - `install_id`:    unique 8-byte hex installation identifier
+    fn seed_settings_sync(conn: &Connection) -> Result<()> {
+        let salt = rand_hex(32);
+        let install_id = rand_hex(8);
+        conn.execute_batch(&format!(
+            r#"
+            INSERT OR IGNORE INTO settings (key, value) VALUES ('daily_salt', '{salt}');
+            INSERT OR IGNORE INTO settings (key, value) VALUES ('previous_salt', '{salt}');
+            INSERT OR IGNORE INTO settings (key, value) VALUES ('version', '1');
+            INSERT OR IGNORE INTO settings (key, value) VALUES ('install_id', '{install_id}');
+            "#,
+        ))?;
+        Ok(())
+    }
+
+    /// Read the current `daily_salt` from the `settings` table.
+    pub async fn get_daily_salt(&self) -> Result<String> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = 'daily_salt'")?;
+        let salt: String = stmt.query_row([], |row| row.get(0))?;
+        Ok(salt)
+    }
+
+    /// Rotate the daily salt at midnight UTC.
+    ///
+    /// Moves `daily_salt` → `previous_salt` (for the 5-min grace period),
+    /// then generates a new `daily_salt`. Both updates run in a single
+    /// transaction so there is never a window with a missing salt.
+    pub async fn rotate_salt(&self) -> Result<()> {
+        let mut conn = self.conn.lock().await;
+        let tx = conn.transaction()?;
+        let new_salt = rand_hex(32);
+        // Copy current daily_salt → previous_salt
+        tx.execute_batch(
+            "UPDATE settings SET value = (SELECT value FROM settings WHERE key = 'daily_salt') \
+             WHERE key = 'previous_salt'",
+        )?;
+        // Generate fresh daily_salt
+        tx.execute(
+            "UPDATE settings SET value = ?1 WHERE key = 'daily_salt'",
+            duckdb::params![new_salt],
+        )?;
+        tx.commit()?;
+        tracing::info!("Daily salt rotated");
+        Ok(())
     }
 
     /// Insert a batch of enriched events in a single transaction.
@@ -69,7 +133,7 @@ impl DuckDbBackend {
             return Ok(());
         }
 
-        let conn = self.conn.lock().await;
+        let mut conn = self.conn.lock().await;
 
         // Wrap the entire batch in a single transaction for atomicity and
         // throughput (one fsync instead of N).
@@ -158,6 +222,14 @@ impl DuckDbBackend {
         Ok(())
     }
 
+    /// Acquire the DuckDB connection lock for direct queries.
+    ///
+    /// Intended for integration tests that need to verify stored data.
+    /// Production code should use the typed methods above.
+    pub async fn conn_for_test(&self) -> tokio::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().await
+    }
+
     /// Insert or replace a website row.
     ///
     /// Intended for test fixtures and the website-management API. Uses
@@ -167,8 +239,9 @@ impl DuckDbBackend {
     pub async fn seed_website(&self, id: &str, domain: &str) -> Result<()> {
         let conn = self.conn.lock().await;
         conn.execute(
-            r#"INSERT OR REPLACE INTO websites (id, name, domain, timezone, created_at, updated_at)
-               VALUES (?1, ?2, ?3, 'UTC', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"#,
+            r#"INSERT INTO websites (id, name, domain, timezone, created_at, updated_at)
+               VALUES (?1, ?2, ?3, 'UTC', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+               ON CONFLICT (id) DO UPDATE SET domain = EXCLUDED.domain"#,
             duckdb::params![id, domain, domain],
         )?;
         Ok(())

@@ -3,6 +3,10 @@ name = "sparklytics-server"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "sparklytics_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sparklytics"
 path = "src/main.rs"
@@ -25,6 +29,18 @@ chrono = { workspace = true }
 maxminddb = { workspace = true }
 woothee = { workspace = true }
 rand = { workspace = true }
+argon2 = { workspace = true }
+jsonwebtoken = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+include_dir = "0.7"
+
+[dev-dependencies]
+axum = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
+serde_json = { workspace = true }
+http-body-util = "0.1"
 
 [features]
 default = ["selfhosted"]

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
@@ -47,15 +48,13 @@ pub async fn collect(
 ) -> Result<impl IntoResponse, AppError> {
     // Normalise single event / batch into a uniform Vec.
     let payloads: Vec<CollectPayload> = match payload {
-        CollectOrBatch::Single(p) => vec![p],
+        CollectOrBatch::Single(p) => vec![*p],
         CollectOrBatch::Batch(v) => v,
     };
 
     // --- Validation: batch size (max 50) ---
     if payloads.len() > 50 {
-        return Err(AppError::BadRequest(
-            "batch_too_large: maximum 50 events per batch".to_string(),
-        ));
+        return Err(AppError::BatchTooLarge(payloads.len()));
     }
 
     if payloads.is_empty() {
@@ -76,6 +75,11 @@ pub async fn collect(
     // The real remote-addr fallback is wired in Sprint 1 via ConnectInfo middleware.
     let client_ip = extract_client_ip(&headers);
 
+    // --- Rate limiting: 60 req/min per IP ---
+    if !state.check_rate_limit(&client_ip).await {
+        return Err(AppError::RateLimited);
+    }
+
     // --- Extract User-Agent header ---
     let user_agent = headers
         .get(axum::http::header::USER_AGENT)
@@ -92,49 +96,66 @@ pub async fn collect(
     let ua_info = parse_user_agent(&user_agent);
 
     // --- Build enriched Event structs ---
-    let events: Vec<Event> = payloads
-        .into_iter()
-        .map(|p| {
-            let visitor_id = compute_visitor_id(&client_ip, &user_agent);
-            let referrer_domain = p
-                .referrer
-                .as_deref()
-                .and_then(extract_referrer_domain);
+    // Use an async for loop (instead of .map()) so we can call get_or_create_session().
+    let now = Utc::now();
+    let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
 
-            Event {
-                id: uuid::Uuid::new_v4().to_string(),
-                website_id: p.website_id,
-                // tenant_id is always NULL in self-hosted mode (CLAUDE.md critical fact #2).
-                tenant_id: None,
-                // session_id: derived in Sprint 1 session-management layer.
-                session_id: String::new(),
-                visitor_id,
-                event_type: p.event_type,
-                url: p.url,
-                referrer_url: p.referrer.clone(),
-                referrer_domain,
-                event_name: p.event_name,
-                // event_data is serialised to a JSON string for DuckDB VARCHAR storage.
-                event_data: p.event_data.map(|v| v.to_string()),
-                country: geo.as_ref().and_then(|g| g.country.clone()),
-                region: geo.as_ref().and_then(|g| g.region.clone()),
-                city: geo.as_ref().and_then(|g| g.city.clone()),
-                browser: ua_info.as_ref().map(|u| u.browser.clone()),
-                browser_version: ua_info.as_ref().and_then(|u| u.browser_version.clone()),
-                os: ua_info.as_ref().map(|u| u.os.clone()),
-                os_version: ua_info.as_ref().and_then(|u| u.os_version.clone()),
-                device_type: ua_info.as_ref().map(|u| u.device_type.clone()),
-                screen: p.screen,
-                language: p.language,
-                utm_source: p.utm_source,
-                utm_medium: p.utm_medium,
-                utm_campaign: p.utm_campaign,
-                utm_term: p.utm_term,
-                utm_content: p.utm_content,
-                created_at: Utc::now(),
+    for p in payloads {
+        let visitor_id = compute_visitor_id(&client_ip, &user_agent);
+        let referrer_domain = p.referrer.as_deref().and_then(extract_referrer_domain);
+
+        // Session management: look up or create a session for this visitor.
+        let session_result = state
+            .db
+            .get_or_create_session(&visitor_id, &p.website_id, &p.url, now)
+            .await
+            .map_err(AppError::Internal)?;
+
+        // Extract UTM params from the URL query string as fallback.
+        let url_utm = extract_utm_from_url(&p.url);
+
+        // Build screen string: prefer combined "WxH" payload field,
+        // fall back to screen_width + screen_height.
+        let screen = p.screen.or_else(|| {
+            match (p.screen_width, p.screen_height) {
+                (Some(w), Some(h)) => Some(format!("{}x{}", w, h)),
+                _ => None,
             }
-        })
-        .collect();
+        });
+
+        events.push(Event {
+            id: uuid::Uuid::new_v4().to_string(),
+            website_id: p.website_id,
+            // tenant_id is always NULL in self-hosted mode (CLAUDE.md critical fact #2).
+            tenant_id: None,
+            session_id: session_result.session_id,
+            visitor_id,
+            event_type: p.event_type,
+            url: p.url,
+            referrer_url: p.referrer.clone(),
+            referrer_domain,
+            event_name: p.event_name,
+            // event_data is serialised to a JSON string for DuckDB VARCHAR storage.
+            event_data: p.event_data.map(|v| v.to_string()),
+            country: geo.as_ref().and_then(|g| g.country.clone()),
+            region: geo.as_ref().and_then(|g| g.region.clone()),
+            city: geo.as_ref().and_then(|g| g.city.clone()),
+            browser: ua_info.as_ref().map(|u| u.browser.clone()),
+            browser_version: ua_info.as_ref().and_then(|u| u.browser_version.clone()),
+            os: ua_info.as_ref().map(|u| u.os.clone()),
+            os_version: ua_info.as_ref().and_then(|u| u.os_version.clone()),
+            device_type: ua_info.as_ref().map(|u| u.device_type.clone()),
+            screen,
+            language: p.language,
+            // Explicit payload fields take precedence over URL-extracted params.
+            utm_source: p.utm_source.or_else(|| url_utm.get("utm_source").cloned()),
+            utm_medium: p.utm_medium.or_else(|| url_utm.get("utm_medium").cloned()),
+            utm_campaign: p.utm_campaign.or_else(|| url_utm.get("utm_campaign").cloned()),
+            utm_term: p.utm_term.or_else(|| url_utm.get("utm_term").cloned()),
+            utm_content: p.utm_content.or_else(|| url_utm.get("utm_content").cloned()),
+            created_at: now,
+        });
+    }
 
     state.push_events(events).await;
 
@@ -214,6 +235,35 @@ fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
         region,
         city,
     })
+}
+
+/// Extract UTM parameters from the URL query string.
+///
+/// Returns a map of utm_source / utm_medium / utm_campaign / utm_term /
+/// utm_content → value. Used as a fallback when the caller does not supply
+/// explicit top-level utm_* fields in the payload.
+fn extract_utm_from_url(url: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let query = match url.find('?') {
+        Some(pos) => &url[pos + 1..],
+        None => return map,
+    };
+    for pair in query.split('&') {
+        let mut parts = pair.splitn(2, '=');
+        let key = parts.next().unwrap_or("").trim();
+        let value = parts.next().unwrap_or("").trim();
+        if !value.is_empty()
+            && matches!(
+                key,
+                "utm_source" | "utm_medium" | "utm_campaign" | "utm_term" | "utm_content"
+            )
+        {
+            // Minimal percent-decoding for '+' (common in form-encoded query strings).
+            let decoded = value.replace('+', " ");
+            map.insert(key.to_string(), decoded);
+        }
+    }
+    map
 }
 
 /// Parsed User-Agent fields.

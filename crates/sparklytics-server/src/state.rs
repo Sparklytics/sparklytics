@@ -1,6 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
+use std::time::Instant;
 
+use chrono::Utc;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{error, info};
 
@@ -33,6 +35,12 @@ pub struct AppState {
     /// lookup; subsequent requests hit the cache. The cache is never invalidated
     /// during a server run (websites are not deleted at runtime in Sprint 0).
     pub website_cache: Arc<RwLock<HashSet<String>>>,
+
+    /// Per-IP sliding-window rate limiter for POST /api/collect.
+    ///
+    /// Key: IP address string. Value: deque of request timestamps within the
+    /// last 60 seconds. Limit: 60 requests per IP per 60-second window.
+    rate_limiter: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
 }
 
 impl AppState {
@@ -43,6 +51,48 @@ impl AppState {
             config: Arc::new(config),
             buffer: Arc::new(Mutex::new(Vec::new())),
             website_cache: Arc::new(RwLock::new(HashSet::new())),
+            rate_limiter: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Check whether `ip` is within the 60 req/min rate limit.
+    ///
+    /// Returns `true` if the request should proceed, `false` if it should be
+    /// rejected with 429. Slides the window on every call.
+    pub async fn check_rate_limit(&self, ip: &str) -> bool {
+        let mut map = self.rate_limiter.lock().await;
+        let window = map.entry(ip.to_string()).or_default();
+        let cutoff = Instant::now() - std::time::Duration::from_secs(60);
+        // Drop timestamps older than the 60-second window.
+        while window.front().is_some_and(|t| *t < cutoff) {
+            window.pop_front();
+        }
+        if window.len() >= 60 {
+            return false; // limit reached
+        }
+        window.push_back(Instant::now());
+        true
+    }
+
+    /// Background loop: rotate the daily salt at midnight UTC.
+    ///
+    /// Calculates time until the next UTC midnight, sleeps until then, rotates,
+    /// and repeats. A failed rotation is logged as an error but does not crash
+    /// the loop — visitor IDs continue working with the current salt.
+    pub async fn run_salt_rotation_loop(self: Arc<Self>) {
+        loop {
+            let now = Utc::now();
+            let tomorrow = now.date_naive() + chrono::Duration::days(1);
+            let next_midnight = tomorrow
+                .and_hms_opt(0, 0, 0)
+                .expect("valid time")
+                .and_utc();
+            let secs_until = (next_midnight - now).num_seconds().max(1) as u64;
+            tokio::time::sleep(std::time::Duration::from_secs(secs_until)).await;
+            match self.db.rotate_salt().await {
+                Ok(()) => info!("Daily salt rotated at midnight UTC"),
+                Err(e) => error!(error = %e, "Salt rotation failed — keeping current salt"),
+            }
         }
     }
 
@@ -91,8 +141,7 @@ impl AppState {
     ///
     /// Spawned as a `tokio::spawn` task in `main.rs`. Runs until the process
     /// exits. Interval is read from `config.buffer_flush_interval_ms`
-    /// (default 1 000 ms = 1 second, but Sprint 0 calls for 5 s timer;
-    /// override via environment if needed).
+    /// (default 5 000 ms = 5 seconds per Sprint 0 spec).
     pub async fn run_buffer_flush_loop(self: Arc<Self>) {
         let interval = self.config.buffer_flush_interval();
         let mut ticker = tokio::time::interval(interval);

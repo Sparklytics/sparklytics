@@ -11,7 +11,13 @@ pub struct CollectPayload {
     pub event_type: String,
     pub url: String,
     pub referrer: Option<String>,
+    /// Combined screen resolution string, e.g. "1920x1080".
     pub screen: Option<String>,
+    /// Screen width in pixels (alternative to the combined `screen` string).
+    /// If both `screen_width` and `screen_height` are provided and `screen` is
+    /// absent, the server combines them as "{width}x{height}".
+    pub screen_width: Option<u32>,
+    pub screen_height: Option<u32>,
     pub language: Option<String>,
     pub event_name: Option<String>,
     /// Client sends a JSON object; server serializes to String before DuckDB storage.
@@ -27,7 +33,7 @@ pub struct CollectPayload {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum CollectOrBatch {
-    Single(CollectPayload),
+    Single(Box<CollectPayload>),
     Batch(Vec<CollectPayload>),
 }
 

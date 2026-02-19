@@ -13,6 +13,8 @@ pub struct Config {
     pub buffer_flush_interval_ms: u64,
     pub buffer_max_size: usize,
     pub mode: AppMode,
+    pub argon2_memory_kb: u32,
+    pub public_url: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,8 +70,8 @@ impl Config {
                 .unwrap_or_else(|_| "7".to_string())
                 .parse()
                 .unwrap_or(7),
-            buffer_flush_interval_ms: 1000,
-            buffer_max_size: 1000,
+            buffer_flush_interval_ms: 5000, // Sprint-0 spec: flush every 5s
+            buffer_max_size: 100,           // Sprint-0 spec: flush immediately at 100 events
             mode: {
                 let raw = std::env::var("SPARKLYTICS_MODE")
                     .unwrap_or_else(|_| "selfhosted".to_string());
@@ -78,6 +80,12 @@ impl Config {
                     _ => AppMode::SelfHosted,
                 }
             },
+            argon2_memory_kb: std::env::var("SPARKLYTICS_ARGON2_MEMORY_KB")
+                .unwrap_or_else(|_| "65536".to_string())
+                .parse()
+                .unwrap_or(65536),
+            public_url: std::env::var("SPARKLYTICS_PUBLIC_URL")
+                .unwrap_or_else(|_| "http://localhost:3000".to_string()),
         })
     }
 

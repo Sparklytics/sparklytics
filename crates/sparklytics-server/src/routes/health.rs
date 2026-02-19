@@ -36,9 +36,8 @@ pub async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(json!({
-                    "status": "error",
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "error": "DuckDB unreachable"
+                    "status": "degraded",
+                    "version": env!("CARGO_PKG_VERSION")
                 })),
             )
                 .into_response()
