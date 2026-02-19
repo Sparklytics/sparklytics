@@ -79,14 +79,24 @@ impl DuckDbBackend {
     fn seed_settings_sync(conn: &Connection) -> Result<()> {
         let salt = rand_hex(32);
         let install_id = rand_hex(8);
-        conn.execute_batch(&format!(
-            r#"
-            INSERT OR IGNORE INTO settings (key, value) VALUES ('daily_salt', '{salt}');
-            INSERT OR IGNORE INTO settings (key, value) VALUES ('previous_salt', '{salt}');
-            INSERT OR IGNORE INTO settings (key, value) VALUES ('version', '1');
-            INSERT OR IGNORE INTO settings (key, value) VALUES ('install_id', '{install_id}');
-            "#,
-        ))?;
+        // Use separate parameterized execute() calls — DuckDB does not support
+        // multi-statement batches with parameters, and format!() into SQL is forbidden.
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('daily_salt', ?1)",
+            duckdb::params![salt],
+        )?;
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('previous_salt', ?1)",
+            duckdb::params![salt],
+        )?;
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('version', ?1)",
+            duckdb::params!["1"],
+        )?;
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('install_id', ?1)",
+            duckdb::params![install_id],
+        )?;
         Ok(())
     }
 

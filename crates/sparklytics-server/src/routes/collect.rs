@@ -15,7 +15,10 @@ use sparklytics_core::{
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{billing::BillingOutcome, error::AppError, state::AppState};
+
+#[cfg(feature = "cloud")]
+use crate::cloud::api_keys::authenticate_api_key;
 
 /// `POST /api/collect` — ingest a single event or a batch of up to 50 events.
 ///
@@ -67,6 +70,41 @@ pub async fn collect(
             if data.to_string().len() > EVENT_DATA_MAX_BYTES {
                 return Err(AppError::PayloadTooLarge);
             }
+        }
+    }
+
+    // --- Cloud mode: extract tenant_id from API key if present ---
+    // In self-hosted mode tenant_id is always None (critical fact #2).
+    #[cfg(feature = "cloud")]
+    let cloud_tenant_id: Option<String> = {
+        use sparklytics_core::config::AppMode;
+        if state.config.mode == AppMode::Cloud {
+            let bearer = headers
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.strip_prefix("Bearer "))
+                .map(|s| s.to_string());
+
+            if let Some(key) = bearer {
+                let pool = state.cloud_pg().map_err(AppError::Internal)?;
+                authenticate_api_key(pool, &key)
+                    .await
+                    .map_err(AppError::Internal)?
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+    #[cfg(not(feature = "cloud"))]
+    let cloud_tenant_id: Option<String> = None;
+
+    // --- BillingGate check (cloud mode) ---
+    if let Some(ref tenant_id) = cloud_tenant_id {
+        let outcome = state.billing_gate.check(tenant_id).await;
+        if outcome == BillingOutcome::LimitExceeded {
+            return Err(AppError::PlanLimitExceeded);
         }
     }
 
@@ -169,6 +207,28 @@ pub async fn collect(
                 .or_else(|| url_utm.get("utm_content").cloned()),
             created_at: now,
         });
+    }
+
+    // Fire-and-forget usage increment for cloud mode (critical: never fail the response on error).
+    #[cfg(feature = "cloud")]
+    {
+        use sparklytics_core::config::AppMode;
+        if state.config.mode == AppMode::Cloud {
+            if let Some(ref tid) = cloud_tenant_id {
+                let tid = tid.clone();
+                let state_clone = Arc::clone(&state);
+                let event_count = events.len() as i64;
+                tokio::spawn(async move {
+                    if let Ok(pool) = state_clone.cloud_pg() {
+                        if let Err(e) =
+                            crate::cloud::usage::increment_usage(pool, &tid, event_count).await
+                        {
+                            tracing::warn!(error = %e, "usage increment failed (non-fatal)");
+                        }
+                    }
+                });
+            }
+        }
     }
 
     state.push_events(events).await;

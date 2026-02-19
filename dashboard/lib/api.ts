@@ -1,17 +1,28 @@
 const BASE = typeof window !== 'undefined' ? '' : 'http://localhost:3000';
 
+// In cloud mode, ClerkTokenSync registers this so request() can attach Bearer tokens.
+let _tokenGetter: (() => Promise<string | null>) | null = null;
+
+export function setTokenGetter(fn: () => Promise<string | null>): void {
+  _tokenGetter = fn;
+}
+
 type RequestOptions = {
   method?: string;
   body?: unknown;
 };
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (_tokenGetter) {
+    const token = await _tokenGetter();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     method: opts.method ?? 'GET',
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
 
@@ -66,6 +77,31 @@ export const api = {
     ),
   getRealtime: (websiteId: string) =>
     request<{ data: RealtimeResponse }>(`/api/websites/${websiteId}/realtime`),
+
+  // Sharing
+  enableSharing: (websiteId: string) =>
+    request<{ data: { share_id: string; share_url: string } }>(
+      `/api/websites/${websiteId}/share`,
+      { method: 'POST' }
+    ),
+  disableSharing: (websiteId: string) =>
+    fetch(`${BASE}/api/websites/${websiteId}/share`, {
+      method: 'DELETE',
+      credentials: 'include',
+    }),
+
+  // Usage (cloud only — returns null if 404 in self-hosted mode)
+  getUsage: async (): Promise<UsageResponse | null> => {
+    const res = await fetch(`${BASE}/api/usage`, { credentials: 'include' });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error('Failed to fetch usage');
+    const json = await res.json();
+    return json.data;
+  },
+
+  // Export — triggers a file download
+  getExportUrl: (websiteId: string, startDate: string, endDate: string): string =>
+    `${BASE}/api/websites/${websiteId}/export?start_date=${startDate}&end_date=${endDate}&format=csv`,
 };
 
 function toQuery(params: Record<string, string>): string {
@@ -80,6 +116,7 @@ export interface Website {
   domain: string;
   timezone: string;
   created_at: string;
+  share_id?: string | null;
 }
 
 export interface StatsResponse {
@@ -142,4 +179,12 @@ export interface RealtimeResponse {
     limit: number;
     total_in_window: number;
   };
+}
+
+export interface UsageResponse {
+  month: string;
+  event_count: number;
+  event_limit: number;
+  percent_used: number;
+  plan: string;
 }

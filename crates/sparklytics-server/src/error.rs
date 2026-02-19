@@ -42,6 +42,10 @@ pub enum AppError {
     #[error("payload too large")]
     PayloadTooLarge,
 
+    /// Cloud-mode billing gate blocked the request (plan event limit exceeded).
+    #[error("plan limit exceeded")]
+    PlanLimitExceeded,
+
     #[error("internal error: {0}")]
     Internal(#[from] anyhow::Error),
 }
@@ -80,6 +84,11 @@ impl IntoResponse for AppError {
                 StatusCode::BAD_REQUEST,
                 "payload_too_large",
                 "Payload exceeds size limit",
+            ),
+            AppError::PlanLimitExceeded => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "plan_limit_exceeded",
+                "Event limit reached",
             ),
             AppError::Internal(e) => {
                 tracing::error!("Internal error: {e}");

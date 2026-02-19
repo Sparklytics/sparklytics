@@ -89,6 +89,30 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Cloud mode: initialize PostgreSQL + ClickHouse before building state.
+    #[cfg(feature = "cloud")]
+    let state = {
+        use sparklytics_core::config::AppMode;
+        if cfg.mode == AppMode::Cloud {
+            let cloud_cfg = sparklytics_server::cloud::config::CloudConfig::from_env();
+            let pg_pool = sparklytics_server::cloud::pg::create_pool(&cloud_cfg.database_url)
+                .await
+                .map_err(|e| anyhow::anyhow!("PostgreSQL pool failed: {e}"))?;
+            let ch = sparklytics_server::cloud::clickhouse::ClickHouseClient::new(
+                &cloud_cfg.clickhouse_url,
+                &cloud_cfg.clickhouse_user,
+                &cloud_cfg.clickhouse_password,
+            );
+            sparklytics_server::cloud::clickhouse::clickhouse_migrate(&ch)
+                .await
+                .map_err(|e| anyhow::anyhow!("ClickHouse migration failed: {e}"))?;
+            info!("Cloud mode: PostgreSQL + ClickHouse initialized");
+            Arc::new(AppState::new_cloud(db, cfg.clone(), pg_pool, ch, cloud_cfg))
+        } else {
+            Arc::new(AppState::new(db, cfg.clone()))
+        }
+    };
+    #[cfg(not(feature = "cloud"))]
     let state = Arc::new(AppState::new(db, cfg.clone()));
 
     // Spawn background buffer-flush task.

@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS websites (
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Track last modification
 );
-CREATE INDEX IF NOT EXISTS idx_websites_tenant ON websites(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_websites_tenant   ON websites(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_websites_share_id ON websites(share_id);
 
 -- ===========================================
 -- SESSIONS (derived, updated on each event)

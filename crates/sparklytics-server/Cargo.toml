@@ -30,11 +30,18 @@ maxminddb = { workspace = true }
 woothee = { workspace = true }
 rand = { workspace = true }
 argon2 = { workspace = true }
+base64 = { workspace = true }
 jsonwebtoken = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+csv = { workspace = true }
 include_dir = "0.7"
 ureq = "2"
+# Cloud-only optional deps (gated by the `cloud` feature).
+clerk-rs = { workspace = true, optional = true }
+sqlx    = { workspace = true, optional = true }
+svix    = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 axum = { workspace = true }
@@ -46,4 +53,4 @@ http-body-util = "0.1"
 [features]
 default = ["selfhosted"]
 selfhosted = []
-cloud = []
+cloud = ["dep:clerk-rs", "dep:sqlx", "dep:svix", "dep:reqwest"]

@@ -3,6 +3,7 @@
 import { BarChart2, Clock, Settings, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WebsitePicker } from './WebsitePicker';
+import { UsageBadge } from './UsageBadge';
 import { useWebsites } from '@/hooks/useWebsites';
 import { api } from '@/lib/api';
 
@@ -66,6 +67,9 @@ export function Sidebar({ websiteId, currentPath }: SidebarProps) {
           );
         })}
       </nav>
+
+      {/* Usage badge (cloud only, rendered by the component itself) */}
+      <UsageBadge />
 
       {/* Logout */}
       <div className="px-2 py-3 border-t border-line">

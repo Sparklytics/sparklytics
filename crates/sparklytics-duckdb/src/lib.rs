@@ -3,6 +3,7 @@ pub mod backend;
 pub mod queries;
 pub mod schema;
 pub mod session;
+pub mod share;
 pub mod website;
 
 pub use backend::DuckDbBackend;
