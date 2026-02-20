@@ -129,6 +129,20 @@ export const api = {
       method: 'PUT',
       body: { current_password: currentPassword, new_password: newPassword },
     }),
+
+  // Custom Events
+  getEventNames: (websiteId: string, params: DateRange & Filters) =>
+    request<{ data: EventNamesResult }>(
+      `/api/websites/${websiteId}/events?${toQuery(params)}`
+    ),
+  getEventProperties: (websiteId: string, eventName: string, params: DateRange & Filters) =>
+    request<{ data: EventPropertiesResult }>(
+      `/api/websites/${websiteId}/events/properties?event_name=${encodeURIComponent(eventName)}&${toQuery(params)}`
+    ),
+  getEventTimeseries: (websiteId: string, eventName: string, params: DateRange & Filters) =>
+    request<{ data: PageviewsResponse }>(
+      `/api/websites/${websiteId}/events/timeseries?event_name=${encodeURIComponent(eventName)}&${toQuery(params)}`
+    ),
 };
 
 function toQuery(params: Record<string, string>): string {
@@ -223,4 +237,31 @@ export interface UsageResponse {
   event_limit: number;
   percent_used: number;
   plan: string;
+}
+
+// --- Custom Events response types ---
+
+export interface EventNameRow {
+  event_name: string;
+  count: number;
+  visitors: number;
+  prev_count?: number;
+}
+
+export interface EventNamesResult {
+  rows: EventNameRow[];
+  total: number;
+}
+
+export interface EventPropertyRow {
+  property_key: string;
+  property_value: string;
+  count: number;
+}
+
+export interface EventPropertiesResult {
+  event_name: string;
+  total_occurrences: number;
+  sample_size: number;
+  properties: EventPropertyRow[];
 }

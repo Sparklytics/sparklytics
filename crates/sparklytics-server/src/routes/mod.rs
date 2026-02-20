@@ -1,4 +1,5 @@
 pub mod collect;
+pub mod events;
 pub mod export;
 pub mod health;
 pub mod metrics;

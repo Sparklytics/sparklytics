@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::event::Event;
 
 /// Optional dimension filters applied uniformly to analytics queries.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AnalyticsFilter {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
@@ -108,6 +108,36 @@ pub struct ExportRow {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct EventNameRow {
+    pub event_name: String,
+    pub count: i64,
+    pub visitors: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prev_count: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EventPropertyRow {
+    pub property_key: String,
+    pub property_value: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EventNamesResult {
+    pub rows: Vec<EventNameRow>,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EventPropertiesResult {
+    pub event_name: String,
+    pub total_occurrences: i64,
+    pub sample_size: i64,
+    pub properties: Vec<EventPropertyRow>,
+}
+
 pub const VALID_METRIC_TYPES: &[&str] = &[
     "page",
     "referrer",
@@ -173,4 +203,28 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         start: NaiveDate,
         end: NaiveDate,
     ) -> anyhow::Result<Vec<ExportRow>>;
+
+    async fn get_event_names(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<EventNamesResult>;
+
+    async fn get_event_properties(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        event_name: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<EventPropertiesResult>;
+
+    async fn get_event_timeseries(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        event_name: &str,
+        filter: &AnalyticsFilter,
+        granularity: Option<&str>,
+    ) -> anyhow::Result<TimeseriesResult>;
 }

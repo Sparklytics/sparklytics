@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/dashboard/EmptyState';
 import { WorldMap } from '@/components/dashboard/WorldMap';
 import { RealtimePage } from '@/components/realtime/RealtimePage';
 import { WebsiteDetail } from '@/components/settings/WebsiteDetail';
+import { EventsPage } from '@/components/events/EventsPage';
 import { useStats } from '@/hooks/useStats';
 import { usePageviews } from '@/hooks/usePageviews';
 import { useMetrics } from '@/hooks/useMetrics';
@@ -18,8 +19,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useWebsites } from '@/hooks/useWebsites';
 import { cn } from '@/lib/utils';
 
-type Tab = 'Overview' | 'Pages' | 'Geolocation' | 'Systems' | 'Events';
-const TABS: Tab[] = ['Overview', 'Pages', 'Geolocation', 'Systems', 'Events'];
+
 
 function navigate(path: string) {
   window.history.pushState({}, '', path);
@@ -28,28 +28,30 @@ function navigate(path: string) {
 
 // For the static export SPA: the Rust server serves this shell for all
 // /dashboard/* paths. We read the websiteId from window.location client-side.
-function useUrlSegments(): { websiteId: string; subPage: string } {
+function useUrlSegments(): { websiteId: string; subPage: string; subSubPage: string } {
   const [websiteId, setWebsiteId] = useState('');
   const [subPage, setSubPage] = useState('');
+  const [subSubPage, setSubSubPage] = useState('');
   useEffect(() => {
     function read() {
       // URL pattern: /dashboard/<websiteId>/<subPage>
       const segments = window.location.pathname.split('/').filter(Boolean);
       setWebsiteId(segments[1] ?? '');
       setSubPage(segments[2] ?? '');
+      setSubSubPage(segments[3] ?? '');
     }
     read();
     window.addEventListener('popstate', read);
     return () => window.removeEventListener('popstate', read);
   }, []);
-  return { websiteId, subPage };
+  return { websiteId, subPage, subSubPage };
 }
 
 export function DashboardClient() {
-  const [activeTab, setActiveTab] = useState<Tab>('Overview');
-  const { websiteId, subPage } = useUrlSegments();
+  const { websiteId, subPage, subSubPage } = useUrlSegments();
   const { data: authStatus, isSuccess: authLoaded, isError: authError } = useAuth();
   const { data: websitesData } = useWebsites();
+  const analyticsEnabled = subPage !== 'settings' && subPage !== 'realtime';
 
   // Auth redirect guard
   useEffect(() => {
@@ -77,22 +79,21 @@ export function DashboardClient() {
   // Find the current website for EmptyState domain prop
   const currentWebsite = websitesData?.data?.find((w) => w.id === websiteId);
 
-  const { data: statsData, isLoading: statsLoading } = useStats(websiteId);
-  const { data: pageviewsData, isLoading: pvLoading } = usePageviews(websiteId);
-  const { data: pagesData, isLoading: pagesLoading } = useMetrics(websiteId, 'page');
-  const { data: referrersData, isLoading: refLoading } = useMetrics(websiteId, 'referrer');
-  const { data: browsersData, isLoading: browsersLoading } = useMetrics(websiteId, 'browser');
-  const { data: countriesData, isLoading: countriesLoading } = useMetrics(websiteId, 'country');
-  const { data: osData, isLoading: osLoading } = useMetrics(websiteId, 'os');
-  const { data: devicesData, isLoading: devicesLoading } = useMetrics(websiteId, 'device');
-  const { data: eventsData, isLoading: eventsLoading } = useMetrics(websiteId, 'event_name');
-  const { data: realtimeData, isLoading: rtLoading } = useRealtime(websiteId);
+  const { data: statsData, isLoading: statsLoading } = useStats(websiteId, analyticsEnabled);
+  const { data: pageviewsData, isLoading: pvLoading } = usePageviews(websiteId, analyticsEnabled);
+  const { data: pagesData, isLoading: pagesLoading } = useMetrics(websiteId, 'page', analyticsEnabled);
+  const { data: referrersData, isLoading: refLoading } = useMetrics(websiteId, 'referrer', analyticsEnabled);
+  const { data: browsersData, isLoading: browsersLoading } = useMetrics(websiteId, 'browser', analyticsEnabled);
+  const { data: countriesData, isLoading: countriesLoading } = useMetrics(websiteId, 'country', analyticsEnabled);
+  const { data: osData, isLoading: osLoading } = useMetrics(websiteId, 'os', analyticsEnabled);
+  const { data: devicesData, isLoading: devicesLoading } = useMetrics(websiteId, 'device', analyticsEnabled);
+  const { data: realtimeData, isLoading: rtLoading } = useRealtime(websiteId, 30_000, analyticsEnabled);
 
   // Settings subpage: render inline
   if (subPage === 'settings') {
     return (
       <AppShell websiteId={websiteId}>
-        <WebsiteDetail websiteId={websiteId} />
+        <WebsiteDetail websiteId={websiteId} subSubPage={subSubPage || 'general'} />
       </AppShell>
     );
   }
@@ -119,25 +120,7 @@ export function DashboardClient() {
           <StatsRow stats={stats} series={series} loading={statsLoading || pvLoading} />
           <PageviewsChart data={series} loading={pvLoading} />
 
-          <div className="flex items-center gap-6 border-b border-line pt-2">
-            {TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  "pb-3 text-sm font-medium transition-colors relative",
-                  activeTab === tab ? "text-ink" : "text-ink-3 hover:text-ink-2"
-                )}
-              >
-                {tab}
-                {activeTab === tab && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-ink translate-y-[1px]" />
-                )}
-              </button>
-            ))}
-          </div>
-
-          {activeTab === 'Overview' && (
+          {(!subPage || subPage === 'overview') && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <DataTable
                 title="Top Pages"
@@ -155,7 +138,7 @@ export function DashboardClient() {
             </div>
           )}
 
-          {activeTab === 'Pages' && (
+          {subPage === 'pages' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <DataTable
                 title="Pages"
@@ -168,7 +151,7 @@ export function DashboardClient() {
             </div>
           )}
 
-          {activeTab === 'Geolocation' && (
+          {subPage === 'geolocation' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
               <WorldMap data={countriesData?.data?.rows} loading={countriesLoading} />
               <DataTable
@@ -180,7 +163,7 @@ export function DashboardClient() {
             </div>
           )}
 
-          {activeTab === 'Systems' && (
+          {subPage === 'systems' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <DataTable
                 title="Browsers"
@@ -203,16 +186,7 @@ export function DashboardClient() {
             </div>
           )}
 
-          {activeTab === 'Events' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <DataTable
-                title="Events"
-                filterKey="event_name"
-                data={eventsData?.data?.rows}
-                loading={eventsLoading}
-              />
-            </div>
-          )}
+          {subPage === 'events' && <EventsPage websiteId={websiteId} />}
 
           <RealtimePanel data={realtimeData?.data} loading={rtLoading} />
         </div>

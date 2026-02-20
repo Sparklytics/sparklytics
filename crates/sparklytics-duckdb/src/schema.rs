@@ -148,6 +148,10 @@ CREATE INDEX IF NOT EXISTS idx_events_visitor
 CREATE INDEX IF NOT EXISTS idx_events_type_date
     ON events(website_id, event_type, created_at);
 
+-- Accelerates custom-events queries (event names, properties, event timeseries)
+CREATE INDEX IF NOT EXISTS idx_events_name_date
+    ON events(website_id, event_type, event_name, created_at DESC);
+
 -- Accelerates country breakdown queries
 CREATE INDEX IF NOT EXISTS idx_events_country_date
     ON events(website_id, country, created_at);

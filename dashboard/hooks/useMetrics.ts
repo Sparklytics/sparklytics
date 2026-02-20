@@ -4,13 +4,13 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useFilters } from './useFilters';
 
-export function useMetrics(websiteId: string, type: string) {
+export function useMetrics(websiteId: string, type: string, enabled = true) {
   const { dateRange, filters } = useFilters();
   return useQuery({
     queryKey: ['metrics', websiteId, type, dateRange, filters],
     queryFn: () => api.getMetrics(websiteId, type, { ...dateRange, ...filters }),
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
-    enabled: !!websiteId && !!type,
+    enabled: !!websiteId && !!type && enabled,
   });
 }

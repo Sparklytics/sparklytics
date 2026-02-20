@@ -1,5 +1,6 @@
 'use client';
 
+import { AppShell } from '@/components/layout/AppShell';
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
 
 export default function OnboardingPage() {
@@ -8,8 +9,8 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas flex items-center justify-center px-4">
-      <div className="w-full max-w-lg">
+    <AppShell websiteId="">
+      <div className="w-full max-w-lg mx-auto mt-24">
         <div className="text-center mb-8">
           <h1 className="text-xl font-semibold text-ink">
             Welcome to <span className="text-spark">spark</span>lytics
@@ -18,6 +19,6 @@ export default function OnboardingPage() {
         </div>
         <OnboardingWizard onComplete={handleComplete} />
       </div>
-    </div>
+    </AppShell>
   );
 }

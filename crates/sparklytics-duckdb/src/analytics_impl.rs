@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use chrono::NaiveDate;
 
 use sparklytics_core::analytics::{
-    AnalyticsBackend, AnalyticsFilter, ExportRow, MetricRow, MetricsPage, RealtimeEvent,
-    RealtimePagination, RealtimeResult, StatsResult, TimeseriesResult,
+    AnalyticsBackend, AnalyticsFilter, EventNamesResult, EventPropertiesResult, ExportRow,
+    MetricRow, MetricsPage, RealtimeEvent, RealtimePagination, RealtimeResult, StatsResult,
+    TimeseriesResult,
 };
 use sparklytics_core::event::Event;
 
@@ -137,5 +138,43 @@ impl AnalyticsBackend for DuckDbBackend {
                 created_at: r.created_at,
             })
             .collect())
+    }
+
+    async fn get_event_names(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<EventNamesResult> {
+        crate::queries::events::get_event_names_inner(self, website_id, filter).await
+    }
+
+    async fn get_event_properties(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        event_name: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<EventPropertiesResult> {
+        crate::queries::events::get_event_properties_inner(self, website_id, event_name, filter)
+            .await
+    }
+
+    async fn get_event_timeseries(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        event_name: &str,
+        filter: &AnalyticsFilter,
+        granularity: Option<&str>,
+    ) -> anyhow::Result<TimeseriesResult> {
+        crate::queries::events::get_event_timeseries_inner(
+            self,
+            website_id,
+            event_name,
+            filter,
+            granularity,
+        )
+        .await
     }
 }

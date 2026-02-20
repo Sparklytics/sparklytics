@@ -178,6 +178,18 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 )
                 .route("/api/websites/{id}/stats", get(routes::stats::get_stats))
                 .route(
+                    "/api/websites/{id}/events",
+                    get(routes::events::get_event_names),
+                )
+                .route(
+                    "/api/websites/{id}/events/properties",
+                    get(routes::events::get_event_properties),
+                )
+                .route(
+                    "/api/websites/{id}/events/timeseries",
+                    get(routes::events::get_event_timeseries),
+                )
+                .route(
                     "/api/websites/{id}/pageviews",
                     get(routes::pageviews::get_pageviews),
                 )
@@ -220,6 +232,18 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                         .delete(routes::websites::delete_website),
                 )
                 .route("/api/websites/{id}/stats", get(routes::stats::get_stats))
+                .route(
+                    "/api/websites/{id}/events",
+                    get(routes::events::get_event_names),
+                )
+                .route(
+                    "/api/websites/{id}/events/properties",
+                    get(routes::events::get_event_properties),
+                )
+                .route(
+                    "/api/websites/{id}/events/timeseries",
+                    get(routes::events::get_event_timeseries),
+                )
                 .route(
                     "/api/websites/{id}/pageviews",
                     get(routes::pageviews::get_pageviews),

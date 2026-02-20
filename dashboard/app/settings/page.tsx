@@ -4,23 +4,10 @@ import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
 import { CreateWebsiteDialog } from '@/components/settings/CreateWebsiteDialog';
-import { WebsiteDetail } from '@/components/settings/WebsiteDetail';
 import { useWebsites } from '@/hooks/useWebsites';
 import { useAuth } from '@/hooks/useAuth';
 
-function useUrlWebsiteId(): string {
-  const [id, setId] = useState('');
-  useEffect(() => {
-    function read() {
-      const segs = window.location.pathname.split('/').filter(Boolean);
-      setId(segs[0] === 'settings' ? (segs[1] ?? '') : '');
-    }
-    read();
-    window.addEventListener('popstate', read);
-    return () => window.removeEventListener('popstate', read);
-  }, []);
-  return id;
-}
+
 
 function navigate(path: string) {
   window.history.pushState({}, '', path);
@@ -28,7 +15,6 @@ function navigate(path: string) {
 }
 
 export default function SettingsPage() {
-  const websiteId = useUrlWebsiteId();
   const { data: authStatus, isSuccess: authLoaded } = useAuth();
   const { data, isLoading } = useWebsites();
   const [showCreate, setShowCreate] = useState(false);
@@ -40,13 +26,7 @@ export default function SettingsPage() {
     if (!authStatus.authenticated) { window.location.href = '/login'; }
   }, [authStatus, authLoaded]);
 
-  if (websiteId) {
-    return (
-      <AppShell websiteId={websiteId}>
-        <WebsiteDetail websiteId={websiteId} />
-      </AppShell>
-    );
-  }
+
 
   const websites = data?.data ?? [];
 
@@ -76,7 +56,7 @@ export default function SettingsPage() {
             {websites.map((site) => (
               <button
                 key={site.id}
-                onClick={() => navigate(`/settings/${site.id}`)}
+                onClick={() => navigate(`/dashboard/${site.id}/settings/general`)}
                 className="flex items-center justify-between w-full bg-surface-1 border border-line rounded-lg px-4 py-3 hover:border-line-3 transition-colors text-left"
               >
                 <div>
