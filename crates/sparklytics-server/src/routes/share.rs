@@ -77,6 +77,9 @@ fn share_filter(start_date: NaiveDate, end_date: NaiveDate) -> AnalyticsFilter {
         filter_utm_source: None,
         filter_utm_medium: None,
         filter_utm_campaign: None,
+        filter_region: None,
+        filter_city: None,
+        filter_hostname: None,
     }
 }
 

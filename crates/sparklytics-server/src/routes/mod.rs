@@ -1,10 +1,12 @@
 pub mod collect;
 pub mod events;
 pub mod export;
+pub mod goals;
 pub mod health;
 pub mod metrics;
 pub mod pageviews;
 pub mod realtime;
+pub mod sessions;
 pub mod share;
 pub mod stats;
 pub mod websites;

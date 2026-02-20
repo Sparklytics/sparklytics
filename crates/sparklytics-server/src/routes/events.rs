@@ -31,6 +31,9 @@ pub struct EventFilterQuery {
     pub filter_utm_source: Option<String>,
     pub filter_utm_medium: Option<String>,
     pub filter_utm_campaign: Option<String>,
+    pub filter_region: Option<String>,
+    pub filter_city: Option<String>,
+    pub filter_hostname: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +117,9 @@ fn build_filter(query: &EventFilterQuery) -> Result<AnalyticsFilter, AppError> {
         filter_utm_source: query.filter_utm_source.clone(),
         filter_utm_medium: query.filter_utm_medium.clone(),
         filter_utm_campaign: query.filter_utm_campaign.clone(),
+        filter_region: query.filter_region.clone(),
+        filter_city: query.filter_city.clone(),
+        filter_hostname: query.filter_hostname.clone(),
     })
 }
 

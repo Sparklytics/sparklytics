@@ -91,6 +91,24 @@ pub async fn get_timeseries_inner(
     if let Some(ref utm_campaign) = filter.filter_utm_campaign {
         filter_sql.push_str(&format!(" AND utm_campaign = ?{}", param_idx));
         filter_params.push(Box::new(utm_campaign.clone()));
+        param_idx += 1;
+    }
+    if let Some(ref region) = filter.filter_region {
+        filter_sql.push_str(&format!(" AND region = ?{}", param_idx));
+        filter_params.push(Box::new(region.clone()));
+        param_idx += 1;
+    }
+    if let Some(ref city) = filter.filter_city {
+        filter_sql.push_str(&format!(" AND city = ?{}", param_idx));
+        filter_params.push(Box::new(city.clone()));
+        param_idx += 1;
+    }
+    if let Some(ref hostname) = filter.filter_hostname {
+        filter_sql.push_str(&format!(
+            " AND lower(regexp_extract(url, '^https?://([^/?#]+)', 1)) = lower(?{})",
+            param_idx
+        ));
+        filter_params.push(Box::new(hostname.clone()));
     }
 
     let trunc_fn = match gran.as_str() {

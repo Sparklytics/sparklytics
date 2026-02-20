@@ -11,6 +11,8 @@ import { WorldMap } from '@/components/dashboard/WorldMap';
 import { RealtimePage } from '@/components/realtime/RealtimePage';
 import { WebsiteDetail } from '@/components/settings/WebsiteDetail';
 import { EventsPage } from '@/components/events/EventsPage';
+import { SessionsPage } from '@/components/sessions/SessionsPage';
+import { GoalsPage } from '@/components/goals/GoalsPage';
 import { useStats } from '@/hooks/useStats';
 import { usePageviews } from '@/hooks/usePageviews';
 import { useMetrics } from '@/hooks/useMetrics';
@@ -51,7 +53,8 @@ export function DashboardClient() {
   const { websiteId, subPage, subSubPage } = useUrlSegments();
   const { data: authStatus, isSuccess: authLoaded, isError: authError } = useAuth();
   const { data: websitesData } = useWebsites();
-  const analyticsEnabled = subPage !== 'settings' && subPage !== 'realtime';
+  const analyticsEnabled = subPage !== 'settings' && subPage !== 'realtime'
+    && subPage !== 'sessions' && subPage !== 'goals';
 
   // Auth redirect guard
   useEffect(() => {
@@ -103,6 +106,24 @@ export function DashboardClient() {
     return (
       <AppShell websiteId={websiteId}>
         <RealtimePage websiteId={websiteId} />
+      </AppShell>
+    );
+  }
+
+  // Sessions subpage: full-screen sessions explorer
+  if (subPage === 'sessions') {
+    return (
+      <AppShell websiteId={websiteId}>
+        <SessionsPage websiteId={websiteId} />
+      </AppShell>
+    );
+  }
+
+  // Goals subpage: goals management and conversion tracking
+  if (subPage === 'goals') {
+    return (
+      <AppShell websiteId={websiteId}>
+        <GoalsPage websiteId={websiteId} />
       </AppShell>
     );
   }

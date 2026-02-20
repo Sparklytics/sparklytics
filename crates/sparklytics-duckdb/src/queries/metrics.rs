@@ -97,6 +97,24 @@ pub async fn get_metrics_inner(
         extra_params.push(Box::new(utm_campaign.clone()));
         idx += 1;
     }
+    if let Some(ref region) = filter.filter_region {
+        extra_filter.push_str(&format!(" AND region = ?{}", idx));
+        extra_params.push(Box::new(region.clone()));
+        idx += 1;
+    }
+    if let Some(ref city) = filter.filter_city {
+        extra_filter.push_str(&format!(" AND city = ?{}", idx));
+        extra_params.push(Box::new(city.clone()));
+        idx += 1;
+    }
+    if let Some(ref hostname) = filter.filter_hostname {
+        extra_filter.push_str(&format!(
+            " AND lower(regexp_extract(url, '^https?://([^/?#]+)', 1)) = lower(?{})",
+            idx
+        ));
+        extra_params.push(Box::new(hostname.clone()));
+        idx += 1;
+    }
 
     let (column_expr, include_pageviews) = match metric_type {
         "page" => ("url", true),

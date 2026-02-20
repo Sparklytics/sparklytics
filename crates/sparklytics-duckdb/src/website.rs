@@ -225,7 +225,7 @@ impl DuckDbBackend {
     /// Delete a website and all associated data.
     ///
     /// CLAUDE.md critical fact #16: DuckDB doesn't enforce FKs — cascade deletes manually.
-    /// Order: events → sessions → website.
+    /// Order: events → sessions → goals → website.
     pub async fn delete_website(&self, id: &str) -> Result<bool> {
         let conn = self.conn.lock().await;
 
@@ -243,6 +243,10 @@ impl DuckDbBackend {
         )?;
         conn.execute(
             "DELETE FROM sessions WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM goals WHERE website_id = ?1",
             duckdb::params![id],
         )?;
         conn.execute("DELETE FROM websites WHERE id = ?1", duckdb::params![id])?;

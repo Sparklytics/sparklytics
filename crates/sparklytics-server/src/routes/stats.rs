@@ -28,6 +28,9 @@ pub struct StatsQuery {
     pub filter_utm_source: Option<String>,
     pub filter_utm_medium: Option<String>,
     pub filter_utm_campaign: Option<String>,
+    pub filter_region: Option<String>,
+    pub filter_city: Option<String>,
+    pub filter_hostname: Option<String>,
 }
 
 /// `GET /api/websites/:id/stats` - Summary statistics.
@@ -74,6 +77,9 @@ pub async fn get_stats(
         filter_utm_source: query.filter_utm_source,
         filter_utm_medium: query.filter_utm_medium,
         filter_utm_campaign: query.filter_utm_campaign,
+        filter_region: query.filter_region,
+        filter_city: query.filter_city,
+        filter_hostname: query.filter_hostname,
     };
 
     let result = state

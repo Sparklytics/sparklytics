@@ -83,6 +83,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_website_visitor
 -- Optimised for realtime active-visitors query
 CREATE INDEX IF NOT EXISTS idx_sessions_realtime
     ON sessions(website_id, last_seen DESC);
+-- Optimised for sessions explorer cursor pagination
+CREATE INDEX IF NOT EXISTS idx_sessions_website_last_seen
+    ON sessions(website_id, last_seen DESC, session_id DESC);
 
 -- ===========================================
 -- EVENTS (main analytics table)
@@ -139,6 +142,9 @@ CREATE INDEX IF NOT EXISTS idx_events_website_time
 -- Accelerates session-level aggregations
 CREATE INDEX IF NOT EXISTS idx_events_website_session
     ON events(website_id, session_id);
+-- Accelerates session timeline queries ordered by created_at
+CREATE INDEX IF NOT EXISTS idx_events_website_session_time
+    ON events(website_id, session_id, created_at);
 
 -- Accelerates per-visitor history lookups
 CREATE INDEX IF NOT EXISTS idx_events_visitor
@@ -159,6 +165,22 @@ CREATE INDEX IF NOT EXISTS idx_events_country_date
 -- Schema-parity index with ClickHouse cloud schema (tenant_id always NULL in self-hosted)
 CREATE INDEX IF NOT EXISTS idx_events_tenant
     ON events(tenant_id, created_at DESC);
+
+-- ===========================================
+-- GOALS (self-hosted conversions)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS goals (
+    id              VARCHAR PRIMARY KEY,
+    website_id      VARCHAR NOT NULL,
+    name            VARCHAR NOT NULL,
+    goal_type       VARCHAR NOT NULL,              -- 'page_view' | 'event'
+    match_value     VARCHAR NOT NULL,
+    match_operator  VARCHAR NOT NULL DEFAULT 'equals',
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_goals_website_id
+    ON goals(website_id);
 
 -- ===========================================
 -- LOCAL API KEYS (self-hosted only)

@@ -143,6 +143,24 @@ export const api = {
     request<{ data: PageviewsResponse }>(
       `/api/websites/${websiteId}/events/timeseries?event_name=${encodeURIComponent(eventName)}&${toQuery(params)}`
     ),
+
+  // Sessions Explorer (Sprint 11)
+  getSessions: (websiteId: string, params: SessionsParams) =>
+    request<SessionsResponse>(`/api/websites/${websiteId}/sessions?${toQuery(params as Record<string, string>)}`),
+  getSessionDetail: (websiteId: string, sessionId: string) =>
+    request<SessionDetailResponse>(`/api/websites/${websiteId}/sessions/${sessionId}`),
+
+  // Goals & Conversion (Sprint 12)
+  listGoals: (websiteId: string) =>
+    request<{ data: Goal[] }>(`/api/websites/${websiteId}/goals`),
+  createGoal: (websiteId: string, body: CreateGoalPayload) =>
+    request<{ data: Goal }>(`/api/websites/${websiteId}/goals`, { method: 'POST', body }),
+  updateGoal: (websiteId: string, goalId: string, body: UpdateGoalPayload) =>
+    request<{ data: Goal }>(`/api/websites/${websiteId}/goals/${goalId}`, { method: 'PUT', body }),
+  deleteGoal: (websiteId: string, goalId: string) =>
+    request<void>(`/api/websites/${websiteId}/goals/${goalId}`, { method: 'DELETE' }),
+  getGoalStats: (websiteId: string, goalId: string, params: Record<string, string>) =>
+    request<{ data: GoalStats }>(`/api/websites/${websiteId}/goals/${goalId}/stats?${toQuery(params as Record<string, string>)}`),
 };
 
 function toQuery(params: Record<string, string>): string {
@@ -264,4 +282,109 @@ export interface EventPropertiesResult {
   total_occurrences: number;
   sample_size: number;
   properties: EventPropertyRow[];
+}
+
+// --- Sessions Explorer types (Sprint 11) ---
+
+export interface SessionListItem {
+  session_id: string;
+  visitor_id: string;
+  first_seen: string;
+  last_seen: string;
+  duration_seconds: number;
+  pageview_count: number;
+  event_count: number;
+  entry_page: string | null;
+  exit_page: string | null;
+  country: string | null;
+  browser: string | null;
+  os: string | null;
+  device_type: string | null;
+}
+
+export interface SessionsPagination {
+  limit: number;
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface SessionsResponse {
+  data: SessionListItem[];
+  pagination: SessionsPagination;
+}
+
+export interface SessionEventItem {
+  id: string;
+  event_type: string;
+  url: string;
+  event_name: string | null;
+  event_data: string | null;
+  created_at: string;
+}
+
+export interface SessionDetailData {
+  session: SessionListItem;
+  events: SessionEventItem[];
+  truncated: boolean;
+}
+
+export interface SessionDetailResponse {
+  data: SessionDetailData;
+}
+
+export interface SessionsParams {
+  start_date?: string;
+  end_date?: string;
+  timezone?: string;
+  limit?: number;
+  cursor?: string;
+  filter_country?: string;
+  filter_page?: string;
+  filter_referrer?: string;
+  filter_browser?: string;
+  filter_os?: string;
+  filter_device?: string;
+  filter_region?: string;
+  filter_city?: string;
+  filter_hostname?: string;
+}
+
+// --- Goals & Conversion types (Sprint 12) ---
+
+export type GoalType = 'page_view' | 'event';
+export type MatchOperator = 'equals' | 'contains';
+
+export interface Goal {
+  id: string;
+  website_id: string;
+  name: string;
+  goal_type: GoalType;
+  match_value: string;
+  match_operator: MatchOperator;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGoalPayload {
+  name: string;
+  goal_type: GoalType;
+  match_value: string;
+  match_operator?: MatchOperator;
+}
+
+export interface UpdateGoalPayload {
+  name?: string;
+  match_value?: string;
+  match_operator?: MatchOperator;
+}
+
+export interface GoalStats {
+  goal_id: string;
+  conversions: number;
+  converting_sessions: number;
+  total_sessions: number;
+  conversion_rate: number;
+  prev_conversions: number | null;
+  prev_conversion_rate: number | null;
+  trend_pct: number | null;
 }

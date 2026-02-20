@@ -190,6 +190,24 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::events::get_event_timeseries),
                 )
                 .route(
+                    "/api/websites/{id}/sessions",
+                    get(routes::sessions::list_sessions),
+                )
+                .route(
+                    "/api/websites/{id}/sessions/{session_id}",
+                    get(routes::sessions::get_session),
+                )
+                .route("/api/websites/{id}/goals", get(routes::goals::list_goals))
+                .route("/api/websites/{id}/goals", post(routes::goals::create_goal))
+                .route(
+                    "/api/websites/{id}/goals/{goal_id}",
+                    put(routes::goals::update_goal).delete(routes::goals::delete_goal),
+                )
+                .route(
+                    "/api/websites/{id}/goals/{goal_id}/stats",
+                    get(routes::goals::get_goal_stats),
+                )
+                .route(
                     "/api/websites/{id}/pageviews",
                     get(routes::pageviews::get_pageviews),
                 )
@@ -243,6 +261,24 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/events/timeseries",
                     get(routes::events::get_event_timeseries),
+                )
+                .route(
+                    "/api/websites/{id}/sessions",
+                    get(routes::sessions::list_sessions),
+                )
+                .route(
+                    "/api/websites/{id}/sessions/{session_id}",
+                    get(routes::sessions::get_session),
+                )
+                .route("/api/websites/{id}/goals", get(routes::goals::list_goals))
+                .route("/api/websites/{id}/goals", post(routes::goals::create_goal))
+                .route(
+                    "/api/websites/{id}/goals/{goal_id}",
+                    put(routes::goals::update_goal).delete(routes::goals::delete_goal),
+                )
+                .route(
+                    "/api/websites/{id}/goals/{goal_id}/stats",
+                    get(routes::goals::get_goal_stats),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",

@@ -2,9 +2,10 @@ use async_trait::async_trait;
 use chrono::NaiveDate;
 
 use sparklytics_core::analytics::{
-    AnalyticsBackend, AnalyticsFilter, EventNamesResult, EventPropertiesResult, ExportRow,
-    MetricRow, MetricsPage, RealtimeEvent, RealtimePagination, RealtimeResult, StatsResult,
-    TimeseriesResult,
+    AnalyticsBackend, AnalyticsFilter, CreateGoalRequest, EventNamesResult, EventPropertiesResult,
+    ExportRow, Goal, GoalStats, MetricRow, MetricsPage, RealtimeEvent, RealtimePagination,
+    RealtimeResult, SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult,
+    TimeseriesResult, UpdateGoalRequest,
 };
 use sparklytics_core::event::Event;
 
@@ -176,5 +177,84 @@ impl AnalyticsBackend for DuckDbBackend {
             granularity,
         )
         .await
+    }
+
+    async fn get_sessions(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &SessionsQuery,
+    ) -> anyhow::Result<SessionsResponse> {
+        crate::queries::sessions::get_sessions_inner(self, website_id, filter, query).await
+    }
+
+    async fn get_session_detail(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        session_id: &str,
+    ) -> anyhow::Result<SessionDetailResponse> {
+        crate::queries::session_detail::get_session_detail_inner(self, website_id, session_id).await
+    }
+
+    async fn list_goals(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<Goal>> {
+        crate::queries::goals::list_goals_inner(self, website_id).await
+    }
+
+    async fn create_goal(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        req: CreateGoalRequest,
+    ) -> anyhow::Result<Goal> {
+        crate::queries::goals::create_goal_inner(self, website_id, req).await
+    }
+
+    async fn update_goal(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        goal_id: &str,
+        req: UpdateGoalRequest,
+    ) -> anyhow::Result<Goal> {
+        crate::queries::goals::update_goal_inner(self, website_id, goal_id, req).await
+    }
+
+    async fn delete_goal(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        goal_id: &str,
+    ) -> anyhow::Result<()> {
+        crate::queries::goals::delete_goal_inner(self, website_id, goal_id).await
+    }
+
+    async fn get_goal_stats(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        goal_id: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<GoalStats> {
+        crate::queries::goals::get_goal_stats_inner(self, website_id, goal_id, filter).await
+    }
+
+    async fn count_goals(&self, website_id: &str, _tenant_id: Option<&str>) -> anyhow::Result<i64> {
+        crate::queries::goals::count_goals_inner(self, website_id).await
+    }
+
+    async fn goal_name_exists(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        name: &str,
+        exclude_goal_id: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        crate::queries::goals::goal_name_exists_inner(self, website_id, name, exclude_goal_id).await
     }
 }

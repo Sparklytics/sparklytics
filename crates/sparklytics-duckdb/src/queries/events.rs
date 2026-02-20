@@ -82,6 +82,24 @@ fn append_dimension_filters(
         params.push(Box::new(utm_campaign.clone()));
         *param_idx += 1;
     }
+    if let Some(ref region) = filter.filter_region {
+        filter_sql.push_str(&format!(" AND {column_prefix}region = ?{}", *param_idx));
+        params.push(Box::new(region.clone()));
+        *param_idx += 1;
+    }
+    if let Some(ref city) = filter.filter_city {
+        filter_sql.push_str(&format!(" AND {column_prefix}city = ?{}", *param_idx));
+        params.push(Box::new(city.clone()));
+        *param_idx += 1;
+    }
+    if let Some(ref hostname) = filter.filter_hostname {
+        filter_sql.push_str(&format!(
+            " AND lower(regexp_extract({column_prefix}url, '^https?://([^/?#]+)', 1)) = lower(?{})",
+            *param_idx
+        ));
+        params.push(Box::new(hostname.clone()));
+        *param_idx += 1;
+    }
 }
 
 pub async fn get_event_names_inner(

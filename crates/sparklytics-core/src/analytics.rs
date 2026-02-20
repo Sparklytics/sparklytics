@@ -1,7 +1,7 @@
 //! Analytics backend abstraction.
 
 use chrono::NaiveDate;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
 
@@ -21,6 +21,9 @@ pub struct AnalyticsFilter {
     pub filter_utm_source: Option<String>,
     pub filter_utm_medium: Option<String>,
     pub filter_utm_campaign: Option<String>,
+    pub filter_region: Option<String>,
+    pub filter_city: Option<String>,
+    pub filter_hostname: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -138,6 +141,130 @@ pub struct EventPropertiesResult {
     pub properties: Vec<EventPropertyRow>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SessionSort {
+    #[default]
+    LastSeenDesc,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionsQuery {
+    pub limit: u32,
+    pub cursor: Option<String>,
+    pub sort: SessionSort,
+}
+
+impl Default for SessionsQuery {
+    fn default() -> Self {
+        Self {
+            limit: 50,
+            cursor: None,
+            sort: SessionSort::LastSeenDesc,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionListItem {
+    pub session_id: String,
+    pub visitor_id: String,
+    pub first_seen: String,
+    pub last_seen: String,
+    pub duration_seconds: i64,
+    pub pageview_count: i64,
+    pub event_count: i64,
+    pub entry_page: Option<String>,
+    pub exit_page: Option<String>,
+    pub country: Option<String>,
+    pub browser: Option<String>,
+    pub os: Option<String>,
+    pub device_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionsPagination {
+    pub limit: u32,
+    pub next_cursor: Option<String>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionsResponse {
+    pub rows: Vec<SessionListItem>,
+    pub pagination: SessionsPagination,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionEventItem {
+    pub id: String,
+    pub event_type: String,
+    pub url: String,
+    pub event_name: Option<String>,
+    pub event_data: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionDetailResponse {
+    pub session: SessionListItem,
+    pub events: Vec<SessionEventItem>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GoalType {
+    PageView,
+    Event,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MatchOperator {
+    #[default]
+    Equals,
+    Contains,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Goal {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub goal_type: GoalType,
+    pub match_value: String,
+    pub match_operator: MatchOperator,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateGoalRequest {
+    pub name: String,
+    pub goal_type: GoalType,
+    pub match_value: String,
+    pub match_operator: Option<MatchOperator>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateGoalRequest {
+    pub name: Option<String>,
+    pub match_value: Option<String>,
+    pub match_operator: Option<MatchOperator>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalStats {
+    pub goal_id: String,
+    pub conversions: i64,
+    pub converting_sessions: i64,
+    pub total_sessions: i64,
+    pub conversion_rate: f64,
+    pub prev_conversions: Option<i64>,
+    pub prev_conversion_rate: Option<f64>,
+    pub trend_pct: Option<f64>,
+}
+
 pub const VALID_METRIC_TYPES: &[&str] = &[
     "page",
     "referrer",
@@ -227,4 +354,65 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         filter: &AnalyticsFilter,
         granularity: Option<&str>,
     ) -> anyhow::Result<TimeseriesResult>;
+
+    async fn get_sessions(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &SessionsQuery,
+    ) -> anyhow::Result<SessionsResponse>;
+
+    async fn get_session_detail(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        session_id: &str,
+    ) -> anyhow::Result<SessionDetailResponse>;
+
+    async fn list_goals(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<Goal>>;
+
+    async fn create_goal(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        req: CreateGoalRequest,
+    ) -> anyhow::Result<Goal>;
+
+    async fn update_goal(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        goal_id: &str,
+        req: UpdateGoalRequest,
+    ) -> anyhow::Result<Goal>;
+
+    async fn delete_goal(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        goal_id: &str,
+    ) -> anyhow::Result<()>;
+
+    async fn get_goal_stats(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        goal_id: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<GoalStats>;
+
+    async fn count_goals(&self, website_id: &str, tenant_id: Option<&str>) -> anyhow::Result<i64>;
+
+    async fn goal_name_exists(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        name: &str,
+        exclude_goal_id: Option<&str>,
+    ) -> anyhow::Result<bool>;
 }

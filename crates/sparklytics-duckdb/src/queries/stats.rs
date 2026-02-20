@@ -20,6 +20,9 @@ pub struct StatsParams {
     pub filter_utm_source: Option<String>,
     pub filter_utm_medium: Option<String>,
     pub filter_utm_campaign: Option<String>,
+    pub filter_region: Option<String>,
+    pub filter_city: Option<String>,
+    pub filter_hostname: Option<String>,
 }
 
 impl StatsParams {
@@ -38,6 +41,9 @@ impl StatsParams {
             filter_utm_source: filter.filter_utm_source.clone(),
             filter_utm_medium: filter.filter_utm_medium.clone(),
             filter_utm_campaign: filter.filter_utm_campaign.clone(),
+            filter_region: filter.filter_region.clone(),
+            filter_city: filter.filter_city.clone(),
+            filter_hostname: filter.filter_hostname.clone(),
         }
     }
 }
@@ -159,6 +165,24 @@ fn query_stats_for_period(
     if let Some(ref utm_campaign) = params.filter_utm_campaign {
         filter_sql.push_str(&format!(" AND e.utm_campaign = ?{}", param_idx));
         filter_params.push(Box::new(utm_campaign.clone()));
+        param_idx += 1;
+    }
+    if let Some(ref region) = params.filter_region {
+        filter_sql.push_str(&format!(" AND e.region = ?{}", param_idx));
+        filter_params.push(Box::new(region.clone()));
+        param_idx += 1;
+    }
+    if let Some(ref city) = params.filter_city {
+        filter_sql.push_str(&format!(" AND e.city = ?{}", param_idx));
+        filter_params.push(Box::new(city.clone()));
+        param_idx += 1;
+    }
+    if let Some(ref hostname) = params.filter_hostname {
+        filter_sql.push_str(&format!(
+            " AND lower(regexp_extract(e.url, '^https?://([^/?#]+)', 1)) = lower(?{})",
+            param_idx
+        ));
+        filter_params.push(Box::new(hostname.clone()));
     }
 
     let sql = format!(

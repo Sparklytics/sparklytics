@@ -14,7 +14,9 @@ import {
   Share2,
   Key,
   Shield,
-  AlertTriangle
+  AlertTriangle,
+  Users,
+  Target
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WebsitePicker } from './WebsitePicker';
@@ -51,11 +53,16 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) 
     { label: 'Pages', path: `/dashboard/${websiteId}/pages`, icon: FileText },
     { label: 'Geolocation', path: `/dashboard/${websiteId}/geolocation`, icon: Globe },
     { label: 'Systems', path: `/dashboard/${websiteId}/systems`, icon: Monitor },
-    { label: 'Events', path: `/dashboard/${websiteId}/events`, icon: Zap },
+    { label: 'Events',   path: `/dashboard/${websiteId}/events`,   icon: Zap },
+    { label: 'Sessions', path: `/dashboard/${websiteId}/sessions`, icon: Users },
   ];
 
   const liveItems = [
     { label: 'Realtime', path: `/dashboard/${websiteId}/realtime`, icon: Clock },
+  ];
+
+  const exploreItems = [
+    { label: 'Goals', path: `/dashboard/${websiteId}/goals`, icon: Target },
   ];
 
   const configItems = [
@@ -151,6 +158,13 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) 
                 <h3 className="px-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Live</h3>
                 <div className="space-y-0.5">
                   {liveItems.map(NavItem)}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="px-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Explore</h3>
+                <div className="space-y-0.5">
+                  {exploreItems.map(NavItem)}
                 </div>
               </div>
 
