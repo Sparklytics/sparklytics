@@ -103,10 +103,10 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) 
       key={label}
       onClick={() => navigate(path)}
       className={cn(
-        'group flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm transition-colors duration-100 text-left',
+        'group flex items-center gap-2 w-full py-1.5 text-sm transition-colors duration-100 text-left',
         isActive(path)
-          ? 'text-ink bg-surface-1 font-medium'
-          : 'text-ink-3 hover:text-ink hover:bg-surface-1/50'
+          ? 'text-ink font-medium border-l-2 border-spark pl-[6px] pr-2 rounded-r-md'
+          : 'text-ink-3 hover:text-ink hover:bg-surface-1/50 px-2 rounded-md'
       )}
     >
       <Icon className={cn("w-4 h-4", isActive(path) ? "text-spark" : "text-ink-3 group-hover:text-ink-2")} />

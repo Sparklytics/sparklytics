@@ -172,7 +172,11 @@ fn query_period_stats(
     let match_sql = match (&goal.goal_type, &goal.match_operator) {
         (GoalType::PageView, MatchOperator::Equals) => {
             params.push(Box::new(goal.match_value.clone()));
-            format!("e.event_type = 'pageview' AND e.url = ?{}", param_idx)
+            // Extract path+query from full URL so "/pricing" matches "http://host/pricing"
+            format!(
+                "e.event_type = 'pageview' AND regexp_extract(e.url, '^https?://[^/?#]+(/[^#]*)?', 1) = ?{}",
+                param_idx
+            )
         }
         (GoalType::PageView, MatchOperator::Contains) => {
             params.push(Box::new(format!("%{}%", goal.match_value)));

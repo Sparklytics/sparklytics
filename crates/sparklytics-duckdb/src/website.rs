@@ -224,32 +224,41 @@ impl DuckDbBackend {
 
     /// Delete a website and all associated data.
     ///
-    /// CLAUDE.md critical fact #16: DuckDB doesn't enforce FKs — cascade deletes manually.
-    /// Order: events → sessions → goals → website.
+    /// DuckDB 1.4+ enforces the FK constraint on events.website_id immediately
+    /// at statement execution time. Wrapping all operations in a single
+    /// transaction ensures that the EXISTS check and the cascade deletes share
+    /// the same MVCC snapshot: when DELETE FROM websites runs, DuckDB sees the
+    /// events as already deleted within the current transaction and the FK check
+    /// passes. The EXISTS check must be inside the same transaction for this
+    /// to work correctly. Order: events → sessions → goals → website.
     pub async fn delete_website(&self, id: &str) -> Result<bool> {
-        let conn = self.conn.lock().await;
+        let mut conn = self.conn.lock().await;
+        let tx = conn.transaction()?;
 
-        let exists: i64 = conn
+        let exists: i64 = tx
             .prepare("SELECT COUNT(*) FROM websites WHERE id = ?1")?
             .query_row(duckdb::params![id], |row| row.get(0))?;
         if exists == 0 {
+            // Nothing to delete; let the transaction roll back on drop.
             return Ok(false);
         }
 
-        // Cascade delete: events → sessions → website (critical fact #16).
-        conn.execute(
+        // Cascade delete inside the transaction. DuckDB's FK check on
+        // DELETE FROM websites sees the events as deleted within this tx.
+        tx.execute(
             "DELETE FROM events WHERE website_id = ?1",
             duckdb::params![id],
         )?;
-        conn.execute(
+        tx.execute(
             "DELETE FROM sessions WHERE website_id = ?1",
             duckdb::params![id],
         )?;
-        conn.execute(
+        tx.execute(
             "DELETE FROM goals WHERE website_id = ?1",
             duckdb::params![id],
         )?;
-        conn.execute("DELETE FROM websites WHERE id = ?1", duckdb::params![id])?;
+        tx.execute("DELETE FROM websites WHERE id = ?1", duckdb::params![id])?;
+        tx.commit()?;
 
         Ok(true)
     }

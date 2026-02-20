@@ -136,7 +136,7 @@ These are the things most likely to create contradictions if not checked:
 13. **Billing code is private**: `sparklytics-billing` (Stripe, plan enforcement, usage counters) lives in the private `sparklytics-cloud` repo. NEVER add billing logic to the public `sparklytics` repo. Plan limits are enforced via the `BillingGate` trait — `NullBillingGate` (public, always allows) vs `StripeBillingGate` (private, checks PostgreSQL). See [`docs/15-REPO-STRATEGY.md`](docs/15-REPO-STRATEGY.md).
 14. **Marketing site tech**: sparklytics.dev is Next.js 15 App Router, deployed on Vercel, uses `@sparklytics/next` SDK on the site itself (dog food). Full spec in [`docs/16-MARKETING-SITE.md`](docs/16-MARKETING-SITE.md).
 15. **`GET /api/auth/status` response**: Returns `{ "mode": "...", "setup_required": bool, "authenticated": bool }`. Returns 404 in `none` mode (endpoint not registered). Never returns 401. This is the only endpoint the frontend calls without auth to determine redirect destination.
-16. **DuckDB does not enforce foreign keys**: `ON DELETE CASCADE` is declared in schema for documentation but DuckDB does not enforce it. Application code must explicitly delete child rows: events → sessions → website, in that order. Same for login_attempts cleanup.
+16. **DuckDB 1.4+ enforces foreign keys**: The events table has `FOREIGN KEY (website_id) REFERENCES websites(id)`. DuckDB 1.4.4 (current version) actively enforces this. Application code must delete child rows first (events → sessions → goals → website), **wrapped in a single transaction** so FK checks happen at commit time when the child rows are already gone. `delete_website()` uses `conn.transaction()` for this reason. Same care needed for login_attempts cleanup.
 
 ---
 

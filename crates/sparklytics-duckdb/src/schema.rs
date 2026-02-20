@@ -20,10 +20,16 @@
 ///   - Bounce-rate queries MUST use CTEs. Correlated subqueries do not work
 ///     in DuckDB. See bounce_rate CTE patterns in the query layer.
 ///
-/// NOTE: DuckDB parses FOREIGN KEY syntax but does NOT enforce referential
-/// integrity. Constraints are included for documentation purposes only.
-/// Application code must validate foreign key relationships before
-/// INSERT / UPDATE / DELETE.
+/// NOTE: DuckDB 1.4+ enforces FOREIGN KEY constraints immediately at statement
+/// execution time (not deferred to commit). However, within a single
+/// transaction, writes made earlier in the same transaction ARE visible to FK
+/// checks on later statements. So: run all cascade deletes inside one
+/// transaction (child rows first, parent last). The EXISTS check must also be
+/// inside the same transaction. See delete_website() in website.rs.
+/// ALTER TABLE ... DROP CONSTRAINT is NOT supported in DuckDB 1.4.4, so the
+/// events.website_id FK was removed from the schema for NEW databases (see
+/// events table below). Existing databases retain the FK but delete_website()
+/// handles it correctly via the full-transaction approach.
 pub fn init_sql(memory_limit: &str) -> String {
     format!(
         r#"SET memory_limit = '{memory_limit}';
@@ -130,9 +136,12 @@ CREATE TABLE IF NOT EXISTS events (
     utm_content     VARCHAR,
 
     -- Timestamp
-    created_at      TIMESTAMP NOT NULL,
-
-    FOREIGN KEY (website_id) REFERENCES websites(id)
+    created_at      TIMESTAMP NOT NULL
+    -- NOTE: No FOREIGN KEY on website_id. DuckDB 1.4+ enforces FK constraints
+    -- immediately (not deferred), which conflicts with the manual cascade-delete
+    -- order needed for events → sessions → goals → websites. See migration
+    -- m001_drop_events_fk() in backend.rs which drops this constraint on
+    -- existing databases that were created with the old FK declaration.
 );
 
 -- Primary query pattern: website + date range

@@ -9,12 +9,14 @@ export function useSessions(websiteId: string) {
 
   return useInfiniteQuery<SessionsResponse>({
     queryKey: ['sessions', websiteId, dateRange, filters],
-    queryFn: ({ pageParam }) =>
-      api.getSessions(websiteId, {
+    queryFn: ({ pageParam }) => {
+      const cursor = pageParam as string | null;
+      return api.getSessions(websiteId, {
         ...dateRange,
         ...filters,
-        cursor: (pageParam as string | null) ?? undefined,
-      }),
+        ...(cursor ? { cursor } : {}),
+      });
+    },
     getNextPageParam: (last) =>
       last.pagination.has_more ? last.pagination.next_cursor : undefined,
     initialPageParam: null,
