@@ -48,12 +48,14 @@ export function StatCard({ label, value, delta, sparklineData, loading }: StatCa
   }
 
   return (
-    <div className="bg-surface-1 border border-line rounded-lg p-4 flex flex-col gap-2">
-      <span className="text-xs text-ink-2 uppercase tracking-wide">{label}</span>
-      <span className="font-mono tabular-nums text-3xl leading-none text-ink">
+    <div className="bg-surface-1 border border-line rounded-lg p-5 flex flex-col gap-2 relative">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-ink-3 uppercase tracking-wider font-medium">{label}</span>
+        {delta !== undefined && <TrendBadge delta={delta} />}
+      </div>
+      <span className="text-3xl font-semibold tracking-tight tabular-nums text-ink mt-1">
         {value}
       </span>
-      {delta !== undefined && <TrendBadge delta={delta} />}
       {sparklineData && sparklineData.length > 0 && (
         <div className="mt-1">
           <Sparkline

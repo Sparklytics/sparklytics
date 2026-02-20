@@ -36,6 +36,15 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     throw new Error(err?.error?.message ?? 'Request failed');
   }
 
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = res.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    return undefined as T;
+  }
+
   return res.json() as Promise<T>;
 }
 
@@ -63,8 +72,13 @@ export const api = {
 
   // Websites
   getWebsites: () => request<{ data: Website[] }>('/api/websites'),
-  createWebsite: (payload: { name: string; domain: string }) =>
+  getWebsite: (id: string) => request<{ data: Website }>(`/api/websites/${id}`),
+  createWebsite: (payload: { name: string; domain: string; timezone?: string }) =>
     request<{ data: Website }>('/api/websites', { method: 'POST', body: payload }),
+  updateWebsite: (id: string, payload: { name?: string; domain?: string; timezone?: string }) =>
+    request<{ data: Website }>(`/api/websites/${id}`, { method: 'PUT', body: payload }),
+  deleteWebsite: (id: string) =>
+    request<void>(`/api/websites/${id}`, { method: 'DELETE' }),
 
   // Analytics
   getStats: (websiteId: string, params: DateRange & Filters) =>
@@ -85,10 +99,7 @@ export const api = {
       { method: 'POST' }
     ),
   disableSharing: (websiteId: string) =>
-    fetch(`${BASE}/api/websites/${websiteId}/share`, {
-      method: 'DELETE',
-      credentials: 'include',
-    }),
+    request(`/api/websites/${websiteId}/share`, { method: 'DELETE' }),
 
   // Usage (cloud only — returns null if 404 in self-hosted mode)
   getUsage: async (): Promise<UsageResponse | null> => {
@@ -102,6 +113,22 @@ export const api = {
   // Export — triggers a file download
   getExportUrl: (websiteId: string, startDate: string, endDate: string): string =>
     `${BASE}/api/websites/${websiteId}/export?start_date=${startDate}&end_date=${endDate}&format=csv`,
+
+  // API Keys (self-hosted auth)
+  listApiKeys: () => request<{ data: ApiKey[] }>('/api/auth/keys'),
+  createApiKey: (name: string) =>
+    request<{ data: { id: string; name: string; key: string; prefix: string; created_at: string } }>(
+      '/api/auth/keys', { method: 'POST', body: { name } }
+    ),
+  deleteApiKey: (id: string) =>
+    request<void>(`/api/auth/keys/${id}`, { method: 'DELETE' }),
+
+  // Password (self-hosted auth)
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ data: { ok: boolean } }>('/api/auth/password', {
+      method: 'PUT',
+      body: { current_password: currentPassword, new_password: newPassword },
+    }),
 };
 
 function toQuery(params: Record<string, string>): string {
@@ -179,6 +206,15 @@ export interface RealtimeResponse {
     limit: number;
     total_in_window: number;
   };
+}
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
 }
 
 export interface UsageResponse {

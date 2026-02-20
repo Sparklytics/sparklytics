@@ -10,9 +10,10 @@ import { api } from '@/lib/api';
 interface SidebarProps {
   websiteId: string;
   currentPath: string;
+  onAddWebsite?: () => void;
 }
 
-export function Sidebar({ websiteId, currentPath }: SidebarProps) {
+export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) {
   const { data } = useWebsites();
   const websites = data?.data ?? [];
 
@@ -43,13 +44,17 @@ export function Sidebar({ websiteId, currentPath }: SidebarProps) {
 
       {/* Website picker */}
       <div className="px-2 py-3 border-b border-line">
-        <WebsitePicker websites={websites} currentId={websiteId} />
+        <WebsitePicker websites={websites} currentId={websiteId} onAddWebsite={onAddWebsite} />
       </div>
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-1">
         {navItems.map(({ label, path, icon: Icon }) => {
-          const isActive = currentPath === path;
+          const isActive = path.endsWith('/realtime')
+            ? currentPath.includes('/realtime')
+            : path.endsWith('/settings')
+              ? currentPath.startsWith('/settings')
+              : currentPath.startsWith('/dashboard') && !currentPath.includes('/realtime') && !currentPath.startsWith('/settings');
           return (
             <button
               key={label}
@@ -75,11 +80,12 @@ export function Sidebar({ websiteId, currentPath }: SidebarProps) {
       <div className="px-2 py-3 border-t border-line">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-ink-3 hover:text-ink hover:bg-surface-1 rounded transition-colors duration-100"
+          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-ink-3 hover:text-ink hover:bg-surface-1 rounded-md transition-colors duration-100"
         >
           <LogOut className="w-5 h-5" />
           Log out
         </button>
+
       </div>
     </aside>
   );

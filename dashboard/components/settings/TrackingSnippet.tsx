@@ -6,12 +6,14 @@ import { Button } from '@/components/ui/button';
 
 interface TrackingSnippetProps {
   websiteId: string;
+  domain?: string;
 }
 
-export function TrackingSnippet({ websiteId }: TrackingSnippetProps) {
+export function TrackingSnippet({ websiteId, domain }: TrackingSnippetProps) {
   const [copied, setCopied] = useState(false);
 
-  const snippet = `<script defer src="/s.js" data-website-id="${websiteId}"></script>`;
+  const srcUrl = domain ? `https://${domain}/s.js` : '/s.js';
+  const snippet = `<script defer src="${srcUrl}" data-website-id="${websiteId}"></script>`;
 
   async function handleCopy() {
     await navigator.clipboard.writeText(snippet);
@@ -28,7 +30,7 @@ export function TrackingSnippet({ websiteId }: TrackingSnippetProps) {
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      <pre className="bg-canvas border border-line rounded-md p-3 text-xs text-ink-2 overflow-x-auto whitespace-pre-wrap break-all">
+      <pre className="bg-canvas border border-line rounded-md p-4 text-xs text-ink-2 overflow-x-auto whitespace-pre-wrap break-all">
         {snippet}
       </pre>
       <p className="text-xs text-ink-3">

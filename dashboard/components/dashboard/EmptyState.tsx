@@ -8,12 +8,13 @@ interface EmptyStateProps {
   domain?: string;
 }
 
-export function EmptyState({ websiteId, domain = 'yourdomain.com' }: EmptyStateProps) {
+export function EmptyState({ websiteId, domain }: EmptyStateProps) {
   const [copied, setCopied] = useState(false);
 
+  const host = domain || window.location.host;
   const snippet = `<script
   async
-  src="https://${domain}/s.js"
+  src="https://${host}/s.js"
   data-website-id="${websiteId}"
 ></script>`;
 
@@ -51,6 +52,27 @@ export function EmptyState({ websiteId, domain = 'yourdomain.com' }: EmptyStateP
           Paste this snippet in your{' '}
           <code className="font-mono text-ink-3">&lt;head&gt;</code> tag.
         </p>
+
+        <div className="mt-6 flex items-center justify-center gap-4">
+          <button
+            onClick={() => {
+              window.history.pushState({}, '', '/onboarding');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className="text-xs text-spark hover:underline"
+          >
+            Open setup wizard
+          </button>
+          <button
+            onClick={() => {
+              window.history.pushState({}, '', `/settings/${websiteId}`);
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className="text-xs text-ink-3 hover:text-ink transition-colors"
+          >
+            Go to settings
+          </button>
+        </div>
       </div>
     </div>
   );

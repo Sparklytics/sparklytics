@@ -8,9 +8,10 @@ import type { Website } from '@/lib/api';
 interface WebsitePickerProps {
   websites: Website[];
   currentId: string;
+  onAddWebsite?: () => void;
 }
 
-export function WebsitePicker({ websites, currentId }: WebsitePickerProps) {
+export function WebsitePicker({ websites, currentId, onAddWebsite }: WebsitePickerProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const current = websites.find((w) => w.id === currentId);
@@ -34,6 +35,7 @@ export function WebsitePicker({ websites, currentId }: WebsitePickerProps) {
   if (websites.length === 0) {
     return (
       <button
+        onClick={onAddWebsite}
         className="flex items-center gap-2 w-full px-3 py-2 text-sm text-ink-2 hover:text-ink transition-colors duration-150 rounded"
       >
         <Plus className="w-4 h-4 text-spark" />

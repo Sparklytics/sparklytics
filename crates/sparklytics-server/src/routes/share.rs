@@ -62,6 +62,24 @@ fn parse_dates(start: Option<&str>, end: Option<&str>) -> (NaiveDate, NaiveDate)
     (s, e)
 }
 
+fn share_filter(start_date: NaiveDate, end_date: NaiveDate) -> AnalyticsFilter {
+    AnalyticsFilter {
+        start_date,
+        end_date,
+        timezone: None,
+        filter_country: None,
+        filter_page: None,
+        filter_referrer: None,
+        filter_browser: None,
+        filter_os: None,
+        filter_device: None,
+        filter_language: None,
+        filter_utm_source: None,
+        filter_utm_medium: None,
+        filter_utm_campaign: None,
+    }
+}
+
 /// Resolve a `share_id` to a `website_id`, applying the share rate limit.
 ///
 /// Returns `AppError::NotFound` when the share_id is unknown and
@@ -102,28 +120,11 @@ pub async fn share_stats(
 ) -> Result<impl IntoResponse, AppError> {
     let website_id = resolve_share(&state, &share_id, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
+    let filter = share_filter(start_date, end_date);
 
     let result = state
         .analytics
-        .get_stats(
-            &website_id,
-            None,
-            &AnalyticsFilter {
-                start_date,
-                end_date,
-                timezone: None,
-                filter_country: None,
-                filter_page: None,
-                filter_referrer: None,
-                filter_browser: None,
-                filter_os: None,
-                filter_device: None,
-                filter_language: None,
-                filter_utm_source: None,
-                filter_utm_medium: None,
-                filter_utm_campaign: None,
-            },
-        )
+        .get_stats(&website_id, None, &filter)
         .await
         .map_err(AppError::Internal)?;
 
@@ -140,29 +141,11 @@ pub async fn share_pageviews(
 ) -> Result<impl IntoResponse, AppError> {
     let website_id = resolve_share(&state, &share_id, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
+    let filter = share_filter(start_date, end_date);
 
     let result = state
         .analytics
-        .get_timeseries(
-            &website_id,
-            None,
-            &AnalyticsFilter {
-                start_date,
-                end_date,
-                timezone: None,
-                filter_country: None,
-                filter_page: None,
-                filter_referrer: None,
-                filter_browser: None,
-                filter_os: None,
-                filter_device: None,
-                filter_language: None,
-                filter_utm_source: None,
-                filter_utm_medium: None,
-                filter_utm_campaign: None,
-            },
-            None,
-        )
+        .get_timeseries(&website_id, None, &filter, None)
         .await
         .map_err(AppError::Internal)?;
 
@@ -170,6 +153,95 @@ pub async fn share_pageviews(
         "data": {
             "series": result.series,
             "granularity": result.granularity,
+        }
+    })))
+}
+
+/// `GET /api/share/:share_id/overview`
+///
+/// Returns all datasets needed by the share dashboard in one request to avoid
+/// hitting public-share rate limits with query fan-out on the client.
+#[tracing::instrument(skip(state))]
+pub async fn share_overview(
+    State(state): State<Arc<AppState>>,
+    Path(share_id): Path<String>,
+    Query(q): Query<ShareDateQuery>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let website_id = resolve_share(&state, &share_id, &headers).await?;
+    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
+    let filter = share_filter(start_date, end_date);
+
+    let stats = state
+        .analytics
+        .get_stats(&website_id, None, &filter)
+        .await
+        .map_err(AppError::Internal)?;
+
+    let timeseries = state
+        .analytics
+        .get_timeseries(&website_id, None, &filter, None)
+        .await
+        .map_err(AppError::Internal)?;
+
+    let page = state
+        .analytics
+        .get_metrics(&website_id, None, "page", 10, 0, &filter)
+        .await
+        .map_err(AppError::Internal)?;
+    let referrer = state
+        .analytics
+        .get_metrics(&website_id, None, "referrer", 10, 0, &filter)
+        .await
+        .map_err(AppError::Internal)?;
+    let browser = state
+        .analytics
+        .get_metrics(&website_id, None, "browser", 10, 0, &filter)
+        .await
+        .map_err(AppError::Internal)?;
+    let country = state
+        .analytics
+        .get_metrics(&website_id, None, "country", 10, 0, &filter)
+        .await
+        .map_err(AppError::Internal)?;
+    let os = state
+        .analytics
+        .get_metrics(&website_id, None, "os", 10, 0, &filter)
+        .await
+        .map_err(AppError::Internal)?;
+    let device = state
+        .analytics
+        .get_metrics(&website_id, None, "device", 10, 0, &filter)
+        .await
+        .map_err(AppError::Internal)?;
+
+    Ok(Json(json!({
+        "data": {
+            "stats": stats,
+            "pageviews": {
+                "series": timeseries.series,
+                "granularity": timeseries.granularity,
+            },
+            "metrics": {
+                "page": {
+                    "rows": page.rows,
+                },
+                "referrer": {
+                    "rows": referrer.rows,
+                },
+                "browser": {
+                    "rows": browser.rows,
+                },
+                "country": {
+                    "rows": country.rows,
+                },
+                "os": {
+                    "rows": os.rows,
+                },
+                "device": {
+                    "rows": device.rows,
+                },
+            },
         }
     })))
 }
@@ -202,31 +274,11 @@ pub async fn share_metrics(
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
     let limit = q.limit.unwrap_or(10).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).max(0);
+    let filter = share_filter(start_date, end_date);
 
     let page = state
         .analytics
-        .get_metrics(
-            &website_id,
-            None,
-            metric_type,
-            limit,
-            offset,
-            &AnalyticsFilter {
-                start_date,
-                end_date,
-                timezone: None,
-                filter_country: None,
-                filter_page: None,
-                filter_referrer: None,
-                filter_browser: None,
-                filter_os: None,
-                filter_device: None,
-                filter_language: None,
-                filter_utm_source: None,
-                filter_utm_medium: None,
-                filter_utm_campaign: None,
-            },
-        )
+        .get_metrics(&website_id, None, metric_type, limit, offset, &filter)
         .await
         .map_err(AppError::Internal)?;
 

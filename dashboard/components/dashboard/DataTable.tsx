@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Monitor, Smartphone, Tablet, Globe, Laptop, MapPin } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatNumber } from '@/lib/utils';
 import type { MetricRow } from '@/lib/api';
@@ -13,6 +13,25 @@ interface DataTableProps {
   data?: MetricRow[];
   loading: boolean;
   showPageviews?: boolean;
+}
+
+function getRowIcon(filterKey: string, value: string) {
+  if (filterKey === 'device') {
+    if (value === 'mobile') return <Smartphone className="w-3.5 h-3.5 text-ink-3 shrink-0" />;
+    if (value === 'tablet') return <Tablet className="w-3.5 h-3.5 text-ink-3 shrink-0" />;
+    return <Monitor className="w-3.5 h-3.5 text-ink-3 shrink-0" />;
+  }
+  if (filterKey === 'browser') {
+    return <Globe className="w-3.5 h-3.5 text-ink-3 shrink-0" />;
+  }
+  if (filterKey === 'os') {
+    if (['iOS', 'Android'].includes(value)) return <Smartphone className="w-3.5 h-3.5 text-ink-3 shrink-0" />;
+    return <Laptop className="w-3.5 h-3.5 text-ink-3 shrink-0" />;
+  }
+  if (filterKey === 'country') {
+    return <MapPin className="w-3.5 h-3.5 text-ink-3 shrink-0" />;
+  }
+  return null;
 }
 
 export function DataTable({ title, filterKey, data = [], loading, showPageviews = false }: DataTableProps) {
@@ -91,7 +110,10 @@ export function DataTable({ title, filterKey, data = [], loading, showPageviews 
                     background: 'var(--spark-subtle)',
                   }}
                 />
-                <span className="relative text-xs text-ink truncate max-w-[60%]">{row.value || '(direct)'}</span>
+                <div className="relative flex items-center gap-2 max-w-[70%]">
+                  {getRowIcon(filterKey, row.value)}
+                  <span className="text-xs text-ink truncate">{row.value || '(direct)'}</span>
+                </div>
                 <span className="relative font-mono tabular-nums text-xs text-ink-2">
                   {sortBy === 'pageviews' && row.pageviews !== undefined
                     ? formatNumber(row.pageviews)

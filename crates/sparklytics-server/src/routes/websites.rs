@@ -146,6 +146,22 @@ pub async fn update_website(
     }
 }
 
+/// `GET /api/websites/:id` — Get a single website by ID.
+#[tracing::instrument(skip(state))]
+pub async fn get_website(
+    State(state): State<Arc<AppState>>,
+    Path(website_id): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let website = state
+        .db
+        .get_website(&website_id)
+        .await
+        .map_err(AppError::Internal)?
+        .ok_or_else(|| AppError::NotFound("Website not found".to_string()))?;
+
+    Ok(Json(json!({ "data": website })))
+}
+
 /// `DELETE /api/websites/:id` — Delete a website and all analytics data.
 pub async fn delete_website(
     State(state): State<Arc<AppState>>,

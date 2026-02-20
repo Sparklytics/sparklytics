@@ -22,10 +22,10 @@ export function Sparkline({ data, color = 'var(--spark)' }: SparklineProps) {
           </linearGradient>
         </defs>
         <Area
-          type="monotone"
+          type="basis"
           dataKey="value"
           stroke={color}
-          strokeWidth={1.5}
+          strokeWidth={2}
           fill={`url(#${gradientId})`}
           dot={false}
           isAnimationActive={false}

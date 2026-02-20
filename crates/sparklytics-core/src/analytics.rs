@@ -116,6 +116,7 @@ pub const VALID_METRIC_TYPES: &[&str] = &[
     "os",
     "device",
     "screen",
+    "event_name",
     "language",
     "utm_source",
     "utm_medium",

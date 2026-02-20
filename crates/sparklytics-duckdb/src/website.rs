@@ -10,6 +10,7 @@ pub struct Website {
     pub name: String,
     pub domain: String,
     pub timezone: String,
+    pub share_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -57,7 +58,7 @@ impl DuckDbBackend {
 
         // Read back the created row to get timestamps.
         let mut stmt = conn.prepare(
-            "SELECT id, tenant_id, name, domain, timezone, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+            "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
              FROM websites WHERE id = ?1",
         )?;
         let website = stmt.query_row(duckdb::params![id], |row| {
@@ -67,8 +68,9 @@ impl DuckDbBackend {
                 name: row.get(2)?,
                 domain: row.get(3)?,
                 timezone: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                share_id: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
             })
         })?;
 
@@ -91,7 +93,7 @@ impl DuckDbBackend {
             cursor
         {
             (
-                "SELECT id, tenant_id, name, domain, timezone, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+                "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
                  FROM websites WHERE id > ?1 ORDER BY id LIMIT ?2"
                     .to_string(),
                 vec![
@@ -101,7 +103,7 @@ impl DuckDbBackend {
             )
         } else {
             (
-                "SELECT id, tenant_id, name, domain, timezone, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+                "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
                  FROM websites ORDER BY id LIMIT ?1"
                     .to_string(),
                 vec![Box::new(limit) as Box<dyn duckdb::types::ToSql>],
@@ -118,8 +120,9 @@ impl DuckDbBackend {
                 name: row.get(2)?,
                 domain: row.get(3)?,
                 timezone: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                share_id: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
             })
         })?;
 
@@ -143,7 +146,7 @@ impl DuckDbBackend {
     pub async fn get_website(&self, id: &str) -> Result<Option<Website>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, tenant_id, name, domain, timezone, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+            "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
              FROM websites WHERE id = ?1",
         )?;
         let result = stmt
@@ -154,8 +157,9 @@ impl DuckDbBackend {
                     name: row.get(2)?,
                     domain: row.get(3)?,
                     timezone: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    share_id: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })
             .ok();
@@ -199,7 +203,7 @@ impl DuckDbBackend {
         // Read back updated row.
         let website = conn
             .prepare(
-                "SELECT id, tenant_id, name, domain, timezone, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+                "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
                  FROM websites WHERE id = ?1",
             )?
             .query_row(duckdb::params![id], |row| {
@@ -209,8 +213,9 @@ impl DuckDbBackend {
                     name: row.get(2)?,
                     domain: row.get(3)?,
                     timezone: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    share_id: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })?;
 

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useExport } from '@/hooks/useExport';
+import { useToast } from '@/hooks/use-toast';
 
 interface ExportButtonProps {
   websiteId: string;
@@ -14,13 +15,15 @@ interface ExportButtonProps {
 export function ExportButton({ websiteId, startDate, endDate }: ExportButtonProps) {
   const [loading, setLoading] = useState(false);
   const { triggerExport } = useExport(websiteId);
+  const { toast } = useToast();
 
   function handleExport() {
     setLoading(true);
     try {
       triggerExport(startDate, endDate);
+    } catch {
+      toast({ title: 'Export failed', description: 'Could not generate CSV export.', variant: 'destructive' });
     } finally {
-      // Give browser a moment to start the download before removing loading state.
       setTimeout(() => setLoading(false), 1000);
     }
   }

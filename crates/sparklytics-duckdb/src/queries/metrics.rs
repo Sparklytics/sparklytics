@@ -107,6 +107,7 @@ pub async fn get_metrics_inner(
         "device" => ("device_type", false),
         "language" => ("language", false),
         "screen" => ("screen", false),
+        "event_name" => ("event_name", true),
         "utm_source" => ("utm_source", false),
         "utm_medium" => ("utm_medium", false),
         "utm_campaign" => ("utm_campaign", false),

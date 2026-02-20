@@ -141,6 +141,10 @@ pub fn build_app(state: Arc<AppState>) -> Router {
     // Public share routes — no auth, no CORS restriction, 30 req/min rate limit.
     let share_router = Router::new()
         .route(
+            "/api/share/{share_id}/overview",
+            get(routes::share::share_overview),
+        )
+        .route(
             "/api/share/{share_id}/stats",
             get(routes::share::share_stats),
         )
@@ -168,7 +172,9 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route("/api/websites", get(routes::websites::list_websites))
                 .route(
                     "/api/websites/{id}",
-                    put(routes::websites::update_website).delete(routes::websites::delete_website),
+                    get(routes::websites::get_website)
+                        .put(routes::websites::update_website)
+                        .delete(routes::websites::delete_website),
                 )
                 .route("/api/websites/{id}/stats", get(routes::stats::get_stats))
                 .route(
@@ -209,7 +215,9 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route("/api/websites", get(routes::websites::list_websites))
                 .route(
                     "/api/websites/{id}",
-                    put(routes::websites::update_website).delete(routes::websites::delete_website),
+                    get(routes::websites::get_website)
+                        .put(routes::websites::update_website)
+                        .delete(routes::websites::delete_website),
                 )
                 .route("/api/websites/{id}/stats", get(routes::stats::get_stats))
                 .route(

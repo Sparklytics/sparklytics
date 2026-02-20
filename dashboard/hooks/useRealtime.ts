@@ -3,11 +3,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-export function useRealtime(websiteId: string) {
+export function useRealtime(websiteId: string, refreshInterval = 30_000) {
   return useQuery({
     queryKey: ['realtime', websiteId],
     queryFn: () => api.getRealtime(websiteId),
-    refetchInterval: 30 * 1000,
+    refetchInterval: refreshInterval,
+    staleTime: 0,
     enabled: !!websiteId,
   });
 }
