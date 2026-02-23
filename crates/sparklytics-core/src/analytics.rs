@@ -58,8 +58,13 @@ pub struct TimeseriesResult {
 pub struct MetricRow {
     pub value: String,
     pub visitors: i64,
+    /// Always populated as of Sprint 12 (was optional for non-page types before).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pageviews: Option<i64>,
+    /// Fraction of sessions that had ≤ 1 pageview, 0–100.
+    pub bounce_rate: f64,
+    /// Mean session duration in seconds (0.0 when all sessions are single-event).
+    pub avg_duration_seconds: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -269,6 +274,8 @@ pub const VALID_METRIC_TYPES: &[&str] = &[
     "page",
     "referrer",
     "country",
+    "region",
+    "city",
     "browser",
     "os",
     "device",

@@ -116,34 +116,31 @@ pub async fn get_metrics_inner(
         idx += 1;
     }
 
-    let (column_expr, include_pageviews) = match metric_type {
-        "page" => ("url", true),
-        "referrer" => ("COALESCE(referrer_domain, '(direct)')", false),
-        "country" => ("country", false),
-        "browser" => ("browser", false),
-        "os" => ("os", false),
-        "device" => ("device_type", false),
-        "language" => ("language", false),
-        "screen" => ("screen", false),
-        "event_name" => ("event_name", true),
-        "utm_source" => ("utm_source", false),
-        "utm_medium" => ("utm_medium", false),
-        "utm_campaign" => ("utm_campaign", false),
+    let column_expr = match metric_type {
+        "page" => "url",
+        "referrer" => "COALESCE(referrer_domain, '(direct)')",
+        "country" => "country",
+        "region" => "region",
+        "city" => "city",
+        "browser" => "browser",
+        "os" => "os",
+        "device" => "device_type",
+        "language" => "language",
+        "screen" => "screen",
+        "event_name" => "event_name",
+        "utm_source" => "utm_source",
+        "utm_medium" => "utm_medium",
+        "utm_campaign" => "utm_campaign",
         _ => return Err(anyhow!("invalid metric type")),
     };
 
-    let select_extra = if include_pageviews {
-        ", COUNT(*) AS pageviews"
-    } else {
-        ""
+    // Pages and event names are still ordered by total pageviews; everything else by unique visitors.
+    let order_by = match metric_type {
+        "page" | "event_name" => "pageviews DESC",
+        _ => "visitors DESC",
     };
 
-    let order_by = if include_pageviews {
-        "pageviews DESC"
-    } else {
-        "visitors DESC"
-    };
-
+    // Count distinct dimension values for pagination (cheap flat query, no CTE needed).
     let count_sql = format!(
         "SELECT COUNT(DISTINCT {column_expr}) FROM events \
          WHERE website_id = ?1 AND created_at >= ?2 AND created_at < ?3 \
@@ -159,11 +156,34 @@ pub async fn get_metrics_inner(
     extra_params.push(Box::new(limit));
     extra_params.push(Box::new(offset));
 
+    // CTE groups events → per-session stats, then aggregates per dimension value.
+    // This gives us visitors, pageviews, bounce_rate, and avg_duration in one pass.
+    //
+    // Bounce = session with ≤ 1 pageview (pv_count FILTER WHERE type = 'pageview').
+    // Duration = epoch difference between first and last event in the session.
+    //   Sessions where all events occur at the same timestamp get dur_s = 0 and are
+    //   excluded from the AVG to avoid pulling the mean down artificially.
     let data_sql = format!(
-        "SELECT {column_expr} AS dim_value, COUNT(DISTINCT visitor_id) AS visitors{select_extra} \
-         FROM events \
-         WHERE website_id = ?1 AND created_at >= ?2 AND created_at < ?3 \
-         AND {column_expr} IS NOT NULL{extra_filter} \
+        "WITH sess AS ( \
+           SELECT {column_expr} AS dim_value, \
+                  session_id, \
+                  visitor_id, \
+                  SUM(CASE WHEN event_type = 'pageview' THEN 1 ELSE 0 END) AS pv_count, \
+                  CAST(DATEDIFF('second', MIN(created_at), MAX(created_at)) AS DOUBLE) AS dur_s \
+           FROM events \
+           WHERE website_id = ?1 AND created_at >= ?2 AND created_at < ?3 \
+           AND {column_expr} IS NOT NULL{extra_filter} \
+           GROUP BY dim_value, session_id, visitor_id \
+         ) \
+         SELECT dim_value, \
+                COUNT(DISTINCT visitor_id) AS visitors, \
+                COALESCE(SUM(pv_count), 0) AS pageviews, \
+                COALESCE(ROUND( \
+                  100.0 * SUM(CASE WHEN pv_count <= 1 THEN 1.0 ELSE 0.0 END) \
+                        / NULLIF(COUNT(*), 0), 1), 0.0) AS bounce_rate, \
+                COALESCE(ROUND(AVG(CASE WHEN dur_s > 0 THEN dur_s END), 1), 0.0) \
+                  AS avg_duration_seconds \
+         FROM sess \
          GROUP BY dim_value \
          ORDER BY {order_by} \
          LIMIT ?{idx} OFFSET ?{}",
@@ -174,17 +194,12 @@ pub async fn get_metrics_inner(
         extra_params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&data_sql)?;
     let rows_iter = stmt.query_map(data_refs.as_slice(), |row| {
-        let value: String = row.get(0)?;
-        let visitors: i64 = row.get(1)?;
-        let pageviews: Option<i64> = if include_pageviews {
-            Some(row.get(2)?)
-        } else {
-            None
-        };
         Ok(MetricRow {
-            value,
-            pageviews,
-            visitors,
+            value: row.get(0)?,
+            visitors: row.get(1)?,
+            pageviews: Some(row.get(2)?),
+            bounce_rate: row.get(3)?,
+            avg_duration_seconds: row.get(4)?,
         })
     })?;
 

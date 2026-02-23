@@ -77,6 +77,8 @@ impl AnalyticsBackend for DuckDbBackend {
                     value: r.value,
                     visitors: r.visitors,
                     pageviews: r.pageviews,
+                    bounce_rate: r.bounce_rate,
+                    avg_duration_seconds: r.avg_duration_seconds,
                 })
                 .collect(),
             total: pagination.total,
