@@ -25,8 +25,11 @@ export function StatsRow({ stats, series = [], loading }: StatsRowProps) {
 
   const bounceDelta = stats ? computeDelta(stats.bounce_rate, stats.prev_bounce_rate) : undefined;
 
+  const pagesPerSession = stats && stats.sessions > 0 ? stats.pageviews / stats.sessions : 0;
+  const prevPagesPerSession = stats && stats.prev_sessions > 0 ? stats.prev_pageviews / stats.prev_sessions : 0;
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
       <StatCard
         label="Pageviews"
         value={stats ? formatNumber(stats.pageviews) : '—'}
@@ -57,6 +60,12 @@ export function StatsRow({ stats, series = [], loading }: StatsRowProps) {
         label="Avg. Duration"
         value={stats ? formatDuration(stats.avg_duration_seconds) : '—'}
         delta={stats ? computeDelta(stats.avg_duration_seconds, stats.prev_avg_duration_seconds) : undefined}
+        loading={loading}
+      />
+      <StatCard
+        label="Pages/Session"
+        value={stats ? pagesPerSession.toFixed(1) : '—'}
+        delta={stats ? computeDelta(pagesPerSession, prevPagesPerSession) : undefined}
         loading={loading}
       />
     </div>

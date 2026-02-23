@@ -55,10 +55,10 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
 
   if (loading) {
     return (
-      <div className="bg-surface-1 border border-line rounded-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <Skeleton className="h-4 w-24 bg-surface-2" />
-          <Skeleton className="h-8 w-[180px] bg-surface-2 rounded" />
+      <div className="bg-surface-1 border border-line rounded-xl p-5">
+        <div className="flex items-center justify-between mb-5">
+          <Skeleton className="h-3.5 w-24 bg-surface-2" />
+          <Skeleton className="h-7 w-[180px] bg-surface-2 rounded-lg" />
         </div>
         <Skeleton className="h-[240px] w-full bg-surface-2" />
       </div>
@@ -66,30 +66,26 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
   }
 
   return (
-    <div className="bg-surface-1 border border-line rounded-lg p-6">
+    <div className="bg-surface-1 border border-line rounded-xl p-5">
       {/* Header with metric toggle */}
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-sm font-medium text-ink">Traffic Overview</h2>
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-[13px] font-medium text-ink">Traffic Overview</h2>
 
-        <div className="flex items-center gap-1 bg-surface-2 p-1 rounded border border-line">
-          <button
-            onClick={() => setMetric('both')}
-            className={cn("px-2.5 py-1 text-xs rounded transition-colors", metric === 'both' ? 'bg-surface-1 text-ink border border-line' : 'text-ink-3 hover:text-ink-2 border border-transparent')}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setMetric('visitors')}
-            className={cn("px-2.5 py-1 text-xs rounded transition-colors", metric === 'visitors' ? 'bg-surface-1 text-ink border border-line' : 'text-ink-3 hover:text-ink-2 border border-transparent')}
-          >
-            Visitors
-          </button>
-          <button
-            onClick={() => setMetric('pageviews')}
-            className={cn("px-2.5 py-1 text-xs rounded transition-colors", metric === 'pageviews' ? 'bg-surface-1 text-ink border border-line' : 'text-ink-3 hover:text-ink-2 border border-transparent')}
-          >
-            Pageviews
-          </button>
+        <div className="flex items-center bg-surface-2 p-0.5 rounded-lg border border-line">
+          {(['both', 'visitors', 'pageviews'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMetric(m)}
+              className={cn(
+                'px-2.5 py-1 text-[11px] rounded-md transition-all duration-150 capitalize',
+                metric === m
+                  ? 'bg-canvas text-ink font-medium border border-line'
+                  : 'text-ink-3 hover:text-ink-2'
+              )}
+            >
+              {m === 'both' ? 'All' : m}
+            </button>
+          ))}
         </div>
       </div>
 

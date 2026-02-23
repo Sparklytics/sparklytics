@@ -5,18 +5,18 @@
 /* ─── Design tokens — dark mode (default) ─────────────────────────── */
 :root {
   --canvas:        #0F0F0F;
-  --surface-1:     #1E1E1E;
-  --surface-2:     #2D2D2D;
-  --surface-input: #111111;
+  --surface-1:     #1C1C1C;
+  --surface-2:     #272727;
+  --surface-input: #141414;
 
-  --ink:   #F8F8F8;
-  --ink-2: #94A3B8;
-  --ink-3: #64748B;
-  --ink-4: #475569;
+  --ink:   #F2F2F2;
+  --ink-2: #8E9BAE;
+  --ink-3: #5A6478;
+  --ink-4: #3D4655;
 
-  --line:   #2A2A2A;
-  --line-2: #1E1E1E;
-  --line-3: #475569;
+  --line:   #232323;
+  --line-2: #1C1C1C;
+  --line-3: #4A5568;
 
   --spark:        #00D084;
   --spark-dim:    #00B86D;

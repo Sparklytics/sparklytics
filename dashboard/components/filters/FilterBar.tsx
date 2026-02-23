@@ -11,6 +11,13 @@ const FILTER_LABELS: Record<string, string> = {
   os: 'OS',
   device: 'Device',
   country: 'Country',
+  region: 'Region',
+  city: 'City',
+  language: 'Language',
+  utm_source: 'UTM Source',
+  utm_medium: 'UTM Medium',
+  utm_campaign: 'UTM Campaign',
+  hostname: 'Hostname',
 };
 
 export function FilterBar() {

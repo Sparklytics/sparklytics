@@ -206,7 +206,12 @@ export interface PageviewsResponse {
 export interface MetricRow {
   value: string;
   visitors: number;
+  /** Always present as of the CTE-based query; was optional for non-page types before. */
   pageviews?: number;
+  /** Percentage of sessions with ≤ 1 pageview (0–100). */
+  bounce_rate: number;
+  /** Mean session duration in seconds. */
+  avg_duration_seconds: number;
 }
 
 export interface MetricsResult {

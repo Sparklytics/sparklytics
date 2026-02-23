@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Menu } from 'lucide-react';
 import { DateRangePicker } from '@/components/filters/DateRangePicker';
 import { FilterBar } from '@/components/filters/FilterBar';
 import { ExportButton } from '@/components/dashboard/ExportButton';
@@ -34,11 +35,18 @@ function useUrlSegments(): { websiteId: string; subPage: string } {
 
 const SUB_PAGE_LABELS: Record<string, string> = {
   '': 'Analytics',
+  overview: 'Analytics',
+  pages: 'Pages',
+  geolocation: 'Geolocation',
+  systems: 'Systems',
+  events: 'Events',
+  sessions: 'Sessions',
+  goals: 'Goals',
   realtime: 'Realtime',
   settings: 'Settings',
 };
 
-export function Header() {
+export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const { websiteId, subPage } = useUrlSegments();
   const { dateRange } = useFilters();
   const { data: websitesData } = useWebsites();
@@ -53,7 +61,16 @@ export function Header() {
   const activeVisitors = realtimeData?.data?.active_visitors ?? 0;
 
   return (
-    <header className="h-14 border-b border-line flex items-center gap-4 px-6 shrink-0">
+    <header className="h-14 border-b border-line flex items-center gap-4 px-4 md:px-6 shrink-0">
+      {/* Hamburger — mobile only */}
+      <button
+        onClick={onMenuClick}
+        className="md:hidden p-1.5 text-ink-3 hover:text-ink hover:bg-surface-1 rounded-md transition-colors"
+        aria-label="Open menu"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
       {title && (
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-medium text-ink truncate max-w-[200px]">{title}</h1>

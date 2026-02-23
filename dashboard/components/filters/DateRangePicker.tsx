@@ -93,6 +93,7 @@ export function DateRangePicker() {
         onClick={() => shift(-1)}
         className="flex items-center justify-center w-8 h-8 rounded-md text-ink-3 hover:text-ink hover:bg-surface-1 transition-colors"
         aria-label="Previous period"
+        title="Previous period"
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
@@ -106,6 +107,7 @@ export function DateRangePicker() {
             : 'text-ink-4 cursor-not-allowed'
         )}
         aria-label="Next period"
+        title={canGoForward ? 'Next period' : 'No future data'}
       >
         <ChevronRight className="w-4 h-4" />
       </button>

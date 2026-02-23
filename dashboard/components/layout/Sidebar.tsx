@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  BarChart2,
   Clock,
   Settings,
   LogOut,
@@ -16,7 +15,8 @@ import {
   Shield,
   AlertTriangle,
   Users,
-  Target
+  Target,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WebsitePicker } from './WebsitePicker';
@@ -29,9 +29,10 @@ interface SidebarProps {
   websiteId: string;
   currentPath: string;
   onAddWebsite?: () => void;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) {
+export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: SidebarProps) {
   const { data } = useWebsites();
   const { data: authStatus } = useAuth();
   const websites = data?.data ?? [];
@@ -46,6 +47,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) 
   function navigate(path: string) {
     window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
+    onNavigate?.();
   }
 
   const analyticsItems = [
@@ -53,7 +55,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) 
     { label: 'Pages', path: `/dashboard/${websiteId}/pages`, icon: FileText },
     { label: 'Geolocation', path: `/dashboard/${websiteId}/geolocation`, icon: Globe },
     { label: 'Systems', path: `/dashboard/${websiteId}/systems`, icon: Monitor },
-    { label: 'Events',   path: `/dashboard/${websiteId}/events`,   icon: Zap },
+    { label: 'Events', path: `/dashboard/${websiteId}/events`, icon: Zap },
     { label: 'Sessions', path: `/dashboard/${websiteId}/sessions`, icon: Users },
   ];
 
@@ -65,7 +67,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) 
     { label: 'Goals', path: `/dashboard/${websiteId}/goals`, icon: Target },
   ];
 
-  const configItems = [
+  const configItems: { label: string; path: string; icon: any }[] = [
     { label: 'General', path: `/dashboard/${websiteId}/settings/general`, icon: Settings },
     { label: 'Snippet', path: `/dashboard/${websiteId}/settings/snippet`, icon: Code },
     { label: 'Sharing', path: `/dashboard/${websiteId}/settings/sharing`, icon: Share2 },
@@ -87,7 +89,6 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) 
     });
   }
 
-  // Helper to determine exact or partial path match
   const isActive = (path: string) => {
     if (path === `/dashboard/${websiteId}`) {
       return currentPath === path || currentPath === `${path}/`;
@@ -98,91 +99,105 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite }: SidebarProps) 
     return currentPath.startsWith(path);
   };
 
-  const NavItem = ({ label, path, icon: Icon }: { label: string, path: string, icon: any }) => (
+  const NavItem = ({ label, path, icon: Icon }: { label: string; path: string; icon: any }) => (
     <button
-      key={label}
       onClick={() => navigate(path)}
       className={cn(
-        'group flex items-center gap-2 w-full py-1.5 text-sm transition-colors duration-100 text-left',
+        'group flex items-center gap-2.5 w-full px-2.5 py-[7px] text-[13px] rounded-md transition-all duration-100 text-left',
         isActive(path)
-          ? 'text-ink font-medium border-l-2 border-spark pl-[6px] pr-2 rounded-r-md'
-          : 'text-ink-3 hover:text-ink hover:bg-surface-1/50 px-2 rounded-md'
+          ? 'bg-white/[0.07] text-ink font-medium'
+          : 'text-ink-3 hover:text-ink-2 hover:bg-white/[0.04]'
       )}
     >
-      <Icon className={cn("w-4 h-4", isActive(path) ? "text-spark" : "text-ink-3 group-hover:text-ink-2")} />
+      <Icon
+        className={cn(
+          'w-[15px] h-[15px] shrink-0 transition-colors',
+          isActive(path) ? 'text-spark' : 'text-ink-4 group-hover:text-ink-3'
+        )}
+      />
       {label}
     </button>
   );
 
+  const SectionLabel = ({ label }: { label: string }) => (
+    <div className="px-2.5 pt-4 pb-1">
+      <span className="text-[10px] font-semibold text-ink-4 uppercase tracking-[0.08em]">
+        {label}
+      </span>
+    </div>
+  );
+
   return (
-    <div className="flex h-screen sticky top-0 border-r border-line bg-canvas z-20">
-      {/* Tier 1 - Global Context */}
-      <div className="w-[64px] shrink-0 border-r border-line flex flex-col items-center py-4 bg-surface-1/30">
-        <button
-          onClick={() => navigate('/settings')}
-          className="w-10 h-10 flex items-center justify-center rounded-xl bg-ink text-canvas font-bold text-lg mb-4 hover:opacity-90 transition-opacity shadow-sm"
-          title="All Websites"
-        >
-          s<span className="text-canvas/70 font-medium text-sm">p</span>
-        </button>
+    <div className="flex h-full bg-canvas border-r border-line">
+      <aside className="w-[260px] md:w-[220px] flex flex-col min-h-0">
 
-        <div className="flex-1" />
-        <button
-          onClick={handleLogout}
-          className="p-2 text-ink-3 hover:text-ink hover:bg-surface-1 rounded-md transition-colors"
-          title="Log out"
-        >
-          <LogOut className="w-5 h-5" />
-        </button>
-      </div>
+        {/* ── Brand header ─────────────────────────── */}
+        <div className="px-3 pt-3.5 pb-3 border-b border-line shrink-0">
+          <div className="flex items-center gap-2 mb-2.5">
+            {/* App mark */}
+            <div className="w-[22px] h-[22px] rounded-[5px] bg-spark flex items-center justify-center shrink-0">
+              <span className="text-[9px] font-bold text-black leading-none tracking-tight">sp</span>
+            </div>
+            <span className="text-[13px] font-semibold text-ink tracking-tight">sparklytics</span>
+            {/* Mobile close */}
+            <button
+              onClick={onNavigate}
+              className="ml-auto md:hidden p-1 text-ink-3 hover:text-ink hover:bg-surface-1 rounded transition-colors"
+              aria-label="Close menu"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <WebsitePicker
+            websites={websites}
+            currentId={websiteId}
+            onAddWebsite={onAddWebsite}
+          />
+        </div>
 
-      {/* Tier 2 - Local Context */}
-      <aside className="w-[200px] shrink-0 flex flex-col bg-canvas">
+        {/* ── Nav ──────────────────────────────────── */}
         {websiteId ? (
-          <>
-            <div className="px-3 py-3 border-b border-line flex items-center justify-center min-h-[64px]">
-              <div className="w-full">
-                <WebsitePicker websites={websites} currentId={websiteId} onAddWebsite={onAddWebsite} />
-              </div>
+          <nav className="flex-1 overflow-y-auto px-2 py-1 min-h-0">
+            <SectionLabel label="Analytics" />
+            <div className="space-y-px">
+              {analyticsItems.map((item) => <NavItem key={item.label} {...item} />)}
             </div>
 
-            <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-              <div>
-                <h3 className="px-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Analytics</h3>
-                <div className="space-y-0.5">
-                  {analyticsItems.map(NavItem)}
-                </div>
-              </div>
+            <SectionLabel label="Live" />
+            <div className="space-y-px">
+              {liveItems.map((item) => <NavItem key={item.label} {...item} />)}
+            </div>
 
-              <div>
-                <h3 className="px-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Live</h3>
-                <div className="space-y-0.5">
-                  {liveItems.map(NavItem)}
-                </div>
-              </div>
+            <SectionLabel label="Explore" />
+            <div className="space-y-px">
+              {exploreItems.map((item) => <NavItem key={item.label} {...item} />)}
+            </div>
 
-              <div>
-                <h3 className="px-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Explore</h3>
-                <div className="space-y-0.5">
-                  {exploreItems.map(NavItem)}
-                </div>
+            <div className="mt-3 pt-3 border-t border-line/50">
+              <SectionLabel label="Settings" />
+              <div className="space-y-px">
+                {configItems.map((item) => <NavItem key={item.label} {...item} />)}
               </div>
-
-              <div>
-                <h3 className="px-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider mb-2">Configuration</h3>
-                <div className="space-y-0.5">
-                  {configItems.map(NavItem)}
-                </div>
-              </div>
-            </nav>
-
-            <UsageBadge />
-          </>
+            </div>
+          </nav>
         ) : (
-          <div className="flex-1 flex px-4 items-center justify-center text-center">
-            <span className="text-sm text-ink-3">Select a website</span>
+          <div className="flex-1 flex items-center justify-center px-4">
+            <span className="text-[13px] text-ink-3 text-center">Select a website</span>
           </div>
         )}
+
+        {/* ── Bottom: usage + logout ───────────────── */}
+        <div className="shrink-0 border-t border-line px-2 py-2">
+          <UsageBadge />
+          <button
+            onClick={handleLogout}
+            className="mt-1 group flex items-center gap-2.5 w-full px-2.5 py-[7px] text-[13px] text-ink-3 hover:text-ink-2 hover:bg-white/[0.04] rounded-md transition-colors"
+          >
+            <LogOut className="w-[15px] h-[15px] shrink-0 text-ink-4 group-hover:text-ink-3" />
+            Log out
+          </button>
+        </div>
+
       </aside>
     </div>
   );

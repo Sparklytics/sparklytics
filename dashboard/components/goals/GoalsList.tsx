@@ -121,7 +121,7 @@ export function GoalsList({ websiteId }: GoalsListProps) {
                 <th className="px-4 py-2 text-left">Type</th>
                 <th className="px-4 py-2 text-left">Match Value</th>
                 <th className="px-4 py-2 text-left">Conv. Rate</th>
-                <th className="px-4 py-2 text-left">Events</th>
+                <th className="px-4 py-2 text-left">Conversions</th>
                 <th className="px-4 py-2 text-right">Actions</th>
               </tr>
             </thead>

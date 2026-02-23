@@ -90,6 +90,8 @@ export function DashboardClient() {
   const { data: countriesData, isLoading: countriesLoading } = useMetrics(websiteId, 'country', analyticsEnabled);
   const { data: osData, isLoading: osLoading } = useMetrics(websiteId, 'os', analyticsEnabled);
   const { data: devicesData, isLoading: devicesLoading } = useMetrics(websiteId, 'device', analyticsEnabled);
+  const { data: regionsData, isLoading: regionsLoading } = useMetrics(websiteId, 'region', analyticsEnabled);
+  const { data: citiesData, isLoading: citiesLoading } = useMetrics(websiteId, 'city', analyticsEnabled);
   const { data: realtimeData, isLoading: rtLoading } = useRealtime(websiteId, 30_000, analyticsEnabled);
 
   // Settings subpage: render inline
@@ -149,12 +151,14 @@ export function DashboardClient() {
                 data={pagesData?.data?.rows}
                 loading={pagesLoading}
                 showPageviews
+                totalVisitors={stats?.visitors}
               />
               <DataTable
                 title="Top Referrers"
                 filterKey="referrer"
                 data={referrersData?.data?.rows}
                 loading={refLoading}
+                totalVisitors={stats?.visitors}
               />
             </div>
           )}
@@ -167,20 +171,40 @@ export function DashboardClient() {
                 data={pagesData?.data?.rows}
                 loading={pagesLoading}
                 showPageviews
+                totalVisitors={stats?.visitors}
               />
               {/* Detailed view coming here */}
             </div>
           )}
 
           {subPage === 'geolocation' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-              <WorldMap data={countriesData?.data?.rows} loading={countriesLoading} />
-              <DataTable
-                title="Countries"
-                filterKey="country"
-                data={countriesData?.data?.rows}
-                loading={countriesLoading}
-              />
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                <WorldMap data={countriesData?.data?.rows} loading={countriesLoading} />
+                <DataTable
+                  title="Countries"
+                  filterKey="country"
+                  data={countriesData?.data?.rows}
+                  loading={countriesLoading}
+                  totalVisitors={stats?.visitors}
+                />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <DataTable
+                  title="Regions"
+                  filterKey="region"
+                  data={regionsData?.data?.rows}
+                  loading={regionsLoading}
+                  totalVisitors={stats?.visitors}
+                />
+                <DataTable
+                  title="Cities"
+                  filterKey="city"
+                  data={citiesData?.data?.rows}
+                  loading={citiesLoading}
+                  totalVisitors={stats?.visitors}
+                />
+              </div>
             </div>
           )}
 
@@ -191,18 +215,21 @@ export function DashboardClient() {
                 filterKey="browser"
                 data={browsersData?.data?.rows}
                 loading={browsersLoading}
+                totalVisitors={stats?.visitors}
               />
               <DataTable
                 title="Operating Systems"
                 filterKey="os"
                 data={osData?.data?.rows}
                 loading={osLoading}
+                totalVisitors={stats?.visitors}
               />
               <DataTable
                 title="Devices"
                 filterKey="device"
                 data={devicesData?.data?.rows}
                 loading={devicesLoading}
+                totalVisitors={stats?.visitors}
               />
             </div>
           )}

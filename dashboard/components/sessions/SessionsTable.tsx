@@ -36,8 +36,19 @@ function parseDisplayUrl(url: string | null): string {
 }
 
 function formatTime(ts: string): string {
-  // ts format: "2026-02-20 10:05:22"
-  return ts.replace('T', ' ').slice(0, 16);
+  try {
+    const d = new Date(ts.replace(' ', 'T'));
+    const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `${diffH}h ago`;
+    const diffD = Math.floor(diffH / 24);
+    if (diffD < 7) return `${diffD}d ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return ts.slice(0, 16);
+  }
 }
 
 export function SessionsTable({
