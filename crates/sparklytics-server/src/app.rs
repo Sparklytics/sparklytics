@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Request},
+    extract::{DefaultBodyLimit, Request, State},
     http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode, Uri},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -42,6 +42,41 @@ fn mime_for_path(path: &str) -> &'static str {
     }
 }
 
+fn auth_mode_runtime_value(auth_mode: &AuthMode) -> &'static str {
+    match auth_mode {
+        AuthMode::None => "none",
+        AuthMode::Password(_) => "password",
+        AuthMode::Local => "local",
+    }
+}
+
+fn inject_runtime_auth_mode(html: &[u8], auth_mode: &AuthMode) -> Vec<u8> {
+    let Ok(mut rendered) = String::from_utf8(html.to_vec()) else {
+        return html.to_vec();
+    };
+
+    let script = format!(
+        "<script>window.__SPARKLYTICS_AUTH_MODE__='{}';</script>",
+        auth_mode_runtime_value(auth_mode)
+    );
+
+    if rendered.contains("window.__SPARKLYTICS_AUTH_MODE__") {
+        return rendered.into_bytes();
+    }
+
+    if let Some(idx) = rendered.find("</head>") {
+        rendered.insert_str(idx, &script);
+        return rendered.into_bytes();
+    }
+
+    if let Some(idx) = rendered.find("</body>") {
+        rendered.insert_str(idx, &script);
+        return rendered.into_bytes();
+    }
+
+    format!("{script}{rendered}").into_bytes()
+}
+
 /// Fallback handler: serve embedded dashboard static files.
 ///
 /// API and health paths that don't match a registered route return 404 rather
@@ -51,7 +86,7 @@ fn mime_for_path(path: &str) -> &'static str {
 /// 1. Exact file match (e.g. `/_next/static/js/main.js`)
 /// 2. `{path}/index.html` (for directory-style paths with trailing slash)
 /// 3. `index.html` — SPA catch-all so client-side routing works
-async fn serve_dashboard(uri: Uri) -> Response {
+async fn serve_dashboard(State(state): State<Arc<AppState>>, uri: Uri) -> Response {
     let path = uri.path();
 
     // Don't swallow unregistered /api/* or /health requests — return 404.
@@ -86,9 +121,14 @@ async fn serve_dashboard(uri: Uri) -> Response {
     for candidate in &candidates {
         if let Some(file) = DASHBOARD.get_file(candidate.as_str()) {
             let mime = mime_for_path(candidate);
+            let body = if mime.starts_with("text/html") {
+                inject_runtime_auth_mode(file.contents(), &state.config.auth_mode)
+            } else {
+                file.contents().to_vec()
+            };
             match Response::builder()
                 .header(CONTENT_TYPE, mime)
-                .body(Body::from(file.contents().to_vec()))
+                .body(Body::from(body))
             {
                 Ok(resp) => return resp,
                 Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),

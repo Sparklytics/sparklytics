@@ -78,7 +78,7 @@ export function DataTable({ title, filterKey, data = [], loading, showPageviews 
   }
 
   return (
-    <div className="bg-surface-1 border border-line rounded-xl p-5">
+    <div className="bg-surface-1 border border-line rounded-lg p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-[13px] font-medium text-ink">{title}</h3>

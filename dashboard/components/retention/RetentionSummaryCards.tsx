@@ -1,16 +1,11 @@
 'use client';
 
 import { RetentionGranularity, RetentionSummary } from '@/lib/api';
+import { periodLabel } from '@/lib/retention-utils';
 
 interface RetentionSummaryCardsProps {
   granularity: RetentionGranularity;
   summary: RetentionSummary;
-}
-
-function periodLabel(granularity: RetentionGranularity, offset: number): string {
-  if (granularity === 'day') return `Day ${offset}`;
-  if (granularity === 'week') return `Week ${offset}`;
-  return `Month ${offset}`;
 }
 
 function formatRate(rate: number | null): string {
@@ -27,12 +22,14 @@ export function RetentionSummaryCards({ granularity, summary }: RetentionSummary
           {formatRate(summary.avg_period1_rate)}
         </p>
       </div>
-      <div className="border border-line rounded-lg bg-surface-1 p-4">
-        <p className="text-xs text-ink-3">{`Avg ${periodLabel(granularity, 4)} Retention`}</p>
-        <p className="mt-1 font-mono tabular-nums text-lg text-ink">
-          {formatRate(summary.avg_period4_rate)}
-        </p>
-      </div>
+      {summary.avg_period4_rate !== null && (
+        <div className="border border-line rounded-lg bg-surface-1 p-4">
+          <p className="text-xs text-ink-3">{`Avg ${periodLabel(granularity, 4)} Retention`}</p>
+          <p className="mt-1 font-mono tabular-nums text-lg text-ink">
+            {formatRate(summary.avg_period4_rate)}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -33,7 +33,7 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface-1 border-line sm:rounded-xl max-w-sm">
+      <DialogContent className="bg-surface-1 border-line sm:rounded-lg max-w-sm">
         <DialogHeader>
           <DialogTitle className={`text-base font-semibold ${destructive ? 'text-down' : 'text-ink'}`}>
             {title}

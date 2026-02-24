@@ -56,6 +56,27 @@ fn none_config() -> Config {
     }
 }
 
+/// Build a test Config with AuthMode::Password.
+fn password_config() -> Config {
+    Config {
+        port: 0,
+        data_dir: "/tmp/sparklytics-test".to_string(),
+        geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
+        auth_mode: AuthMode::Password(TEST_PASSWORD.to_string()),
+        https: false,
+        retention_days: 365,
+        cors_origins: vec![],
+        session_days: 7,
+        buffer_flush_interval_ms: 5000,
+        buffer_max_size: 100,
+        mode: AppMode::SelfHosted,
+        argon2_memory_kb: 4096,
+        public_url: "http://localhost:3000".to_string(),
+        rate_limit_disable: false,
+        duckdb_memory_limit: "1GB".to_string(),
+    }
+}
+
 /// Create a fresh in-memory backend + state + app with AuthMode::Local.
 async fn setup_auth() -> (Arc<AppState>, axum::Router) {
     let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
@@ -69,6 +90,15 @@ async fn setup_auth() -> (Arc<AppState>, axum::Router) {
 async fn setup_none() -> (Arc<AppState>, axum::Router) {
     let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
     let config = none_config();
+    let state = Arc::new(AppState::new(db, config));
+    let app = build_app(Arc::clone(&state));
+    (state, app)
+}
+
+/// Create a fresh in-memory backend + state + app with AuthMode::Password.
+async fn setup_password() -> (Arc<AppState>, axum::Router) {
+    let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
+    let config = password_config();
     let state = Arc::new(AppState::new(db, config));
     let app = build_app(Arc::clone(&state));
     (state, app)
@@ -161,6 +191,28 @@ async fn test_setup_creates_admin() {
 
     let json = json_body(response).await;
     assert_eq!(json["data"]["ok"], true);
+}
+
+// ============================================================
+// BDD: Setup rejects whitespace-only password
+// ============================================================
+#[tokio::test]
+async fn test_setup_rejects_whitespace_only_password() {
+    let (_state, app) = setup_auth().await;
+
+    let body = json!({ "password": "            " });
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/auth/setup")
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let json = json_body(response).await;
+    assert_eq!(json["error"]["code"], "validation_error");
 }
 
 // ============================================================
@@ -279,6 +331,45 @@ async fn test_login_wrong_password() {
 
     let json = json_body(response).await;
     assert_eq!(json["error"]["code"], "unauthorized");
+}
+
+// ============================================================
+// BDD: Login rate limit returns Retry-After header
+// ============================================================
+#[tokio::test]
+async fn test_login_rate_limit_returns_retry_after_header() {
+    let (_state, app) = setup_auth().await;
+
+    let response = app
+        .clone()
+        .oneshot(setup_request(TEST_PASSWORD))
+        .await
+        .expect("setup");
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    for _ in 0..5 {
+        let response = app
+            .clone()
+            .oneshot(login_request("wrong_password_123"))
+            .await
+            .expect("login");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    let response = app
+        .clone()
+        .oneshot(login_request("wrong_password_123"))
+        .await
+        .expect("rate-limited login");
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let retry_after = response
+        .headers()
+        .get("retry-after")
+        .expect("retry-after header")
+        .to_str()
+        .expect("retry-after string");
+    assert_eq!(retry_after, "900");
 }
 
 // ============================================================
@@ -472,6 +563,60 @@ async fn test_auth_status_returns_mode() {
         json["authenticated"], false,
         "authenticated should be false without cookie"
     );
+}
+
+// ============================================================
+// BDD: Password mode first-run login flow works without setup
+// ============================================================
+#[tokio::test]
+async fn test_password_mode_first_run_login_flow() {
+    let (_state, app) = setup_password().await;
+
+    let status_request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/status")
+        .body(Body::empty())
+        .expect("build request");
+    let status_response = app
+        .clone()
+        .oneshot(status_request)
+        .await
+        .expect("status request");
+    assert_eq!(status_response.status(), StatusCode::OK);
+    let status_json = json_body(status_response).await;
+    assert_eq!(status_json["mode"], "password");
+    assert_eq!(status_json["setup_required"], false);
+    assert_eq!(status_json["authenticated"], false);
+
+    let login_response = app
+        .clone()
+        .oneshot(login_request(TEST_PASSWORD))
+        .await
+        .expect("login request");
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let cookie = login_response
+        .headers()
+        .get("set-cookie")
+        .expect("set-cookie")
+        .to_str()
+        .expect("valid header")
+        .split(';')
+        .next()
+        .expect("cookie pair")
+        .to_string();
+
+    let websites_request = Request::builder()
+        .method("GET")
+        .uri("/api/websites")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let websites_response = app
+        .clone()
+        .oneshot(websites_request)
+        .await
+        .expect("websites request");
+    assert_eq!(websites_response.status(), StatusCode::OK);
 }
 
 #[tokio::test]

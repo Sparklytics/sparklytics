@@ -26,7 +26,7 @@ export function JourneyPage({ websiteId }: JourneyPageProps) {
     max_depth: 3,
   });
 
-  const { data, isLoading, error } = useJourney(websiteId, queryParams);
+  const { data, isLoading, isFetching, error } = useJourney(websiteId, queryParams);
 
   const hasQuery = queryParams.anchor_value.trim().length > 0;
 
@@ -104,10 +104,10 @@ export function JourneyPage({ websiteId }: JourneyPageProps) {
         </div>
       ) : error ? (
         <div className="border border-line rounded-lg bg-surface-1 px-4 py-6">
-          <p className="text-sm text-red-400">{(error as Error).message}</p>
+          <p className="text-sm text-red-400">Failed to load journey data. Try refreshing.</p>
         </div>
       ) : result ? (
-        <div className="space-y-3">
+        <div className={`space-y-3 transition-opacity ${isFetching ? 'opacity-60' : ''}`}>
           <div className="border border-line rounded-lg bg-surface-1 px-4 py-3 flex flex-wrap items-center gap-2 justify-between">
             <p className="text-xs text-ink-2">
               <span className="font-mono tabular-nums text-ink">

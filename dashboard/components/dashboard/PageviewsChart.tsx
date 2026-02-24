@@ -55,8 +55,8 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
 
   if (loading) {
     return (
-      <div className="bg-surface-1 border border-line rounded-xl p-5">
-        <div className="flex items-center justify-between mb-5">
+      <div className="bg-surface-1 border border-line rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
           <Skeleton className="h-3.5 w-24 bg-surface-2" />
           <Skeleton className="h-7 w-[180px] bg-surface-2 rounded-lg" />
         </div>
@@ -66,9 +66,9 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
   }
 
   return (
-    <div className="bg-surface-1 border border-line rounded-xl p-5">
+    <div className="bg-surface-1 border border-line rounded-lg p-6">
       {/* Header with metric toggle */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-[13px] font-medium text-ink">Traffic Overview</h2>
 
         <div className="flex items-center bg-surface-2 p-0.5 rounded-lg border border-line">

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Check } from 'lucide-react';
 import { api } from '@/lib/api';
+
+const MIN_PASSWORD_LENGTH = 12;
 
 export default function SetupPage() {
   const router = useRouter();
@@ -11,6 +13,40 @@ export default function SetupPage() {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const status = await api.getAuthStatus();
+        if (cancelled) return;
+
+        // SPARKLYTICS_AUTH=none: setup should not be shown.
+        if (status === null) {
+          router.replace('/dashboard');
+          return;
+        }
+
+        // Setup only applies to local mode before first setup.
+        if (status.mode !== 'local' || !status.setup_required) {
+          router.replace(status.authenticated ? '/dashboard' : '/login');
+          return;
+        }
+      } catch {
+        // If status check fails, still allow user to attempt setup.
+      }
+
+      if (!cancelled) {
+        setReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,8 +55,12 @@ export default function SetupPage() {
       setError('Passwords do not match');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+    if (password.trim().length === 0) {
+      setError('Password cannot be empty or whitespace-only');
+      return;
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
       return;
     }
     setLoading(true);
@@ -35,9 +75,21 @@ export default function SetupPage() {
   }
 
   const checks = [
-    { label: 'At least 8 characters', met: password.length >= 8 },
+    { label: `At least ${MIN_PASSWORD_LENGTH} characters`, met: password.length >= MIN_PASSWORD_LENGTH },
+    { label: 'Not whitespace-only', met: password.trim().length > 0 },
     { label: 'Passwords match', met: password.length > 0 && password === confirm },
   ];
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-ink-3">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Checking setup status...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-canvas flex items-center justify-center">

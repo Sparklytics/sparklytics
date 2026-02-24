@@ -55,7 +55,7 @@ export function RetentionControls({
           id="retention-periods"
           value={String(maxPeriods)}
           onChange={(event) => onMaxPeriodsChange(Number(event.target.value))}
-          className="h-8 w-20 bg-surface-2 border border-line rounded-md px-2 text-xs text-ink"
+          className="h-8 w-20 bg-surface-input border border-line rounded-sm px-2 text-xs text-ink"
         >
           {Array.from({ length: maxAllowed }, (_, idx) => idx + 1).map((value) => (
             <option key={value} value={value}>

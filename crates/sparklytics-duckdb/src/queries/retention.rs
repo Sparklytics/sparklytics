@@ -1,5 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
-use std::sync::OnceLock;
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    OnceLock,
+};
 
 use anyhow::{anyhow, Result};
 use chrono::{Datelike, LocalResult, NaiveDate, TimeZone};
@@ -16,6 +19,10 @@ const DEFAULT_RETENTION_STATEMENT_TIMEOUT_MS: u64 = 5_000;
 const MIN_RETENTION_STATEMENT_TIMEOUT_MS: u64 = 100;
 const MAX_RETENTION_STATEMENT_TIMEOUT_MS: u64 = 120_000;
 const RETENTION_QUERY_TIMEOUT_MARKER: &str = "retention_query_timeout";
+const STATEMENT_TIMEOUT_SUPPORT_UNKNOWN: u8 = 0;
+const STATEMENT_TIMEOUT_SUPPORTED: u8 = 1;
+const STATEMENT_TIMEOUT_UNSUPPORTED: u8 = 2;
+static STATEMENT_TIMEOUT_SUPPORT: AtomicU8 = AtomicU8::new(STATEMENT_TIMEOUT_SUPPORT_UNKNOWN);
 
 #[derive(Debug)]
 struct RetentionRawRow {
@@ -71,6 +78,51 @@ fn is_statement_timeout_error(error: &anyhow::Error) -> bool {
         || (msg.contains("timeout") && msg.contains("statement"))
         || msg.contains("retention_query_timeout")
         || msg.contains("interrupted")
+}
+
+fn apply_statement_timeout_if_supported(conn: &duckdb::Connection, timeout_ms: u64) -> bool {
+    match STATEMENT_TIMEOUT_SUPPORT.load(Ordering::Relaxed) {
+        STATEMENT_TIMEOUT_UNSUPPORTED => return false,
+        STATEMENT_TIMEOUT_SUPPORTED | STATEMENT_TIMEOUT_SUPPORT_UNKNOWN => {}
+        _ => {}
+    }
+
+    let sql = format!("SET statement_timeout = '{}ms'", timeout_ms);
+    match conn.execute_batch(&sql) {
+        Ok(_) => {
+            STATEMENT_TIMEOUT_SUPPORT.store(STATEMENT_TIMEOUT_SUPPORTED, Ordering::Relaxed);
+            true
+        }
+        Err(error) => {
+            let message = error.to_string().to_ascii_lowercase();
+            if message.contains("unrecognized configuration parameter")
+                && message.contains("statement_timeout")
+            {
+                STATEMENT_TIMEOUT_SUPPORT.store(STATEMENT_TIMEOUT_UNSUPPORTED, Ordering::Relaxed);
+                tracing::debug!(
+                    %error,
+                    "DuckDB does not support statement_timeout; retention timeout guard disabled"
+                );
+                false
+            } else {
+                // Keep trying on next request for transient failures.
+                STATEMENT_TIMEOUT_SUPPORT
+                    .store(STATEMENT_TIMEOUT_SUPPORT_UNKNOWN, Ordering::Relaxed);
+                tracing::warn!(%error, "Could not set DuckDB statement_timeout");
+                false
+            }
+        }
+    }
+}
+
+fn reset_statement_timeout_if_supported(conn: &duckdb::Connection) {
+    if STATEMENT_TIMEOUT_SUPPORT.load(Ordering::Relaxed) != STATEMENT_TIMEOUT_SUPPORTED {
+        return;
+    }
+
+    if let Err(error) = conn.execute_batch("RESET statement_timeout") {
+        tracing::warn!(%error, "Could not reset DuckDB statement_timeout");
+    }
 }
 
 fn append_event_filters(
@@ -390,56 +442,48 @@ pub async fn get_retention_inner(
     let sql = format!(
         r#"
 WITH
-cohort_events AS (
+filtered_events AS (
     SELECT
         e.visitor_id,
-        e.created_at
-    FROM events e
-    WHERE e.website_id = ?1
-      AND e.created_at >= CAST(?4 AS TIMESTAMP)
-      AND e.created_at < CAST(?5 AS TIMESTAMP)
-      {filter_sql}
-),
-activity_events AS (
-    SELECT
-        e.visitor_id,
-        e.created_at
+        e.created_at,
+        CAST(
+            DATE_TRUNC(?2, (e.created_at AT TIME ZONE 'UTC') AT TIME ZONE ?3) AS DATE
+        ) AS period_start
     FROM events e
     WHERE e.website_id = ?1
       AND e.created_at >= CAST(?4 AS TIMESTAMP)
       AND e.created_at < CAST(?6 AS TIMESTAMP)
       {filter_sql}
 ),
-eligible_visitors AS (
+cohort_visitors AS (
     SELECT DISTINCT visitor_id
-    FROM cohort_events
+    FROM filtered_events
+    WHERE created_at < CAST(?5 AS TIMESTAMP)
 ),
 visitor_first_seen AS (
     SELECT
-        visitor_id,
-        MIN(first_seen_ts) AS global_first_seen
+        first_seen_sources.visitor_id,
+        MIN(first_seen_sources.first_seen_ts) AS global_first_seen
     FROM (
         SELECT
             s.visitor_id,
-            MIN(s.first_seen) AS first_seen_ts
+            s.first_seen AS first_seen_ts
         FROM sessions s
-        JOIN eligible_visitors ev
-          ON ev.visitor_id = s.visitor_id
+        JOIN cohort_visitors cv
+          ON cv.visitor_id = s.visitor_id
         WHERE s.website_id = ?1
           AND s.first_seen < CAST(?5 AS TIMESTAMP)
-        GROUP BY s.visitor_id
         UNION ALL
         SELECT
             e.visitor_id,
-            MIN(e.created_at) AS first_seen_ts
+            e.created_at AS first_seen_ts
         FROM events e
-        JOIN eligible_visitors ev
-          ON ev.visitor_id = e.visitor_id
+        JOIN cohort_visitors cv
+          ON cv.visitor_id = e.visitor_id
         WHERE e.website_id = ?1
           AND e.created_at < CAST(?5 AS TIMESTAMP)
-        GROUP BY e.visitor_id
     ) first_seen_sources
-    GROUP BY visitor_id
+    GROUP BY first_seen_sources.visitor_id
 ),
 cohorts AS (
     SELECT
@@ -448,25 +492,21 @@ cohorts AS (
             DATE_TRUNC(?2, (v.global_first_seen AT TIME ZONE 'UTC') AT TIME ZONE ?3) AS DATE
         ) AS cohort_start
     FROM visitor_first_seen v
-    JOIN eligible_visitors ev
-      ON ev.visitor_id = v.visitor_id
     WHERE v.global_first_seen >= CAST(?4 AS TIMESTAMP)
       AND v.global_first_seen < CAST(?5 AS TIMESTAMP)
 ),
 activity AS (
+    SELECT DISTINCT
+        fe.visitor_id,
+        fe.period_start AS active_period
+    FROM filtered_events fe
+    JOIN cohorts c
+      ON c.visitor_id = fe.visitor_id
+    UNION
     SELECT
         c.visitor_id,
         c.cohort_start AS active_period
     FROM cohorts c
-    UNION
-    SELECT DISTINCT
-        ae.visitor_id,
-        CAST(
-            DATE_TRUNC(?2, (ae.created_at AT TIME ZONE 'UTC') AT TIME ZONE ?3) AS DATE
-        ) AS active_period
-    FROM activity_events ae
-    JOIN cohorts c
-      ON c.visitor_id = ae.visitor_id
 ),
 retention_raw AS (
     SELECT
@@ -502,13 +542,7 @@ ORDER BY r.cohort_start ASC, r.period_offset ASC
 
     let param_refs: Vec<&dyn duckdb::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let statement_timeout_ms = retention_statement_timeout_ms();
-
-    if let Err(error) = conn.execute_batch(&format!(
-        "SET statement_timeout = '{}ms'",
-        statement_timeout_ms
-    )) {
-        tracing::warn!(%error, "Could not set DuckDB statement_timeout");
-    }
+    let timeout_guard_applied = apply_statement_timeout_if_supported(&conn, statement_timeout_ms);
 
     let raw_rows_result: Result<Vec<RetentionRawRow>> = (|| {
         let mut stmt = conn.prepare(&sql)?;
@@ -530,8 +564,8 @@ ORDER BY r.cohort_start ASC, r.period_offset ASC
         Ok(out)
     })();
 
-    if let Err(error) = conn.execute_batch("RESET statement_timeout") {
-        tracing::warn!(%error, "Could not reset DuckDB statement_timeout");
+    if timeout_guard_applied {
+        reset_statement_timeout_if_supported(&conn);
     }
 
     let raw_rows = match raw_rows_result {

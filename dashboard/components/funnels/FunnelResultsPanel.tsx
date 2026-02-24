@@ -22,14 +22,24 @@ export function FunnelResultsPanel({ websiteId, funnelId }: FunnelResultsPanelPr
   }
 
   if (error) {
+    console.error('[FunnelResultsPanel]', error);
     return (
       <p className="pt-4 text-xs text-red-400">
-        {(error as Error).message}
+        Failed to load funnel results. Try refreshing.
       </p>
     );
   }
 
-  if (!data?.data) return null;
+  if (!data?.data) {
+    return (
+      <div className="pt-4 py-8 text-center">
+        <p className="text-sm font-medium text-ink">No matching sessions</p>
+        <p className="text-xs text-ink-3 mt-1">
+          Try widening the date range or adjusting the steps.
+        </p>
+      </div>
+    );
+  }
 
   const results = data.data;
 
@@ -56,7 +66,7 @@ export function FunnelResultsPanel({ websiteId, funnelId }: FunnelResultsPanelPr
 
       {/* Detail table */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm" aria-label="Funnel step breakdown">
+        <table className="min-w-[520px] w-full text-sm" aria-label="Funnel step breakdown">
           <thead>
             <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase tracking-wider">
               <th className="text-left py-2 font-normal pr-3">#</th>

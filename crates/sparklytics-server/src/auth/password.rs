@@ -31,8 +31,34 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
 
 /// Validate password strength: minimum 12 characters.
 pub fn validate_password_strength(password: &str) -> Result<()> {
+    if password.trim().is_empty() {
+        return Err(anyhow!("password cannot be empty or whitespace-only"));
+    }
     if password.len() < 12 {
         return Err(anyhow!("password must be at least 12 characters"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_password_strength;
+
+    #[test]
+    fn rejects_whitespace_only_password() {
+        let result = validate_password_strength("            ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_short_password() {
+        let result = validate_password_strength("short");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn accepts_valid_password() {
+        let result = validate_password_strength("strong_password_123");
+        assert!(result.is_ok());
+    }
 }

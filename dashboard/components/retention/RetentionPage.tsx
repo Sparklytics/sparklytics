@@ -37,17 +37,14 @@ export function RetentionPage({ websiteId }: RetentionPageProps) {
     [granularity, maxPeriods]
   );
 
-  const { data, isLoading, error } = useRetention(websiteId, controls);
+  const { data, isLoading, isFetching, error } = useRetention(websiteId, controls);
   const result = data?.data;
 
   function handleGranularityChange(next: RetentionGranularity) {
     setGranularity(next);
-    setMaxPeriods((current) => {
-      const limit = MAX_PERIODS[next];
-      if (current > limit) return limit;
-      if (current < 1) return 1;
-      return current;
-    });
+    // Reset to the sensible default for the new granularity rather than
+    // clamping the previous value to the ceiling.
+    setMaxPeriods(DEFAULT_PERIODS[next]);
   }
 
   return (
@@ -73,10 +70,10 @@ export function RetentionPage({ websiteId }: RetentionPageProps) {
         </div>
       ) : error ? (
         <div className="border border-line rounded-lg bg-surface-1 px-4 py-6">
-          <p className="text-sm text-red-400">{(error as Error).message}</p>
+          <p className="text-sm text-red-400">Failed to load retention data. Try refreshing.</p>
         </div>
       ) : result ? (
-        <div className="space-y-3">
+        <div className={`space-y-3 transition-opacity ${isFetching ? 'opacity-60' : ''}`}>
           <div className="border border-line rounded-lg bg-surface-1 px-4 py-3 flex flex-wrap items-center gap-2 justify-between">
             <p className="text-xs text-ink-2">
               <span className="font-mono tabular-nums text-ink">

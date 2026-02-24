@@ -1,6 +1,7 @@
 'use client';
 
 import { RetentionCohortRow, RetentionGranularity } from '@/lib/api';
+import { periodLabel } from '@/lib/retention-utils';
 import { RetentionTooltip } from './RetentionTooltip';
 
 interface RetentionHeatmapProps {
@@ -28,6 +29,9 @@ function addPeriods(base: Date, granularity: RetentionGranularity, offset: numbe
   } else if (granularity === 'week') {
     date.setUTCDate(date.getUTCDate() + offset * 7);
   } else {
+    // Fix: normalise to day 1 before adding months to avoid JS date overflow
+    // e.g. Jan 31 + 1 month would otherwise become March 3
+    date.setUTCDate(1);
     date.setUTCMonth(date.getUTCMonth() + offset);
   }
   return date;
@@ -44,7 +48,9 @@ function isNotElapsed(
   const end = parseDateLike(endDate);
   if (!cohortDate || !end) return false;
   const periodStart = addPeriods(cohortDate, granularity, offset);
-  return periodStart.getTime() > end.getTime();
+  // Use >= so that a period starting exactly on the endDate boundary is also
+  // treated as not-yet-elapsed (no data could be in it yet).
+  return periodStart.getTime() >= end.getTime();
 }
 
 function columnLabel(granularity: RetentionGranularity, offset: number): string {
@@ -62,8 +68,7 @@ function cellAriaLabel(
   rate: number,
   notElapsed: boolean
 ): string {
-  const period =
-    granularity === 'day' ? `Day ${offset}` : granularity === 'week' ? `Week ${offset}` : `Month ${offset}`;
+  const period = periodLabel(granularity, offset);
   if (notElapsed) {
     return `Cohort ${cohortStart}, ${period}, not yet elapsed`;
   }
@@ -72,14 +77,25 @@ function cellAriaLabel(
   )} percent`;
 }
 
+// Color tiers using the --spark design token instead of hardcoded emerald shades.
+// text-canvas is used on the brightest cells so dark text stays readable.
 function rateColor(rate: number): string {
-  if (rate <= 0) return 'bg-zinc-800 text-ink-3';
-  if (rate <= 0.2) return 'bg-emerald-900/30 text-ink-2';
-  if (rate <= 0.4) return 'bg-emerald-800/50 text-ink';
-  if (rate <= 0.6) return 'bg-emerald-700/60 text-ink';
-  if (rate <= 0.8) return 'bg-emerald-600/70 text-ink';
-  return 'bg-emerald-500/80 text-black';
+  if (rate <= 0)   return 'bg-surface-2 text-ink-4';
+  if (rate <= 0.2) return 'bg-spark/10 text-ink-2';
+  if (rate <= 0.4) return 'bg-spark/25 text-ink';
+  if (rate <= 0.6) return 'bg-spark/45 text-ink';
+  if (rate <= 0.8) return 'bg-spark/65 text-ink';
+  return                  'bg-spark/80 text-canvas';
 }
+
+const LEGEND_BANDS = [
+  { label: '0%',    color: 'bg-surface-2' },
+  { label: '20%',   color: 'bg-spark/10' },
+  { label: '40%',   color: 'bg-spark/25' },
+  { label: '60%',   color: 'bg-spark/45' },
+  { label: '80%',   color: 'bg-spark/65' },
+  { label: '100%',  color: 'bg-spark/80' },
+];
 
 export function RetentionHeatmap({
   rows,
@@ -97,16 +113,22 @@ export function RetentionHeatmap({
   }
 
   return (
-    <div className="border border-line rounded-lg bg-surface-1 p-4">
+    <div className="border border-line rounded-lg bg-surface-1 p-4 space-y-3">
       <div className="overflow-x-auto">
         <table className="min-w-full border-separate border-spacing-1">
           <caption className="sr-only">Cohort retention heatmap</caption>
           <thead>
             <tr>
-              <th scope="col" className="text-left text-[11px] text-ink-3 font-medium px-2 py-1">
+              <th
+                scope="col"
+                className="sticky left-0 z-10 bg-surface-1 text-left text-[11px] text-ink-3 font-medium px-2 py-1"
+              >
                 Cohort
               </th>
-              <th scope="col" className="text-right text-[11px] text-ink-3 font-medium px-2 py-1">
+              <th
+                scope="col"
+                className="sticky left-[5.5rem] z-10 bg-surface-1 text-right text-[11px] text-ink-3 font-medium px-2 py-1"
+              >
                 Size
               </th>
               {Array.from({ length: maxPeriods }, (_, idx) => (
@@ -123,10 +145,13 @@ export function RetentionHeatmap({
           <tbody>
             {rows.map((row, rowIndex) => (
               <tr key={row.cohort_start}>
-                <th scope="row" className="px-2 py-1 text-xs text-ink font-mono whitespace-nowrap">
+                <th
+                  scope="row"
+                  className="sticky left-0 z-10 bg-surface-1 px-2 py-1 text-xs text-ink font-mono whitespace-nowrap"
+                >
                   {row.cohort_start.slice(0, 10)}
                 </th>
-                <td className="px-2 py-1 text-xs text-ink text-right font-mono tabular-nums whitespace-nowrap">
+                <td className="sticky left-[5.5rem] z-10 bg-surface-1 px-2 py-1 text-xs text-ink text-right font-mono tabular-nums whitespace-nowrap">
                   {row.cohort_size.toLocaleString()}
                 </td>
                 {row.periods.map((period) => {
@@ -156,9 +181,9 @@ export function RetentionHeatmap({
                           )}
                           className={`h-8 min-w-[52px] rounded-sm border border-line/40 flex items-center justify-center text-[11px] font-mono tabular-nums ${
                             notElapsed
-                              ? 'bg-zinc-800/40 text-ink-4'
+                              ? 'bg-surface-2/50 text-ink-4'
                               : rateColor(period.rate)
-                          } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spark/70`}
+                          } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spark`}
                         >
                           {text}
                         </button>
@@ -180,6 +205,19 @@ export function RetentionHeatmap({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Color legend */}
+      <div className="flex items-center gap-3 pt-1">
+        <span className="text-[10px] text-ink-4">Retention</span>
+        <div className="flex items-center gap-1">
+          {LEGEND_BANDS.map((band) => (
+            <div key={band.label} className="flex flex-col items-center gap-0.5">
+              <div className={`w-6 h-3 rounded-sm border border-line/40 ${band.color}`} />
+              <span className="text-[9px] text-ink-4 tabular-nums">{band.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

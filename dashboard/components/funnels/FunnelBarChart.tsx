@@ -29,6 +29,11 @@ export function FunnelBarChart({ steps, totalEntered }: FunnelBarChartProps) {
                 <div
                   className="absolute left-0 top-0 h-full bg-spark/70 transition-all duration-500"
                   style={{ width: `${barPct}%` }}
+                  role="progressbar"
+                  aria-valuenow={Math.round(barPct)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`${step.label}: ${(step.conversion_rate_from_start * 100).toFixed(1)}%`}
                 />
               </div>
             </div>

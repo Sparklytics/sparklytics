@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   ...(isDev ? {} : { output: 'export' }),
   trailingSlash: true,
   images: { unoptimized: true },
+  env: {
+    NEXT_PUBLIC_AUTH_MODE:
+      process.env.NEXT_PUBLIC_AUTH_MODE ?? process.env.SPARKLYTICS_AUTH ?? '',
+  },
   // Proxy /api to the Rust server in development only
   ...(isDev
     ? {

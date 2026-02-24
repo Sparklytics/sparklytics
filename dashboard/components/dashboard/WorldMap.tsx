@@ -175,7 +175,7 @@ export function WorldMap({ data = [], loading }: WorldMapProps) {
   // ── Loading skeleton ──────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="bg-surface-1 border border-line rounded-xl p-5">
+      <div className="bg-surface-1 border border-line rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="h-4 w-32 bg-surface-2 rounded animate-skeleton" />
           <div className="h-6 w-24 bg-surface-2 rounded-lg animate-skeleton" />
@@ -221,7 +221,7 @@ export function WorldMap({ data = [], loading }: WorldMapProps) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="bg-surface-1 border border-line rounded-xl p-5">
+    <div className="bg-surface-1 border border-line rounded-lg p-6">
       {/* Header: title + Globe/Map toggle */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-[13px] font-medium text-ink">Visitors by Country</h3>

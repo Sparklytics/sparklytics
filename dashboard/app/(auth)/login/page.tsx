@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -10,6 +10,46 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const status = await api.getAuthStatus();
+        if (cancelled) return;
+
+        // SPARKLYTICS_AUTH=none: no login needed.
+        if (status === null) {
+          router.replace('/dashboard');
+          return;
+        }
+
+        // Local mode before setup should go to setup flow.
+        if (status.setup_required) {
+          router.replace('/setup');
+          return;
+        }
+
+        // Already authenticated.
+        if (status.authenticated) {
+          router.replace('/dashboard');
+          return;
+        }
+      } catch {
+        // If status check fails, keep login available.
+      }
+
+      if (!cancelled) {
+        setReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,6 +63,17 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-ink-3">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Checking auth status...
+        </div>
+      </div>
+    );
   }
 
   return (

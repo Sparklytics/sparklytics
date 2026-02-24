@@ -63,7 +63,7 @@ export function WebsitePicker({ websites, currentId, onAddWebsite }: WebsitePick
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-surface-2 border border-line rounded-lg z-50 overflow-hidden shadow-lg">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-surface-2 border border-line-3 rounded-lg z-50 overflow-hidden">
           {websites.map((site) => (
             <button
               key={site.id}

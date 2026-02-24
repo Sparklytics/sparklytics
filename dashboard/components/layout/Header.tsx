@@ -79,7 +79,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
           <h1 className="text-sm font-medium text-ink truncate max-w-[200px]">{title}</h1>
           {websiteId && activeVisitors > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-line bg-surface-1" title={`${activeVisitors} current active visitors`}>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]" />
+              <div className="w-1.5 h-1.5 rounded-full bg-spark animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]" />
               <span className="text-[10px] font-medium text-ink-2">{activeVisitors} active</span>
             </div>
           )}

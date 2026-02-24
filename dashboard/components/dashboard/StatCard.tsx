@@ -37,7 +37,7 @@ function TrendBadge({ delta }: { delta: number }) {
 export function StatCard({ label, value, delta, sparklineData, loading }: StatCardProps) {
   if (loading) {
     return (
-      <div className="bg-surface-1 border border-line rounded-xl p-5 flex flex-col gap-3">
+      <div className="bg-surface-1 border border-line rounded-lg p-4 flex flex-col gap-3">
         <Skeleton className="h-2.5 w-14 bg-surface-2" />
         <Skeleton className="h-9 w-20 bg-surface-2" />
         <Skeleton className="h-[32px] w-full bg-surface-2" />
@@ -46,7 +46,7 @@ export function StatCard({ label, value, delta, sparklineData, loading }: StatCa
   }
 
   return (
-    <div className="bg-surface-1 border border-line rounded-xl p-5 flex flex-col gap-0 relative overflow-hidden">
+    <div className="bg-surface-1 border border-line rounded-lg p-4 flex flex-col gap-0 relative overflow-hidden">
       <div className="flex items-start justify-between gap-2 mb-2">
         <span className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium leading-none pt-px">
           {label}

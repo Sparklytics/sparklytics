@@ -31,6 +31,7 @@ export function JourneyBranchRow({
                 {idx > 0 && <span className="text-xs text-ink-4">→</span>}
                 <button
                   onClick={() => onPickNode(node)}
+                  aria-label={`Set anchor to ${node}`}
                   className="px-2 py-1 rounded-sm border border-line text-xs font-mono text-ink-2 hover:text-ink hover:border-spark transition-colors"
                   type="button"
                 >

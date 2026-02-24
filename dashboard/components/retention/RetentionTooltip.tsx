@@ -1,6 +1,7 @@
 'use client';
 
 import { RetentionGranularity } from '@/lib/api';
+import { periodLabel } from '@/lib/retention-utils';
 
 interface RetentionTooltipProps {
   id: string;
@@ -11,12 +12,6 @@ interface RetentionTooltipProps {
   cohortSize: number;
   rate: number;
   notElapsed: boolean;
-}
-
-function periodLabel(granularity: RetentionGranularity, offset: number): string {
-  if (granularity === 'day') return `Day ${offset}`;
-  if (granularity === 'week') return `Week ${offset}`;
-  return `Month ${offset}`;
 }
 
 export function RetentionTooltip({
@@ -33,7 +28,7 @@ export function RetentionTooltip({
     <div
       id={id}
       role="tooltip"
-      className="pointer-events-none hidden group-hover:block group-focus-within:block absolute z-20 left-1/2 top-full mt-1 -translate-x-1/2 min-w-[168px] rounded-md border border-line bg-canvas px-2 py-2"
+      className="pointer-events-none hidden group-hover:block group-focus-within:block absolute z-20 left-1/2 top-full mt-1 -translate-x-1/2 min-w-[168px] rounded-md border border-line-3 bg-surface-2 px-2 py-2"
     >
       <p className="text-[10px] text-ink-3">{cohortStart}</p>
       <p className="text-[10px] text-ink-2 mt-1">{periodLabel(granularity, offset)}</p>

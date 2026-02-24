@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { FunnelResultsPanel } from './FunnelResultsPanel';
 import { FunnelBuilderDialog } from './FunnelBuilderDialog';
 import { FunnelDeleteConfirm } from './FunnelDeleteConfirm';
@@ -21,8 +21,9 @@ export function FunnelCard({ websiteId, funnel }: FunnelCardProps) {
 
   const panelId = `funnel-panel-${funnel.id}`;
 
-  // Fetch the full funnel (with steps) only when the edit dialog is opened
-  const { data: fullFunnelData } = useQuery({
+  // Fetch the full funnel (with steps) only when the edit dialog is opened.
+  // isLoading is true only on the initial fetch (no cached data yet).
+  const { data: fullFunnelData, isLoading: isLoadingFunnel } = useQuery({
     queryKey: ['funnel', websiteId, funnel.id],
     queryFn: () => api.getFunnel(websiteId, funnel.id),
     enabled: editOpen && !!funnel.id,
@@ -36,49 +37,48 @@ export function FunnelCard({ websiteId, funnel }: FunnelCardProps) {
   return (
     <>
       <div className="border border-line rounded-lg bg-surface-1 overflow-hidden">
-        {/* Card header */}
-        <div
-          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface-2/30 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-spark"
-          onClick={toggleExpanded}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              toggleExpanded();
-            }
-          }}
-          role="button"
-          tabIndex={0}
-          aria-expanded={expanded}
-          aria-controls={panelId}
-        >
-          <div className="flex-1 min-w-0">
+        {/* Card header — expand toggle is a native <button> so keyboard focus works correctly */}
+        <div className="flex items-center gap-2 px-4 py-3">
+          <button
+            type="button"
+            className="flex-1 min-w-0 text-left rounded-sm hover:opacity-80 transition-opacity focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-spark"
+            onClick={toggleExpanded}
+            aria-expanded={expanded}
+            aria-controls={panelId}
+          >
             <p className="text-sm font-medium text-ink truncate">{funnel.name}</p>
             <p className="text-xs text-ink-3 mt-1">
               {funnel.step_count} step{funnel.step_count !== 1 ? 's' : ''}
             </p>
-          </div>
+          </button>
 
           <div className="flex items-center gap-1 shrink-0">
+            {/* Show a spinner while the edit query is loading; gate dialog open on data ready */}
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setEditOpen(true); }}
-              className="p-1 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-sm transition-colors"
+              onClick={() => setEditOpen(true)}
+              disabled={editOpen && isLoadingFunnel}
+              className="p-1 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-sm transition-colors disabled:opacity-50"
               aria-label="Edit funnel"
             >
-              <Pencil className="w-4 h-4" />
+              {editOpen && isLoadingFunnel ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Pencil className="w-4 h-4" />
+              )}
             </button>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setDeleteTarget(funnel); }}
+              onClick={() => setDeleteTarget(funnel)}
               className="p-1 text-ink-3 hover:text-red-400 hover:bg-red-400/10 rounded-sm transition-colors"
               aria-label="Delete funnel"
             >
               <Trash2 className="w-4 h-4" />
             </button>
             {expanded ? (
-              <ChevronUp className="w-4 h-4 text-ink-3" />
+              <ChevronUp className="w-4 h-4 text-ink-3" aria-hidden />
             ) : (
-              <ChevronDown className="w-4 h-4 text-ink-3" />
+              <ChevronDown className="w-4 h-4 text-ink-3" aria-hidden />
             )}
           </div>
         </div>
@@ -91,10 +91,10 @@ export function FunnelCard({ websiteId, funnel }: FunnelCardProps) {
         )}
       </div>
 
-      {/* Edit dialog — uses full funnel with steps */}
+      {/* Edit dialog — gated on data being ready to prevent blank-step flicker */}
       <FunnelBuilderDialog
         websiteId={websiteId}
-        open={editOpen}
+        open={editOpen && !isLoadingFunnel}
         onClose={() => setEditOpen(false)}
         editingFunnel={fullFunnelData?.data ?? null}
       />

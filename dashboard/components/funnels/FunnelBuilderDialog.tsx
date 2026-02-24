@@ -16,7 +16,7 @@ import { useTopPages } from '@/hooks/useTopPages';
 import type { Funnel, CreateFunnelStepPayload } from '@/lib/api';
 
 const inputClass =
-  'w-full px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink placeholder:text-ink-3 focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark';
+  'w-full px-3 py-2 text-sm bg-surface-input border border-line rounded-md text-ink placeholder:text-ink-3 focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark';
 
 const labelClass = 'block text-xs font-medium text-ink-3 mb-1';
 
@@ -129,7 +129,7 @@ export function FunnelBuilderDialog({ websiteId, open, onClose, editingFunnel }:
       <DialogContent className="bg-surface-1 border-line sm:rounded-lg max-w-xl">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-ink">
-            {isEditing ? 'Edit funnel' : 'New funnel'}
+            {isEditing ? `Edit "${editingFunnel?.name}"` : 'New funnel'}
           </DialogTitle>
         </DialogHeader>
 
@@ -168,22 +168,22 @@ export function FunnelBuilderDialog({ websiteId, open, onClose, editingFunnel }:
                 />
               ))}
             </div>
-            {steps.length < 8 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={addStep}
-                className="mt-2 px-0 text-xs text-spark hover:text-spark/80 hover:bg-transparent gap-1"
-              >
-                <Plus className="w-4 h-4" />
-                Add Step
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={addStep}
+              disabled={steps.length >= 8}
+              title={steps.length >= 8 ? 'Maximum 8 steps reached' : undefined}
+              className="mt-2 px-0 text-xs text-spark hover:text-spark/80 hover:bg-transparent gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-4 h-4" />
+              Add Step
+            </Button>
           </fieldset>
 
           {apiError && (
-            <p className="text-xs text-red-400 border border-red-400/20 bg-red-400/5 rounded-lg px-3 py-2">
+            <p className="text-xs text-red-400 border border-red-400/20 bg-red-400/5 rounded-sm px-3 py-2">
               {apiError}
             </p>
           )}

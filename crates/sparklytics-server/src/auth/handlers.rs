@@ -17,6 +17,8 @@ use super::api_keys::{generate_api_key, generate_key_id};
 use super::jwt::{decode_jwt, encode_jwt};
 use super::password::{hash_password, validate_password_strength, verify_password};
 
+const LOGIN_RATE_LIMIT_RETRY_AFTER_SECONDS: u64 = 15 * 60;
+
 // ---------------------------------------------------------------------------
 // GET /api/auth/status
 // ---------------------------------------------------------------------------
@@ -130,7 +132,9 @@ pub async fn auth_login(
         .await
         .map_err(AppError::Internal)?;
     if !allowed {
-        return Err(AppError::RateLimited);
+        return Err(AppError::RateLimitedWithRetry {
+            retry_after_seconds: LOGIN_RATE_LIMIT_RETRY_AFTER_SECONDS,
+        });
     }
 
     // Get the expected password hash.

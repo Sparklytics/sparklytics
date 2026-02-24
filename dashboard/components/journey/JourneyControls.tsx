@@ -32,7 +32,7 @@ export function JourneyControls({
         <select
           value={anchorType}
           onChange={(event) => onAnchorTypeChange(event.target.value as AnchorType)}
-          className="h-8 bg-surface-2 border border-line rounded-md px-2 text-xs text-ink"
+          className="h-8 bg-surface-input border border-line rounded-sm px-2 text-xs text-ink"
           aria-label="Anchor type"
         >
           <option value="page">Page URL</option>
@@ -46,7 +46,7 @@ export function JourneyControls({
             if (event.key === 'Enter') onSearch();
           }}
           placeholder={anchorType === 'page' ? '/pricing' : 'signup_clicked'}
-          className="h-8 bg-surface-2 border border-line rounded-md px-2 text-xs text-ink font-mono"
+          className="h-8 bg-surface-input border border-line rounded-sm px-2 text-xs text-ink font-mono"
           aria-label="Anchor value"
         />
 
@@ -60,10 +60,15 @@ export function JourneyControls({
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-3">
+        <div
+          role="group"
+          aria-label="Journey direction"
+          className="flex items-center gap-1"
+        >
           <button
             onClick={() => onDirectionChange('previous')}
+            aria-pressed={direction === 'previous'}
             className={`px-2 py-1 rounded-sm border text-xs transition-colors ${
               direction === 'previous'
                 ? 'border-spark text-ink bg-spark/10'
@@ -75,6 +80,7 @@ export function JourneyControls({
           </button>
           <button
             onClick={() => onDirectionChange('next')}
+            aria-pressed={direction === 'next'}
             className={`px-2 py-1 rounded-sm border text-xs transition-colors ${
               direction === 'next'
                 ? 'border-spark text-ink bg-spark/10'
@@ -94,7 +100,7 @@ export function JourneyControls({
             id="journey-depth"
             value={String(maxDepth)}
             onChange={(event) => onMaxDepthChange(Number(event.target.value))}
-            className="h-8 w-16 bg-surface-2 border border-line rounded-md px-2 text-xs text-ink"
+            className="h-8 w-16 bg-surface-input border border-line rounded-sm px-2 text-xs text-ink"
           >
             {[1, 2, 3, 4, 5].map((depth) => (
               <option key={depth} value={depth}>

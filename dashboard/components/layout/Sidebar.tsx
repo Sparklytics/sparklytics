@@ -109,15 +109,15 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
     <button
       onClick={() => navigate(path)}
       className={cn(
-        'group flex items-center gap-2.5 w-full px-2.5 py-[7px] text-[13px] rounded-md transition-all duration-100 text-left',
+        'group flex items-center gap-2 w-full pl-[10px] pr-3 py-2 text-[13px] rounded-r-md border-l-2 transition-all duration-100 text-left',
         isActive(path)
-          ? 'bg-white/[0.07] text-ink font-medium'
-          : 'text-ink-3 hover:text-ink-2 hover:bg-white/[0.04]'
+          ? 'border-spark text-ink'
+          : 'border-transparent text-ink-3 hover:text-ink-2 hover:bg-white/[0.04]'
       )}
     >
       <Icon
         className={cn(
-          'w-[15px] h-[15px] shrink-0 transition-colors',
+          'w-5 h-5 shrink-0 transition-colors',
           isActive(path) ? 'text-spark' : 'text-ink-4 group-hover:text-ink-3'
         )}
       />
@@ -126,7 +126,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
   );
 
   const SectionLabel = ({ label }: { label: string }) => (
-    <div className="px-2.5 pt-4 pb-1">
+    <div className="px-3 pt-4 pb-1">
       <span className="text-[10px] font-semibold text-ink-4 uppercase tracking-[0.08em]">
         {label}
       </span>
@@ -197,9 +197,9 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
           <UsageBadge />
           <button
             onClick={handleLogout}
-            className="mt-1 group flex items-center gap-2.5 w-full px-2.5 py-[7px] text-[13px] text-ink-3 hover:text-ink-2 hover:bg-white/[0.04] rounded-md transition-colors"
+            className="mt-1 group flex items-center gap-2 w-full px-3 py-2 text-[13px] text-ink-3 hover:text-ink-2 hover:bg-white/[0.04] rounded-md transition-colors"
           >
-            <LogOut className="w-[15px] h-[15px] shrink-0 text-ink-4 group-hover:text-ink-3" />
+            <LogOut className="w-5 h-5 shrink-0 text-ink-4 group-hover:text-ink-3" />
             Log out
           </button>
         </div>

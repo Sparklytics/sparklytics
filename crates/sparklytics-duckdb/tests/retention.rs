@@ -215,6 +215,65 @@ async fn retention_respects_country_filter_for_cohort_population() {
 }
 
 #[tokio::test]
+async fn retention_uses_events_fallback_when_session_row_is_missing() {
+    let db = DuckDbBackend::open_in_memory().expect("db");
+    db.seed_website("site_1", "example.com")
+        .await
+        .expect("seed website");
+
+    insert_session(
+        &db,
+        "site_1",
+        "sess_with_session",
+        "visitor_with_session",
+        "2026-01-01 10:00:00",
+    )
+    .await;
+    insert_event(
+        &db,
+        "site_1",
+        "evt_with_session",
+        "sess_with_session",
+        "visitor_with_session",
+        "PL",
+        "2026-01-01 10:00:00",
+    )
+    .await;
+
+    // No session row for this visitor: retention should still include them via events fallback.
+    insert_event(
+        &db,
+        "site_1",
+        "evt_event_only",
+        "sess_missing",
+        "visitor_event_only",
+        "PL",
+        "2026-01-02 11:00:00",
+    )
+    .await;
+
+    let result = db
+        .get_retention(
+            "site_1",
+            None,
+            &base_filter(
+                NaiveDate::from_ymd_opt(2026, 1, 1).expect("valid"),
+                NaiveDate::from_ymd_opt(2026, 1, 31).expect("valid"),
+            ),
+            &RetentionQuery {
+                granularity: RetentionGranularity::Week,
+                max_periods: 2,
+            },
+        )
+        .await
+        .expect("retention");
+
+    assert_eq!(result.rows.len(), 1);
+    assert_eq!(result.rows[0].cohort_size, 2);
+    assert_eq!(result.rows[0].periods[0].retained, 2);
+}
+
+#[tokio::test]
 async fn retention_timezone_changes_cohort_day_bucket() {
     let db = DuckDbBackend::open_in_memory().expect("db");
     db.seed_website("site_1", "example.com")

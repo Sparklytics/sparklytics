@@ -66,6 +66,10 @@ Three modes: `SPARKLYTICS_AUTH=none|password|local`. Includes:
 - 40+ BDD scenarios
 - Rust module layout (`crates/sparklytics-server/src/auth/`)
 
+### "How do I launch Sparklytics for the first time?"
+→ [`FIRST-LAUNCH-RUNBOOK.md`](FIRST-LAUNCH-RUNBOOK.md)
+Step-by-step first-run guide for Docker/binary, mode-specific onboarding (`local` / `password` / `none`), first-event verification, and troubleshooting.
+
 ### "How does cloud/Clerk auth work?"
 → [`docs/sprints/sprint-5.md`](docs/sprints/sprint-5.md)
 → [`docs/sprints/sprint-index.md`](docs/sprints/sprint-index.md) (Auth Flow section)

@@ -26,6 +26,9 @@ curl -O https://raw.githubusercontent.com/sparklytics/sparklytics/main/docker-co
 docker compose up -d
 ```
 
+For mode-specific onboarding and first-run verification, see the
+[First Launch Runbook](FIRST-LAUNCH-RUNBOOK.md).
+
 ---
 
 ![Sparklytics Dashboard](docs/images/dashboard-screenshot.png)
@@ -113,12 +116,12 @@ export function SignupButton() {
 |----------|---------|-------------|
 | `SPARKLYTICS_AUTH` | `local` | `none` · `password` · `local` |
 | `SPARKLYTICS_PASSWORD` | — | Required when `AUTH=password` |
-| `SPARKLYTICS_HTTPS` | `true` | Set `false` behind HTTP reverse proxy |
+| `SPARKLYTICS_HTTPS` | `true` | Set `false` when serving over plain HTTP (for example localhost dev) |
 | `SPARKLYTICS_PORT` | `3000` | Server listen port |
 | `SPARKLYTICS_DATA_DIR` | `./data` | DuckDB data directory |
 | `SPARKLYTICS_CORS_ORIGINS` | — | Comma-separated origins for query endpoints |
 | `SPARKLYTICS_RETENTION_DAYS` | `365` | Event retention period |
-| `SPARKLYTICS_GEOIP_PATH` | `./dbip-city-lite.mmdb` | DB-IP City Lite database path (bundled in Docker) |
+| `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | GeoIP database path (Docker image defaults to bundled DB-IP at `/geoip/dbip-city-lite.mmdb`) |
 
 ### GeoIP
 
@@ -178,6 +181,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full setup instructions.
 
 ## Documentation
 
+- [First Launch Runbook](FIRST-LAUNCH-RUNBOOK.md)
 - [Architecture Overview](docs/04-TECHNICAL-ARCHITECTURE.md)
 - [API Specification](docs/07-API-SPECIFICATION.md)
 - [Database Schema](docs/08-DATABASE-SCHEMA.md)

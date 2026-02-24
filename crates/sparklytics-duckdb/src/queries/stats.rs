@@ -56,19 +56,18 @@ pub async fn get_stats_inner(db: &DuckDbBackend, params: &StatsParams) -> Result
         .query_row(duckdb::params![params.website_id], |row| row.get(0))
         .unwrap_or_else(|_| "UTC".to_string());
 
-    let current = query_stats_for_period(
+    let range_days = (params.end_date - params.start_date).num_days() + 1;
+    let prev_end = params.start_date - chrono::Duration::days(1);
+    let prev_start = prev_end - chrono::Duration::days(range_days - 1);
+    let (current, prev) = query_stats_for_ranges(
         &conn,
         &params.website_id,
         &params.start_date,
         &params.end_date,
+        &prev_start,
+        &prev_end,
         params,
     )?;
-
-    let range_days = (params.end_date - params.start_date).num_days() + 1;
-    let prev_end = params.start_date - chrono::Duration::days(1);
-    let prev_start = prev_end - chrono::Duration::days(range_days - 1);
-
-    let prev = query_stats_for_period(&conn, &params.website_id, &prev_start, &prev_end, params)?;
 
     Ok(StatsResult {
         pageviews: current.pageviews,
@@ -99,23 +98,32 @@ struct PeriodStats {
     avg_duration: f64,
 }
 
-fn query_stats_for_period(
+fn query_stats_for_ranges(
     conn: &duckdb::Connection,
     website_id: &str,
-    start_date: &NaiveDate,
-    end_date: &NaiveDate,
+    current_start_date: &NaiveDate,
+    current_end_date: &NaiveDate,
+    prev_start_date: &NaiveDate,
+    prev_end_date: &NaiveDate,
     params: &StatsParams,
-) -> Result<PeriodStats> {
-    let start_str = start_date.format("%Y-%m-%d").to_string();
-    let end_next = *end_date + chrono::Duration::days(1);
-    let end_str = end_next.format("%Y-%m-%d").to_string();
+) -> Result<(PeriodStats, PeriodStats)> {
+    let current_start_str = current_start_date.format("%Y-%m-%d").to_string();
+    let current_end_str = (*current_end_date + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let prev_start_str = prev_start_date.format("%Y-%m-%d").to_string();
+    let prev_end_str = (*prev_end_date + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
 
     let mut filter_sql = String::new();
     let mut filter_params: Vec<Box<dyn duckdb::types::ToSql>> = Vec::new();
     filter_params.push(Box::new(website_id.to_string()));
-    filter_params.push(Box::new(start_str.clone()));
-    filter_params.push(Box::new(end_str.clone()));
-    let mut param_idx = 4;
+    filter_params.push(Box::new(current_start_str));
+    filter_params.push(Box::new(current_end_str));
+    filter_params.push(Box::new(prev_start_str));
+    filter_params.push(Box::new(prev_end_str));
+    let mut param_idx = 6;
 
     if let Some(ref country) = params.filter_country {
         filter_sql.push_str(&format!(" AND e.country = ?{}", param_idx));
@@ -187,41 +195,82 @@ fn query_stats_for_period(
 
     let sql = format!(
         r#"
-        WITH filtered_events AS (
-            SELECT e.session_id, e.visitor_id
-            FROM events e
-            WHERE e.website_id = ?1
-              AND e.created_at >= ?2
-              AND e.created_at < ?3
+        WITH periods AS (
+            SELECT 'current' AS period_name, CAST(?2 AS TIMESTAMP) AS period_start, CAST(?3 AS TIMESTAMP) AS period_end
+            UNION ALL
+            SELECT 'previous' AS period_name, CAST(?4 AS TIMESTAMP) AS period_start, CAST(?5 AS TIMESTAMP) AS period_end
+        ),
+        filtered_events AS (
+            SELECT
+                p.period_name,
+                e.session_id,
+                e.visitor_id
+            FROM periods p
+            JOIN events e
+              ON e.website_id = ?1
+             AND e.created_at >= p.period_start
+             AND e.created_at < p.period_end
+            WHERE 1 = 1
               {filter_sql}
         ),
-        session_counts AS (
+        event_stats AS (
             SELECT
-                s.session_id,
-                s.pageview_count,
-                s.first_seen,
-                s.last_seen
-            FROM sessions s
-            WHERE s.session_id IN (SELECT DISTINCT session_id FROM filtered_events)
+                period_name,
+                COUNT(*) AS pageviews,
+                COUNT(DISTINCT visitor_id) AS visitors
+            FROM filtered_events
+            GROUP BY period_name
         ),
-        stats AS (
+        session_ids AS (
             SELECT
+                period_name,
+                session_id
+            FROM filtered_events
+            GROUP BY period_name, session_id
+        ),
+        session_stats AS (
+            SELECT
+                sid.period_name,
                 COUNT(*) AS total_sessions,
-                COALESCE(SUM(CASE WHEN pageview_count = 1 THEN 1 ELSE 0 END), 0) AS bounced_sessions,
-                COALESCE(AVG(
-                    EPOCH(last_seen - first_seen)
-                ), 0) AS avg_duration
-            FROM session_counts
+                COALESCE(SUM(CASE WHEN s.pageview_count = 1 THEN 1 ELSE 0 END), 0) AS bounced_sessions,
+                COALESCE(AVG(EPOCH(s.last_seen - s.first_seen)), 0) AS avg_duration
+            FROM session_ids sid
+            JOIN sessions s
+              ON s.session_id = sid.session_id
+            GROUP BY sid.period_name
+        ),
+        all_stats AS (
+            SELECT
+                p.period_name,
+                COALESCE(es.pageviews, 0) AS pageviews,
+                COALESCE(es.visitors, 0) AS visitors,
+                COALESCE(ss.total_sessions, 0) AS sessions,
+                CASE
+                    WHEN COALESCE(ss.total_sessions, 0) = 0 THEN 0.0
+                    ELSE ROUND(CAST(COALESCE(ss.bounced_sessions, 0) AS DOUBLE) / ss.total_sessions, 3)
+                END AS bounce_rate,
+                COALESCE(ss.avg_duration, 0.0) AS avg_duration
+            FROM periods p
+            LEFT JOIN event_stats es
+              ON es.period_name = p.period_name
+            LEFT JOIN session_stats ss
+              ON ss.period_name = p.period_name
         )
         SELECT
-            (SELECT COUNT(*) FROM filtered_events) AS pageviews,
-            (SELECT COUNT(DISTINCT visitor_id) FROM filtered_events) AS visitors,
-            (SELECT total_sessions FROM stats) AS sessions,
-            CASE
-                WHEN (SELECT total_sessions FROM stats) = 0 THEN 0.0
-                ELSE ROUND(CAST((SELECT bounced_sessions FROM stats) AS DOUBLE) / (SELECT total_sessions FROM stats), 3)
-            END AS bounce_rate,
-            (SELECT avg_duration FROM stats) AS avg_duration
+            c.pageviews AS current_pageviews,
+            c.visitors AS current_visitors,
+            c.sessions AS current_sessions,
+            c.bounce_rate AS current_bounce_rate,
+            c.avg_duration AS current_avg_duration,
+            p.pageviews AS prev_pageviews,
+            p.visitors AS prev_visitors,
+            p.sessions AS prev_sessions,
+            p.bounce_rate AS prev_bounce_rate,
+            p.avg_duration AS prev_avg_duration
+        FROM all_stats c
+        JOIN all_stats p
+          ON p.period_name = 'previous'
+        WHERE c.period_name = 'current'
         "#
     );
 
@@ -229,13 +278,21 @@ fn query_stats_for_period(
         filter_params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
     let result = stmt.query_row(param_refs.as_slice(), |row| {
-        Ok(PeriodStats {
+        let current = PeriodStats {
             pageviews: row.get::<_, i64>(0)?,
             visitors: row.get::<_, i64>(1)?,
             sessions: row.get::<_, i64>(2)?,
             bounce_rate: row.get::<_, f64>(3)?,
             avg_duration: row.get::<_, f64>(4)?,
-        })
+        };
+        let previous = PeriodStats {
+            pageviews: row.get::<_, i64>(5)?,
+            visitors: row.get::<_, i64>(6)?,
+            sessions: row.get::<_, i64>(7)?,
+            bounce_rate: row.get::<_, f64>(8)?,
+            avg_duration: row.get::<_, f64>(9)?,
+        };
+        Ok((current, previous))
     })?;
 
     Ok(result)

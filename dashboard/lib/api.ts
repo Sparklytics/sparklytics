@@ -555,7 +555,7 @@ export interface RetentionCohortRow {
 }
 
 export interface RetentionSummary {
-  avg_period1_rate: number;
+  avg_period1_rate: number | null;
   avg_period4_rate: number | null;
 }
 

@@ -42,6 +42,9 @@ pub enum AppError {
     #[error("rate limited")]
     RateLimited,
 
+    #[error("rate limited")]
+    RateLimitedWithRetry { retry_after_seconds: u64 },
+
     #[error("query timed out")]
     QueryTimeout { retry_after_seconds: u64 },
 
@@ -106,6 +109,14 @@ impl IntoResponse for AppError {
                 "rate_limited",
                 "Rate limit exceeded",
                 None,
+            ),
+            AppError::RateLimitedWithRetry {
+                retry_after_seconds,
+            } => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                "Rate limit exceeded",
+                Some(*retry_after_seconds),
             ),
             AppError::QueryTimeout {
                 retry_after_seconds,
