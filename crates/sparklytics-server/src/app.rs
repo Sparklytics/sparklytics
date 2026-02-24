@@ -230,6 +230,10 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::journey::get_journey),
                 )
                 .route(
+                    "/api/websites/{id}/retention",
+                    get(routes::retention::get_retention),
+                )
+                .route(
                     "/api/websites/{id}/pageviews",
                     get(routes::pageviews::get_pageviews),
                 )
@@ -323,6 +327,10 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/journey",
                     get(routes::journey::get_journey),
+                )
+                .route(
+                    "/api/websites/{id}/retention",
+                    get(routes::retention::get_retention),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",

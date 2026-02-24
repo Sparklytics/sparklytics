@@ -78,6 +78,9 @@ pub struct AppState {
     /// Bound concurrent journey execution to avoid queue buildup.
     pub journey_semaphore: Arc<Semaphore>,
 
+    /// Bound concurrent retention execution to avoid queue buildup.
+    pub retention_semaphore: Arc<Semaphore>,
+
     /// Guard to avoid scheduling overlapping background flush tasks.
     flush_in_progress: Arc<AtomicBool>,
 
@@ -210,6 +213,7 @@ impl AppState {
             export_semaphore: Arc::new(Semaphore::new(1)),
             funnel_results_semaphore: Arc::new(Semaphore::new(1)),
             journey_semaphore: Arc::new(Semaphore::new(2)),
+            retention_semaphore: Arc::new(Semaphore::new(2)),
             flush_in_progress: Arc::new(AtomicBool::new(false)),
             ingest_queue: Arc::new(Mutex::new(VecDeque::new())),
             ingest_queue_events: Arc::new(AtomicUsize::new(0)),

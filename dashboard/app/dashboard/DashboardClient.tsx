@@ -15,6 +15,7 @@ import { SessionsPage } from '@/components/sessions/SessionsPage';
 import { GoalsPage } from '@/components/goals/GoalsPage';
 import { FunnelsPage } from '@/components/funnels/FunnelsPage';
 import { JourneyPage } from '@/components/journey/JourneyPage';
+import { RetentionPage } from '@/components/retention/RetentionPage';
 import { useStats } from '@/hooks/useStats';
 import { usePageviews } from '@/hooks/usePageviews';
 import { useMetrics } from '@/hooks/useMetrics';
@@ -56,7 +57,8 @@ export function DashboardClient() {
   const { data: authStatus, isSuccess: authLoaded, isError: authError } = useAuth();
   const { data: websitesData } = useWebsites();
   const analyticsEnabled = subPage !== 'settings' && subPage !== 'realtime'
-    && subPage !== 'sessions' && subPage !== 'goals' && subPage !== 'funnels' && subPage !== 'journey';
+    && subPage !== 'sessions' && subPage !== 'goals' && subPage !== 'funnels'
+    && subPage !== 'journey' && subPage !== 'retention';
 
   // Auth redirect guard
   useEffect(() => {
@@ -145,6 +147,14 @@ export function DashboardClient() {
     return (
       <AppShell websiteId={websiteId}>
         <JourneyPage websiteId={websiteId} />
+      </AppShell>
+    );
+  }
+
+  if (subPage === 'retention') {
+    return (
+      <AppShell websiteId={websiteId}>
+        <RetentionPage websiteId={websiteId} />
       </AppShell>
     );
   }

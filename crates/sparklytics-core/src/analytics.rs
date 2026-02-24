@@ -394,6 +394,49 @@ pub struct JourneyResponse {
     pub branches: Vec<JourneyBranch>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionGranularity {
+    Day,
+    #[default]
+    Week,
+    Month,
+}
+
+#[derive(Debug, Clone)]
+pub struct RetentionQuery {
+    pub granularity: RetentionGranularity,
+    pub max_periods: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetentionPeriod {
+    pub offset: u32,
+    pub retained: i64,
+    pub rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetentionCohortRow {
+    pub cohort_start: String,
+    pub cohort_size: i64,
+    pub periods: Vec<RetentionPeriod>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetentionSummary {
+    pub avg_period1_rate: f64,
+    pub avg_period4_rate: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetentionResponse {
+    pub granularity: RetentionGranularity,
+    pub max_periods: u32,
+    pub rows: Vec<RetentionCohortRow>,
+    pub summary: RetentionSummary,
+}
+
 pub const VALID_METRIC_TYPES: &[&str] = &[
     "page",
     "referrer",
@@ -597,4 +640,12 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         filter: &AnalyticsFilter,
         query: &JourneyQuery,
     ) -> anyhow::Result<JourneyResponse>;
+
+    async fn get_retention(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &RetentionQuery,
+    ) -> anyhow::Result<RetentionResponse>;
 }

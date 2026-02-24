@@ -5,8 +5,8 @@ use sparklytics_core::analytics::{
     AnalyticsBackend, AnalyticsFilter, CreateFunnelRequest, CreateGoalRequest, EventNamesResult,
     EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal, GoalStats,
     JourneyQuery, JourneyResponse, MetricRow, MetricsPage, RealtimeEvent, RealtimePagination,
-    RealtimeResult, SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult,
-    TimeseriesResult, UpdateFunnelRequest, UpdateGoalRequest,
+    RealtimeResult, RetentionQuery, RetentionResponse, SessionDetailResponse, SessionsQuery,
+    SessionsResponse, StatsResult, TimeseriesResult, UpdateFunnelRequest, UpdateGoalRequest,
 };
 use sparklytics_core::event::Event;
 
@@ -326,5 +326,15 @@ impl AnalyticsBackend for DuckDbBackend {
         query: &JourneyQuery,
     ) -> anyhow::Result<JourneyResponse> {
         crate::queries::journey::get_journey_inner(self, website_id, filter, query).await
+    }
+
+    async fn get_retention(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &RetentionQuery,
+    ) -> anyhow::Result<RetentionResponse> {
+        crate::queries::retention::get_retention_inner(self, website_id, filter, query).await
     }
 }

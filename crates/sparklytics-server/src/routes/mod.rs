@@ -8,6 +8,7 @@ pub mod journey;
 pub mod metrics;
 pub mod pageviews;
 pub mod realtime;
+pub mod retention;
 pub mod sessions;
 pub mod share;
 pub mod stats;

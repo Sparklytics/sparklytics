@@ -181,6 +181,12 @@ export const api = {
     request<{ data: JourneyResponse }>(
       `/api/websites/${websiteId}/journey?${toQuery(params)}`
     ),
+
+  // Retention Cohorts (Sprint 15)
+  getRetention: (websiteId: string, params: RetentionParams) =>
+    request<{ data: RetentionResponse }>(
+      `/api/websites/${websiteId}/retention?${toQuery(params)}`
+    ),
 };
 
 function toQuery<T extends object>(params: T): string {
@@ -530,4 +536,53 @@ export interface JourneyResponse {
   max_depth: number;
   total_anchor_sessions: number;
   branches: JourneyBranch[];
+}
+
+// --- Retention Cohorts types (Sprint 15) ---
+
+export type RetentionGranularity = 'day' | 'week' | 'month';
+
+export interface RetentionPeriod {
+  offset: number;
+  retained: number;
+  rate: number;
+}
+
+export interface RetentionCohortRow {
+  cohort_start: string;
+  cohort_size: number;
+  periods: RetentionPeriod[];
+}
+
+export interface RetentionSummary {
+  avg_period1_rate: number;
+  avg_period4_rate: number | null;
+}
+
+export interface RetentionResponse {
+  granularity: RetentionGranularity;
+  max_periods: number;
+  rows: RetentionCohortRow[];
+  summary: RetentionSummary;
+}
+
+export interface RetentionParams {
+  start_date: string;
+  end_date: string;
+  timezone?: string;
+  cohort_granularity?: RetentionGranularity;
+  max_periods?: number;
+  filter_country?: string;
+  filter_page?: string;
+  filter_referrer?: string;
+  filter_browser?: string;
+  filter_os?: string;
+  filter_device?: string;
+  filter_language?: string;
+  filter_utm_source?: string;
+  filter_utm_medium?: string;
+  filter_utm_campaign?: string;
+  filter_region?: string;
+  filter_city?: string;
+  filter_hostname?: string;
 }

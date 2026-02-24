@@ -42,7 +42,9 @@ const SUB_PAGE_LABELS: Record<string, string> = {
   events: 'Events',
   sessions: 'Sessions',
   goals: 'Goals',
+  funnels: 'Funnels',
   journey: 'Journey',
+  retention: 'Retention',
   realtime: 'Realtime',
   settings: 'Settings',
 };

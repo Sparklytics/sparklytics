@@ -92,6 +92,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_realtime
 -- Optimised for sessions explorer cursor pagination
 CREATE INDEX IF NOT EXISTS idx_sessions_website_last_seen
     ON sessions(website_id, last_seen DESC, session_id DESC);
+-- Optimized for retention cohorts (visitor first-seen lookup)
+CREATE INDEX IF NOT EXISTS idx_sessions_website_visitor_first
+    ON sessions(website_id, visitor_id, first_seen ASC);
 
 -- ===========================================
 -- EVENTS (main analytics table)
