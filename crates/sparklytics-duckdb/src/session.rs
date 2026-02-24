@@ -66,6 +66,28 @@ pub(crate) async fn get_or_create_session_inner(
     })
 }
 
+pub(crate) async fn increment_session_pageviews_inner(
+    db: &DuckDbBackend,
+    session_id: &str,
+    additional_pageviews: u32,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    if additional_pageviews == 0 {
+        return Ok(());
+    }
+
+    let conn = db.conn.lock().await;
+    let now_str = now.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+    conn.execute(
+        "UPDATE sessions
+         SET last_seen = ?1, pageview_count = pageview_count + ?2
+         WHERE session_id = ?3",
+        duckdb::params![now_str, additional_pageviews as i64, session_id],
+    )?;
+
+    Ok(())
+}
+
 /// Compute a deterministic session ID.
 ///
 /// `session_id = sha256(visitor_id + website_id + entry_page + first_seen_ms)[0:16]`

@@ -270,6 +270,85 @@ pub struct GoalStats {
     pub trend_pct: Option<f64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepType {
+    PageView,
+    Event,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunnelStep {
+    pub id: String,
+    pub funnel_id: String,
+    pub step_order: u32,
+    pub step_type: StepType,
+    pub match_value: String,
+    pub match_operator: MatchOperator,
+    pub label: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Funnel {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub steps: Vec<FunnelStep>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunnelSummary {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub step_count: u32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFunnelStepRequest {
+    pub step_type: StepType,
+    pub match_value: String,
+    pub match_operator: Option<MatchOperator>,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFunnelRequest {
+    pub name: String,
+    pub steps: Vec<CreateFunnelStepRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateFunnelRequest {
+    pub name: Option<String>,
+    pub steps: Option<Vec<CreateFunnelStepRequest>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunnelStepResult {
+    pub step_order: u32,
+    pub label: String,
+    pub sessions_reached: i64,
+    pub drop_off_count: i64,
+    pub drop_off_rate: f64,
+    pub conversion_rate_from_start: f64,
+    pub conversion_rate_from_previous: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunnelResults {
+    pub funnel_id: String,
+    pub name: String,
+    pub total_sessions_entered: i64,
+    pub final_conversion_rate: f64,
+    pub steps: Vec<FunnelStepResult>,
+}
+
 pub const VALID_METRIC_TYPES: &[&str] = &[
     "page",
     "referrer",
@@ -422,4 +501,47 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         name: &str,
         exclude_goal_id: Option<&str>,
     ) -> anyhow::Result<bool>;
+
+    async fn list_funnels(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<FunnelSummary>>;
+
+    async fn get_funnel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        funnel_id: &str,
+    ) -> anyhow::Result<Option<Funnel>>;
+
+    async fn create_funnel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        req: CreateFunnelRequest,
+    ) -> anyhow::Result<Funnel>;
+
+    async fn update_funnel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        funnel_id: &str,
+        req: UpdateFunnelRequest,
+    ) -> anyhow::Result<Option<Funnel>>;
+
+    async fn delete_funnel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        funnel_id: &str,
+    ) -> anyhow::Result<bool>;
+
+    async fn get_funnel_results(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        funnel_id: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<FunnelResults>;
 }

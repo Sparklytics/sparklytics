@@ -163,6 +163,10 @@ CREATE INDEX IF NOT EXISTS idx_events_visitor
 CREATE INDEX IF NOT EXISTS idx_events_type_date
     ON events(website_id, event_type, created_at);
 
+-- Accelerates funnel/page filters targeting pageview URLs
+CREATE INDEX IF NOT EXISTS idx_events_page_url_date
+    ON events(website_id, event_type, url, created_at DESC);
+
 -- Accelerates custom-events queries (event names, properties, event timeseries)
 CREATE INDEX IF NOT EXISTS idx_events_name_date
     ON events(website_id, event_type, event_name, created_at DESC);
@@ -190,6 +194,34 @@ CREATE TABLE IF NOT EXISTS goals (
 );
 CREATE INDEX IF NOT EXISTS idx_goals_website_id
     ON goals(website_id);
+
+-- ===========================================
+-- FUNNELS (self-hosted conversion paths)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS funnels (
+    id              VARCHAR PRIMARY KEY,
+    website_id      VARCHAR NOT NULL,
+    name            VARCHAR NOT NULL,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_funnels_website
+    ON funnels(website_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_funnels_website_name
+    ON funnels(website_id, name);
+
+CREATE TABLE IF NOT EXISTS funnel_steps (
+    id              VARCHAR PRIMARY KEY,
+    funnel_id       VARCHAR NOT NULL,
+    step_order      INTEGER NOT NULL,
+    step_type       VARCHAR NOT NULL,              -- 'page_view' | 'event'
+    match_value     VARCHAR NOT NULL,
+    match_operator  VARCHAR NOT NULL DEFAULT 'equals',
+    label           VARCHAR NOT NULL,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_funnel_steps_funnel_order
+    ON funnel_steps(funnel_id, step_order);
 
 -- ===========================================
 -- LOCAL API KEYS (self-hosted only)

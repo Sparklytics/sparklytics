@@ -1,7 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, HeaderValue},
+    response::{IntoResponse, Response},
+    Json,
+};
 
 /// Maximum allowed body size for POST /api/collect (100 KB).
 pub const COLLECT_BODY_LIMIT: usize = 102_400;
@@ -46,7 +51,7 @@ pub async fn collect(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(payload): Json<CollectOrBatch>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Response, AppError> {
     // Normalise single event / batch into a uniform Vec.
     let payloads: Vec<CollectPayload> = match payload {
         CollectOrBatch::Single(p) => vec![*p],
@@ -82,11 +87,14 @@ pub async fn collect(
     }
 
     // --- Validation: all website_ids must be known ---
-    for p in &payloads {
-        if !state.is_valid_website(&p.website_id).await {
+    // Validate unique IDs only to avoid repeated cache/DB lookups for batches.
+    let unique_website_ids: HashSet<&str> =
+        payloads.iter().map(|p| p.website_id.as_str()).collect();
+    for website_id in unique_website_ids {
+        if !state.is_valid_website(website_id).await {
             return Err(AppError::NotFound(format!(
                 "Unknown website_id: {}",
-                p.website_id
+                website_id
             )));
         }
     }
@@ -117,25 +125,13 @@ pub async fn collect(
     let ua_info = parse_user_agent(&user_agent);
 
     // --- Build enriched Event structs ---
-    // Use an async for loop (instead of .map()) so we can call get_or_create_session().
-    let now = Utc::now();
     let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
+    let base_now = Utc::now();
+    let visitor_id = compute_visitor_id(&client_ip, &user_agent);
 
-    for p in payloads {
-        let visitor_id = compute_visitor_id(&client_ip, &user_agent);
+    for (idx, p) in payloads.into_iter().enumerate() {
+        let website_id = p.website_id.clone();
         let referrer_domain = p.referrer.as_deref().and_then(extract_referrer_domain);
-
-        // Session management: look up or create a session for this visitor.
-        let session_id = state
-            .analytics
-            .get_or_create_session(
-                &p.website_id,
-                &visitor_id,
-                referrer_domain.as_deref(),
-                &p.url,
-            )
-            .await
-            .map_err(AppError::Internal)?;
 
         // Extract UTM params from the URL query string as fallback.
         let url_utm = extract_utm_from_url(&p.url);
@@ -151,11 +147,12 @@ pub async fn collect(
 
         events.push(Event {
             id: uuid::Uuid::new_v4().to_string(),
-            website_id: p.website_id,
+            website_id,
             // tenant_id is always NULL in self-hosted mode (CLAUDE.md critical fact #2).
             tenant_id: None,
-            session_id,
-            visitor_id,
+            // Session is resolved in the ingest worker right before persistence.
+            session_id: AppState::pending_session_marker().to_string(),
+            visitor_id: visitor_id.clone(),
             event_type: p.event_type,
             url: p.url,
             referrer_url: p.referrer.clone(),
@@ -183,16 +180,34 @@ pub async fn collect(
             utm_content: p
                 .utm_content
                 .or_else(|| url_utm.get("utm_content").cloned()),
-            created_at: now,
+            // Preserve deterministic ordering for batched events so strict
+            // funnel step sequencing (`created_at > prev.matched_at`) works.
+            created_at: base_now + chrono::Duration::microseconds(idx as i64),
         });
     }
 
-    state.push_events(events).await;
+    state.enqueue_ingest_events(events).await?;
 
-    Ok((
+    let mut response = (
         axum::http::StatusCode::ACCEPTED,
         Json(json!({ "ok": true })),
-    ))
+    )
+        .into_response();
+    response.headers_mut().insert(
+        "x-sparklytics-ingest-ack",
+        HeaderValue::from_static("queued"),
+    );
+    if let Ok(value) = HeaderValue::from_str(&state.queued_ingest_events().to_string()) {
+        response
+            .headers_mut()
+            .insert("x-sparklytics-ingest-queue-events", value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&state.ingest_queue_capacity().to_string()) {
+        response
+            .headers_mut()
+            .insert("x-sparklytics-ingest-queue-capacity", value);
+    }
+    Ok(response)
 }
 
 // ---------------------------------------------------------------------------

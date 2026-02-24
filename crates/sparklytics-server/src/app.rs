@@ -208,6 +208,24 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::goals::get_goal_stats),
                 )
                 .route(
+                    "/api/websites/{id}/funnels",
+                    get(routes::funnels::list_funnels),
+                )
+                .route(
+                    "/api/websites/{id}/funnels",
+                    post(routes::funnels::create_funnel),
+                )
+                .route(
+                    "/api/websites/{id}/funnels/{funnel_id}",
+                    get(routes::funnels::get_funnel)
+                        .put(routes::funnels::update_funnel)
+                        .delete(routes::funnels::delete_funnel),
+                )
+                .route(
+                    "/api/websites/{id}/funnels/{funnel_id}/results",
+                    get(routes::funnels::get_funnel_results),
+                )
+                .route(
                     "/api/websites/{id}/pageviews",
                     get(routes::pageviews::get_pageviews),
                 )
@@ -279,6 +297,24 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/goals/{goal_id}/stats",
                     get(routes::goals::get_goal_stats),
+                )
+                .route(
+                    "/api/websites/{id}/funnels",
+                    get(routes::funnels::list_funnels),
+                )
+                .route(
+                    "/api/websites/{id}/funnels",
+                    post(routes::funnels::create_funnel),
+                )
+                .route(
+                    "/api/websites/{id}/funnels/{funnel_id}",
+                    get(routes::funnels::get_funnel)
+                        .put(routes::funnels::update_funnel)
+                        .delete(routes::funnels::delete_funnel),
+                )
+                .route(
+                    "/api/websites/{id}/funnels/{funnel_id}/results",
+                    get(routes::funnels::get_funnel_results),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",

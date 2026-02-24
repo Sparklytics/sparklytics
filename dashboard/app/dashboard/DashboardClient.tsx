@@ -13,6 +13,7 @@ import { WebsiteDetail } from '@/components/settings/WebsiteDetail';
 import { EventsPage } from '@/components/events/EventsPage';
 import { SessionsPage } from '@/components/sessions/SessionsPage';
 import { GoalsPage } from '@/components/goals/GoalsPage';
+import { FunnelsPage } from '@/components/funnels/FunnelsPage';
 import { useStats } from '@/hooks/useStats';
 import { usePageviews } from '@/hooks/usePageviews';
 import { useMetrics } from '@/hooks/useMetrics';
@@ -54,7 +55,7 @@ export function DashboardClient() {
   const { data: authStatus, isSuccess: authLoaded, isError: authError } = useAuth();
   const { data: websitesData } = useWebsites();
   const analyticsEnabled = subPage !== 'settings' && subPage !== 'realtime'
-    && subPage !== 'sessions' && subPage !== 'goals';
+    && subPage !== 'sessions' && subPage !== 'goals' && subPage !== 'funnels';
 
   // Auth redirect guard
   useEffect(() => {
@@ -130,6 +131,15 @@ export function DashboardClient() {
     );
   }
 
+  // Funnels subpage: funnel analysis and conversion flows
+  if (subPage === 'funnels') {
+    return (
+      <AppShell websiteId={websiteId}>
+        <FunnelsPage websiteId={websiteId} />
+      </AppShell>
+    );
+  }
+
   const stats = statsData?.data;
   const series = pageviewsData?.data?.series ?? [];
   const isEmpty = !statsLoading && stats && stats.pageviews === 0;
@@ -140,27 +150,29 @@ export function DashboardClient() {
         <EmptyState websiteId={websiteId} domain={currentWebsite?.domain} />
       ) : (
         <div className="space-y-6">
-          <StatsRow stats={stats} series={series} loading={statsLoading || pvLoading} />
-          <PageviewsChart data={series} loading={pvLoading} />
-
           {(!subPage || subPage === 'overview') && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <DataTable
-                title="Top Pages"
-                filterKey="page"
-                data={pagesData?.data?.rows}
-                loading={pagesLoading}
-                showPageviews
-                totalVisitors={stats?.visitors}
-              />
-              <DataTable
-                title="Top Referrers"
-                filterKey="referrer"
-                data={referrersData?.data?.rows}
-                loading={refLoading}
-                totalVisitors={stats?.visitors}
-              />
-            </div>
+            <>
+              <StatsRow stats={stats} series={series} loading={statsLoading || pvLoading} />
+              <PageviewsChart data={series} loading={pvLoading} />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <DataTable
+                  title="Top Pages"
+                  filterKey="page"
+                  data={pagesData?.data?.rows}
+                  loading={pagesLoading}
+                  showPageviews
+                  totalVisitors={stats?.visitors}
+                />
+                <DataTable
+                  title="Top Referrers"
+                  filterKey="referrer"
+                  data={referrersData?.data?.rows}
+                  loading={refLoading}
+                  totalVisitors={stats?.visitors}
+                />
+              </div>
+              <RealtimePanel data={realtimeData?.data} loading={rtLoading} />
+            </>
           )}
 
           {subPage === 'pages' && (
@@ -235,8 +247,6 @@ export function DashboardClient() {
           )}
 
           {subPage === 'events' && <EventsPage websiteId={websiteId} />}
-
-          <RealtimePanel data={realtimeData?.data} loading={rtLoading} />
         </div>
       )}
     </AppShell>

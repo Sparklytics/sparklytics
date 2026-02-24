@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Users,
   Target,
+  Filter,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -65,6 +66,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
 
   const exploreItems = [
     { label: 'Goals', path: `/dashboard/${websiteId}/goals`, icon: Target },
+    { label: 'Funnels', path: `/dashboard/${websiteId}/funnels`, icon: Filter },
   ];
 
   const configItems: { label: string; path: string; icon: any }[] = [

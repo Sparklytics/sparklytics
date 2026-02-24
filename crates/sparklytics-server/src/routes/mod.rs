@@ -1,6 +1,7 @@
 pub mod collect;
 pub mod events;
 pub mod export;
+pub mod funnels;
 pub mod goals;
 pub mod health;
 pub mod metrics;

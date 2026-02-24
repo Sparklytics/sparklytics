@@ -4,6 +4,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
+use tokio::time::{sleep, Duration, Instant};
 use tower::ServiceExt;
 
 use sparklytics_core::config::{AppMode, AuthMode, Config};
@@ -111,6 +112,43 @@ async fn test_collect_valid_pageview() {
     assert_eq!(count, 1);
 }
 
+#[tokio::test]
+async fn test_collect_sets_ingest_ack_header() {
+    let (_state, app) = setup().await;
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/home"
+    });
+
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        response
+            .headers()
+            .get("x-sparklytics-ingest-ack")
+            .and_then(|v| v.to_str().ok()),
+        Some("queued")
+    );
+    let queued = response
+        .headers()
+        .get("x-sparklytics-ingest-queue-events")
+        .and_then(|v| v.to_str().ok())
+        .expect("queue events header");
+    let _queued: usize = queued.parse().expect("queue events should be number");
+    let capacity = response
+        .headers()
+        .get("x-sparklytics-ingest-queue-capacity")
+        .and_then(|v| v.to_str().ok())
+        .expect("queue capacity header");
+    let parsed_capacity: usize = capacity.parse().expect("queue capacity should be number");
+    assert!(parsed_capacity > 0, "queue capacity should be positive");
+}
+
 // ============================================================
 // BDD: Collect a batch of events
 // ============================================================
@@ -133,6 +171,42 @@ async fn test_collect_batch_of_three_events() {
 
     let count = event_count(&state, "site_test").await;
     assert_eq!(count, 3);
+}
+
+#[tokio::test]
+async fn test_collect_batch_timestamps_are_strictly_increasing() {
+    let (state, app) = setup().await;
+
+    let body = json!([
+        { "website_id": "site_test", "type": "pageview", "url": "/a" },
+        { "website_id": "site_test", "type": "event", "url": "/a", "event_name": "step_2" },
+        { "website_id": "site_test", "type": "event", "url": "/a", "event_name": "step_3" }
+    ]);
+
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    state.flush_buffer().await;
+    let conn = state.db.conn_for_test().await;
+    let mut stmt = conn
+        .prepare(
+            "SELECT epoch_us(created_at) FROM events WHERE website_id = ?1 ORDER BY created_at",
+        )
+        .expect("prepare query");
+    let timestamps: Vec<i64> = stmt
+        .query_map(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
+        .expect("query")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect");
+
+    assert_eq!(timestamps.len(), 3);
+    assert!(timestamps[0] < timestamps[1]);
+    assert!(timestamps[1] < timestamps[2]);
 }
 
 // ============================================================
@@ -397,19 +471,30 @@ async fn test_buffer_flush_on_threshold() {
         assert_eq!(response.status(), StatusCode::ACCEPTED);
     }
 
-    // The buffer should have auto-flushed at 100 events (without calling flush_buffer).
-    // Verify all 100 events are in DuckDB.
-    let conn = state.db.conn_for_test().await;
-    let mut stmt = conn
-        .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1")
-        .expect("prepare");
-    let count: i64 = stmt
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
-            row.get(0)
-        })
-        .expect("count");
+    // Threshold flush now runs in a background task; wait briefly for persistence.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let conn = state.db.conn_for_test().await;
+        let mut stmt = conn
+            .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1")
+            .expect("prepare");
+        let count: i64 = stmt
+            .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+                row.get(0)
+            })
+            .expect("count");
+        drop(stmt);
+        drop(conn);
 
-    assert_eq!(count, 100, "all 100 events should be flushed to DuckDB");
+        if count == 100 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "all 100 events should be flushed to DuckDB (count={count})"
+        );
+        sleep(Duration::from_millis(20)).await;
+    }
 }
 
 // ============================================================
@@ -502,6 +587,40 @@ async fn test_session_id_is_populated() {
         "session_id should be populated by session management"
     );
     assert_eq!(session_id.len(), 16, "session_id should be 16 hex chars");
+}
+
+// ============================================================
+// BDD: batch collect keeps sessions.pageview_count in sync
+// ============================================================
+#[tokio::test]
+async fn test_batch_collect_updates_session_pageview_count() {
+    let (state, app) = setup().await;
+
+    let body = json!([
+        { "website_id": "site_test", "type": "pageview", "url": "/a" },
+        { "website_id": "site_test", "type": "pageview", "url": "/b" },
+        { "website_id": "site_test", "type": "pageview", "url": "/c" }
+    ]);
+
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    state.flush_buffer().await;
+
+    let conn = state.db.conn_for_test().await;
+    let mut stmt = conn
+        .prepare("SELECT pageview_count FROM sessions WHERE website_id = ?1 LIMIT 1")
+        .expect("prepare");
+    let pageview_count: i64 = stmt
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
+        .expect("query");
+
+    assert_eq!(pageview_count, 3);
 }
 
 // ============================================================

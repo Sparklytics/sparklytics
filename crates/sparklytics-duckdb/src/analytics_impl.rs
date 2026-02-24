@@ -2,10 +2,11 @@ use async_trait::async_trait;
 use chrono::NaiveDate;
 
 use sparklytics_core::analytics::{
-    AnalyticsBackend, AnalyticsFilter, CreateGoalRequest, EventNamesResult, EventPropertiesResult,
-    ExportRow, Goal, GoalStats, MetricRow, MetricsPage, RealtimeEvent, RealtimePagination,
-    RealtimeResult, SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult,
-    TimeseriesResult, UpdateGoalRequest,
+    AnalyticsBackend, AnalyticsFilter, CreateFunnelRequest, CreateGoalRequest, EventNamesResult,
+    EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal, GoalStats,
+    MetricRow, MetricsPage, RealtimeEvent, RealtimePagination, RealtimeResult,
+    SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult, TimeseriesResult,
+    UpdateFunnelRequest, UpdateGoalRequest,
 };
 use sparklytics_core::event::Event;
 
@@ -25,9 +26,8 @@ impl AnalyticsBackend for DuckDbBackend {
         url: &str,
     ) -> anyhow::Result<String> {
         use chrono::Utc;
-        crate::session::get_or_create_session_inner(self, visitor_id, website_id, url, Utc::now())
+        self.get_or_create_session_at(website_id, visitor_id, url, Utc::now())
             .await
-            .map(|r| r.session_id)
     }
 
     async fn get_stats(
@@ -258,5 +258,63 @@ impl AnalyticsBackend for DuckDbBackend {
         exclude_goal_id: Option<&str>,
     ) -> anyhow::Result<bool> {
         crate::queries::goals::goal_name_exists_inner(self, website_id, name, exclude_goal_id).await
+    }
+
+    async fn list_funnels(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<FunnelSummary>> {
+        crate::queries::funnels::list_funnels_inner(self, website_id).await
+    }
+
+    async fn get_funnel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        funnel_id: &str,
+    ) -> anyhow::Result<Option<Funnel>> {
+        crate::queries::funnels::get_funnel_inner(self, website_id, funnel_id).await
+    }
+
+    async fn create_funnel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        req: CreateFunnelRequest,
+    ) -> anyhow::Result<Funnel> {
+        crate::queries::funnels::create_funnel_inner(self, website_id, req).await
+    }
+
+    async fn update_funnel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        funnel_id: &str,
+        req: UpdateFunnelRequest,
+    ) -> anyhow::Result<Option<Funnel>> {
+        crate::queries::funnels::update_funnel_inner(self, website_id, funnel_id, req).await
+    }
+
+    async fn delete_funnel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        funnel_id: &str,
+    ) -> anyhow::Result<bool> {
+        crate::queries::funnels::delete_funnel_inner(self, website_id, funnel_id).await
+    }
+
+    async fn get_funnel_results(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        funnel_id: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<FunnelResults> {
+        crate::queries::funnel_results::get_funnel_results_inner(
+            self, website_id, funnel_id, filter,
+        )
+        .await
     }
 }

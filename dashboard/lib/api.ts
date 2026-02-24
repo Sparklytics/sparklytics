@@ -161,6 +161,20 @@ export const api = {
     request<void>(`/api/websites/${websiteId}/goals/${goalId}`, { method: 'DELETE' }),
   getGoalStats: (websiteId: string, goalId: string, params: Record<string, string>) =>
     request<{ data: GoalStats }>(`/api/websites/${websiteId}/goals/${goalId}/stats?${toQuery(params as Record<string, string>)}`),
+
+  // Funnel Analysis (Sprint 13)
+  listFunnels: (websiteId: string) =>
+    request<{ data: FunnelSummary[] }>(`/api/websites/${websiteId}/funnels`),
+  getFunnel: (websiteId: string, funnelId: string) =>
+    request<{ data: Funnel }>(`/api/websites/${websiteId}/funnels/${funnelId}`),
+  createFunnel: (websiteId: string, body: CreateFunnelPayload) =>
+    request<{ data: Funnel }>(`/api/websites/${websiteId}/funnels`, { method: 'POST', body }),
+  updateFunnel: (websiteId: string, funnelId: string, body: UpdateFunnelPayload) =>
+    request<{ data: Funnel }>(`/api/websites/${websiteId}/funnels/${funnelId}`, { method: 'PUT', body }),
+  deleteFunnel: (websiteId: string, funnelId: string) =>
+    request<void>(`/api/websites/${websiteId}/funnels/${funnelId}`, { method: 'DELETE' }),
+  getFunnelResults: (websiteId: string, funnelId: string, params: Record<string, string>) =>
+    request<{ data: FunnelResults }>(`/api/websites/${websiteId}/funnels/${funnelId}/results?${toQuery(params)}`),
 };
 
 function toQuery(params: Record<string, string>): string {
@@ -392,4 +406,72 @@ export interface GoalStats {
   prev_conversions: number | null;
   prev_conversion_rate: number | null;
   trend_pct: number | null;
+}
+
+// --- Funnel Analysis types (Sprint 13) ---
+
+export type StepType = 'page_view' | 'event';
+
+export interface FunnelStep {
+  id: string;
+  funnel_id: string;
+  step_order: number;
+  step_type: StepType;
+  match_value: string;
+  match_operator: MatchOperator;
+  label: string;
+  created_at: string;
+}
+
+export interface Funnel {
+  id: string;
+  website_id: string;
+  name: string;
+  steps: FunnelStep[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FunnelSummary {
+  id: string;
+  website_id: string;
+  name: string;
+  step_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateFunnelStepPayload {
+  step_type: StepType;
+  match_value: string;
+  match_operator?: MatchOperator;
+  label?: string;
+}
+
+export interface CreateFunnelPayload {
+  name: string;
+  steps: CreateFunnelStepPayload[];
+}
+
+export interface UpdateFunnelPayload {
+  name?: string;
+  steps?: CreateFunnelStepPayload[];
+}
+
+export interface FunnelStepResult {
+  step_order: number;
+  label: string;
+  sessions_reached: number;
+  drop_off_count: number;
+  drop_off_rate: number;
+  conversion_rate_from_start: number;
+  conversion_rate_from_previous: number;
+}
+
+export interface FunnelResults {
+  funnel_id: string;
+  name: string;
+  total_sessions_entered: number;
+  final_conversion_rate: number;
+  steps: FunnelStepResult[];
 }

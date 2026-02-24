@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use duckdb::Connection;
 use tokio::sync::Mutex;
 use tracing::info;
@@ -152,9 +153,8 @@ impl DuckDbBackend {
         // throughput (one fsync instead of N).
         let tx = conn.transaction()?;
 
-        for event in events {
-            tx.execute(
-                r#"INSERT INTO events (
+        let mut stmt = tx.prepare(
+            r#"INSERT INTO events (
                     id, website_id, tenant_id, session_id, visitor_id,
                     event_type, url, referrer_url, referrer_domain,
                     event_name, event_data,
@@ -173,40 +173,43 @@ impl DuckDbBackend {
                     ?22, ?23, ?24, ?25, ?26,
                     ?27
                 )"#,
-                duckdb::params![
-                    event.id,
-                    event.website_id,
-                    event.tenant_id,
-                    event.session_id,
-                    event.visitor_id,
-                    event.event_type,
-                    event.url,
-                    event.referrer_url,
-                    event.referrer_domain,
-                    event.event_name,
-                    event.event_data,
-                    event.country,
-                    event.region,
-                    event.city,
-                    event.browser,
-                    event.browser_version,
-                    event.os,
-                    event.os_version,
-                    event.device_type,
-                    event.screen,
-                    event.language,
-                    event.utm_source,
-                    event.utm_medium,
-                    event.utm_campaign,
-                    event.utm_term,
-                    event.utm_content,
-                    event.created_at.to_rfc3339(),
-                ],
-            )?;
+        )?;
+
+        for event in events {
+            stmt.execute(duckdb::params![
+                event.id,
+                event.website_id,
+                event.tenant_id,
+                event.session_id,
+                event.visitor_id,
+                event.event_type,
+                event.url,
+                event.referrer_url,
+                event.referrer_domain,
+                event.event_name,
+                event.event_data,
+                event.country,
+                event.region,
+                event.city,
+                event.browser,
+                event.browser_version,
+                event.os,
+                event.os_version,
+                event.device_type,
+                event.screen,
+                event.language,
+                event.utm_source,
+                event.utm_medium,
+                event.utm_campaign,
+                event.utm_term,
+                event.utm_content,
+                event.created_at.to_rfc3339(),
+            ])?;
         }
+        drop(stmt);
 
         tx.commit()?;
-        tracing::info!("Inserted {} events into DuckDB", events.len());
+        tracing::debug!("Inserted {} events into DuckDB", events.len());
         Ok(())
     }
 
@@ -238,6 +241,35 @@ impl DuckDbBackend {
     /// Production code should use the typed methods above.
     pub async fn conn_for_test(&self) -> tokio::sync::MutexGuard<'_, Connection> {
         self.conn.lock().await
+    }
+
+    /// Resolve the active session for a visitor or create a new one at `now`.
+    pub async fn get_or_create_session_at(
+        &self,
+        website_id: &str,
+        visitor_id: &str,
+        url: &str,
+        now: DateTime<Utc>,
+    ) -> Result<String> {
+        crate::session::get_or_create_session_inner(self, visitor_id, website_id, url, now)
+            .await
+            .map(|r| r.session_id)
+    }
+
+    /// Increment pageview_count for an existing session by `additional_pageviews`.
+    pub async fn increment_session_pageviews(
+        &self,
+        session_id: &str,
+        additional_pageviews: u32,
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        crate::session::increment_session_pageviews_inner(
+            self,
+            session_id,
+            additional_pageviews,
+            now,
+        )
+        .await
     }
 
     /// Insert or replace a website row.

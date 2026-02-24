@@ -90,6 +90,7 @@ async fn main() -> Result<()> {
     }
 
     let state = Arc::new(AppState::new(db, cfg.clone()));
+    state.restore_ingest_queue_from_wal().await;
 
     // Spawn background buffer-flush task.
     {
@@ -114,11 +115,14 @@ async fn main() -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     let state_for_shutdown = Arc::clone(&state);
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            tokio::signal::ctrl_c().await.ok();
-        })
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        tokio::signal::ctrl_c().await.ok();
+    })
+    .await?;
 
     tokio::time::timeout(
         std::time::Duration::from_secs(5),

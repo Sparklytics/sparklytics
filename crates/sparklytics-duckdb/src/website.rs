@@ -230,7 +230,7 @@ impl DuckDbBackend {
     /// the same MVCC snapshot: when DELETE FROM websites runs, DuckDB sees the
     /// events as already deleted within the current transaction and the FK check
     /// passes. The EXISTS check must be inside the same transaction for this
-    /// to work correctly. Order: events → sessions → goals → website.
+    /// to work correctly. Order: events → sessions → goals → funnel_steps → funnels → website.
     pub async fn delete_website(&self, id: &str) -> Result<bool> {
         let mut conn = self.conn.lock().await;
         let tx = conn.transaction()?;
@@ -255,6 +255,14 @@ impl DuckDbBackend {
         )?;
         tx.execute(
             "DELETE FROM goals WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM funnel_steps WHERE funnel_id IN (SELECT id FROM funnels WHERE website_id = ?1)",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM funnels WHERE website_id = ?1",
             duckdb::params![id],
         )?;
         tx.execute("DELETE FROM websites WHERE id = ?1", duckdb::params![id])?;
