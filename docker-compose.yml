@@ -6,15 +6,20 @@ services:
       - "3000:3000"
     volumes:
       - sparklytics-data:/data
-      # Optional: mount your MaxMind GeoLite2 database for geo analytics.
-      # Register free at maxmind.com, download GeoLite2-City.mmdb, then uncomment:
-      # - /path/to/GeoLite2-City.mmdb:/data/GeoLite2-City.mmdb:ro
     environment:
+      # Auth mode: "local" (recommended), "password", or "none"
       - SPARKLYTICS_AUTH=local
-      # Set to false when running behind an HTTPS reverse proxy (Nginx, Caddy, etc.)
-      - SPARKLYTICS_HTTPS=false
-      # Comma-separated origins allowed to query analytics from a browser.
-      # Example: SPARKLYTICS_CORS_ORIGINS=https://yoursite.com
+
+      # IMPORTANT: keep "true" (default) when accessed over HTTPS.
+      # Only set to "false" for plain-HTTP local development.
+      - SPARKLYTICS_HTTPS=true
+
+      # DuckDB query memory. Raise to 2GB–8GB on a larger VPS.
+      - SPARKLYTICS_DUCKDB_MEMORY=1GB
+
+      # Restrict which origins can query the analytics API from a browser.
+      # Uncomment and set to your site(s):
+      # - SPARKLYTICS_CORS_ORIGINS=https://yoursite.com,https://www.yoursite.com
     restart: unless-stopped
 
 volumes:

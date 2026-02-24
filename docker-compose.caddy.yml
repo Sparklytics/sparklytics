@@ -1,0 +1,42 @@
+version: '3.8'
+
+# Production setup with automatic HTTPS via Caddy.
+#
+# Usage:
+#   1. Replace "analytics.example.com" below with your actual domain.
+#   2. Make sure port 80 and 443 are open on your server.
+#   3. Run: docker compose -f docker-compose.caddy.yml up -d
+#
+# Caddy handles TLS certificate issuance and renewal automatically.
+
+services:
+  sparklytics:
+    image: sparklytics/sparklytics:latest
+    volumes:
+      - sparklytics-data:/data
+    environment:
+      - SPARKLYTICS_AUTH=local
+      - SPARKLYTICS_HTTPS=true
+      - SPARKLYTICS_DUCKDB_MEMORY=1GB
+      # Uncomment and set to your tracked site(s):
+      # - SPARKLYTICS_CORS_ORIGINS=https://yoursite.com
+    restart: unless-stopped
+    # No "ports" here — Caddy is the only public entry point.
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    depends_on:
+      - sparklytics
+
+volumes:
+  sparklytics-data:
+  caddy-data:
+  caddy-config:

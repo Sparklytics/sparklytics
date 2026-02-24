@@ -1,0 +1,4 @@
+# Replace with your domain. Caddy obtains a free TLS certificate automatically.
+analytics.example.com {
+    reverse_proxy sparklytics:3000
+}
