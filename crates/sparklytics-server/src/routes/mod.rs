@@ -4,6 +4,7 @@ pub mod export;
 pub mod funnels;
 pub mod goals;
 pub mod health;
+pub mod journey;
 pub mod metrics;
 pub mod pageviews;
 pub mod realtime;

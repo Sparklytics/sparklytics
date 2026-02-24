@@ -2,6 +2,7 @@ pub mod events;
 pub mod funnel_results;
 pub mod funnels;
 pub mod goals;
+pub mod journey;
 pub mod metrics;
 pub mod realtime;
 pub mod session_detail;

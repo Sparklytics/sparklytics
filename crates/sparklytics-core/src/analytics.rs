@@ -349,6 +349,51 @@ pub struct FunnelResults {
     pub steps: Vec<FunnelStepResult>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnchorType {
+    Page,
+    Event,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JourneyDirection {
+    Next,
+    Previous,
+}
+
+#[derive(Debug, Clone)]
+pub struct JourneyQuery {
+    pub anchor_type: AnchorType,
+    pub anchor_value: String,
+    pub direction: JourneyDirection,
+    pub max_depth: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyNode {
+    #[serde(rename = "type")]
+    pub node_type: AnchorType,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyBranch {
+    pub nodes: Vec<String>,
+    pub sessions: i64,
+    pub share: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JourneyResponse {
+    pub anchor: JourneyNode,
+    pub direction: JourneyDirection,
+    pub max_depth: u32,
+    pub total_anchor_sessions: i64,
+    pub branches: Vec<JourneyBranch>,
+}
+
 pub const VALID_METRIC_TYPES: &[&str] = &[
     "page",
     "referrer",
@@ -544,4 +589,12 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         funnel_id: &str,
         filter: &AnalyticsFilter,
     ) -> anyhow::Result<FunnelResults>;
+
+    async fn get_journey(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &JourneyQuery,
+    ) -> anyhow::Result<JourneyResponse>;
 }

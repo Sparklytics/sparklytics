@@ -175,10 +175,19 @@ export const api = {
     request<void>(`/api/websites/${websiteId}/funnels/${funnelId}`, { method: 'DELETE' }),
   getFunnelResults: (websiteId: string, funnelId: string, params: Record<string, string>) =>
     request<{ data: FunnelResults }>(`/api/websites/${websiteId}/funnels/${funnelId}/results?${toQuery(params)}`),
+
+  // Journey Analysis (Sprint 14)
+  getJourney: (websiteId: string, params: JourneyParams) =>
+    request<{ data: JourneyResponse }>(
+      `/api/websites/${websiteId}/journey?${toQuery(params)}`
+    ),
 };
 
-function toQuery(params: Record<string, string>): string {
-  return new URLSearchParams(params).toString();
+function toQuery<T extends object>(params: T): string {
+  const entries = Object.entries(params as Record<string, unknown>)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => [key, String(value)]);
+  return new URLSearchParams(entries).toString();
 }
 
 // ─── Response types ───────────────────────────────────────────────────────
@@ -474,4 +483,51 @@ export interface FunnelResults {
   total_sessions_entered: number;
   final_conversion_rate: number;
   steps: FunnelStepResult[];
+}
+
+// --- Journey Analysis types (Sprint 14) ---
+
+export type AnchorType = 'page' | 'event';
+export type JourneyDirection = 'next' | 'previous';
+
+export interface JourneyParams {
+  anchor_type: AnchorType;
+  anchor_value: string;
+  direction: JourneyDirection;
+  max_depth?: number;
+  start_date: string;
+  end_date: string;
+  timezone?: string;
+  filter_country?: string;
+  filter_page?: string;
+  filter_referrer?: string;
+  filter_browser?: string;
+  filter_os?: string;
+  filter_device?: string;
+  filter_language?: string;
+  filter_utm_source?: string;
+  filter_utm_medium?: string;
+  filter_utm_campaign?: string;
+  filter_region?: string;
+  filter_city?: string;
+  filter_hostname?: string;
+}
+
+export interface JourneyNode {
+  type: AnchorType;
+  value: string;
+}
+
+export interface JourneyBranch {
+  nodes: string[];
+  sessions: number;
+  share: number;
+}
+
+export interface JourneyResponse {
+  anchor: JourneyNode;
+  direction: JourneyDirection;
+  max_depth: number;
+  total_anchor_sessions: number;
+  branches: JourneyBranch[];
 }

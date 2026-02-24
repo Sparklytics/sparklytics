@@ -42,6 +42,7 @@ const SUB_PAGE_LABELS: Record<string, string> = {
   events: 'Events',
   sessions: 'Sessions',
   goals: 'Goals',
+  journey: 'Journey',
   realtime: 'Realtime',
   settings: 'Settings',
 };

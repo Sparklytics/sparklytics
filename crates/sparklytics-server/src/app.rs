@@ -226,6 +226,10 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::funnels::get_funnel_results),
                 )
                 .route(
+                    "/api/websites/{id}/journey",
+                    get(routes::journey::get_journey),
+                )
+                .route(
                     "/api/websites/{id}/pageviews",
                     get(routes::pageviews::get_pageviews),
                 )
@@ -315,6 +319,10 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/funnels/{funnel_id}/results",
                     get(routes::funnels::get_funnel_results),
+                )
+                .route(
+                    "/api/websites/{id}/journey",
+                    get(routes::journey::get_journey),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",

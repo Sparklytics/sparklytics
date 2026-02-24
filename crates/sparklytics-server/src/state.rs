@@ -75,6 +75,9 @@ pub struct AppState {
     /// Bound concurrent funnel-results execution to avoid queue buildup.
     pub funnel_results_semaphore: Arc<Semaphore>,
 
+    /// Bound concurrent journey execution to avoid queue buildup.
+    pub journey_semaphore: Arc<Semaphore>,
+
     /// Guard to avoid scheduling overlapping background flush tasks.
     flush_in_progress: Arc<AtomicBool>,
 
@@ -206,6 +209,7 @@ impl AppState {
             billing_gate: Arc::new(NullBillingGate),
             export_semaphore: Arc::new(Semaphore::new(1)),
             funnel_results_semaphore: Arc::new(Semaphore::new(1)),
+            journey_semaphore: Arc::new(Semaphore::new(2)),
             flush_in_progress: Arc::new(AtomicBool::new(false)),
             ingest_queue: Arc::new(Mutex::new(VecDeque::new())),
             ingest_queue_events: Arc::new(AtomicUsize::new(0)),
@@ -497,9 +501,7 @@ impl AppState {
     ) -> Option<String> {
         let key = (website_id.to_string(), visitor_id.to_string());
         let mut cache = self.session_cache.lock().await;
-        let Some(entry) = cache.get_mut(&key) else {
-            return None;
-        };
+        let entry = cache.get_mut(&key)?;
 
         if at
             .signed_duration_since(entry.last_seen_at)
