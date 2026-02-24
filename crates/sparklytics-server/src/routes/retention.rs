@@ -14,6 +14,7 @@ use sparklytics_core::analytics::{AnalyticsFilter, RetentionGranularity, Retenti
 use crate::{error::AppError, state::AppState};
 
 const RETENTION_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+const RETENTION_QUERY_TIMEOUT_RETRY_AFTER_SECONDS: u64 = 2;
 
 #[derive(Debug, Deserialize)]
 pub struct RetentionParams {
@@ -139,6 +140,22 @@ fn validate_max_periods(
     }
 }
 
+fn map_retention_backend_error(error: anyhow::Error) -> AppError {
+    let msg = error.to_string();
+    if msg.contains("retention_query_timeout") {
+        AppError::QueryTimeout {
+            retry_after_seconds: RETENTION_QUERY_TIMEOUT_RETRY_AFTER_SECONDS,
+        }
+    } else if msg.contains("invalid_timezone")
+        || msg.contains("invalid_timezone_transition")
+        || msg.contains("invalid_date_boundary")
+    {
+        AppError::BadRequest("invalid timezone".to_string())
+    } else {
+        AppError::Internal(error)
+    }
+}
+
 pub async fn get_retention(
     State(state): State<Arc<AppState>>,
     Path(website_id): Path<String>,
@@ -205,17 +222,25 @@ pub async fn get_retention(
         .analytics
         .get_retention(&website_id, None, &filter, &retention_query)
         .await
-        .map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("invalid_timezone")
-                || msg.contains("invalid_timezone_transition")
-                || msg.contains("invalid_date_boundary")
-            {
-                AppError::BadRequest("invalid timezone".to_string())
-            } else {
-                AppError::Internal(e)
-            }
-        })?;
+        .map_err(map_retention_backend_error)?;
 
     Ok(Json(json!({ "data": data })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::map_retention_backend_error;
+    use crate::error::AppError;
+
+    #[test]
+    fn timeout_marker_maps_to_query_timeout() {
+        let error = anyhow::anyhow!("retention_query_timeout");
+        let app_error = map_retention_backend_error(error);
+        match app_error {
+            AppError::QueryTimeout {
+                retry_after_seconds,
+            } => assert_eq!(retry_after_seconds, 2),
+            other => panic!("unexpected error mapping: {other:?}"),
+        }
+    }
 }

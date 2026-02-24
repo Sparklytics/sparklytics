@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::sync::OnceLock;
 
 use anyhow::{anyhow, Result};
 use chrono::{Datelike, LocalResult, NaiveDate, TimeZone};
@@ -11,6 +12,11 @@ use sparklytics_core::analytics::{
 
 use crate::DuckDbBackend;
 
+const DEFAULT_RETENTION_STATEMENT_TIMEOUT_MS: u64 = 5_000;
+const MIN_RETENTION_STATEMENT_TIMEOUT_MS: u64 = 100;
+const MAX_RETENTION_STATEMENT_TIMEOUT_MS: u64 = 120_000;
+const RETENTION_QUERY_TIMEOUT_MARKER: &str = "retention_query_timeout";
+
 #[derive(Debug)]
 struct RetentionRawRow {
     cohort_start: String,
@@ -18,6 +24,53 @@ struct RetentionRawRow {
     period_offset: u32,
     retained: i64,
     rate: f64,
+}
+
+fn retention_statement_timeout_ms() -> u64 {
+    static VALUE: OnceLock<u64> = OnceLock::new();
+    *VALUE.get_or_init(
+        || match std::env::var("SPARKLYTICS_RETENTION_STATEMENT_TIMEOUT_MS") {
+            Ok(raw) => match raw.parse::<u64>() {
+                Ok(parsed)
+                    if (MIN_RETENTION_STATEMENT_TIMEOUT_MS
+                        ..=MAX_RETENTION_STATEMENT_TIMEOUT_MS)
+                        .contains(&parsed) =>
+                {
+                    tracing::info!(
+                        timeout_ms = parsed,
+                        "Using SPARKLYTICS_RETENTION_STATEMENT_TIMEOUT_MS for retention queries"
+                    );
+                    parsed
+                }
+                Ok(parsed) => {
+                    tracing::warn!(
+                        timeout_ms = parsed,
+                        min_timeout_ms = MIN_RETENTION_STATEMENT_TIMEOUT_MS,
+                        max_timeout_ms = MAX_RETENTION_STATEMENT_TIMEOUT_MS,
+                        "SPARKLYTICS_RETENTION_STATEMENT_TIMEOUT_MS out of range; using default"
+                    );
+                    DEFAULT_RETENTION_STATEMENT_TIMEOUT_MS
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        value = %raw,
+                        "Could not parse SPARKLYTICS_RETENTION_STATEMENT_TIMEOUT_MS; using default"
+                    );
+                    DEFAULT_RETENTION_STATEMENT_TIMEOUT_MS
+                }
+            },
+            Err(_) => DEFAULT_RETENTION_STATEMENT_TIMEOUT_MS,
+        },
+    )
+}
+
+fn is_statement_timeout_error(error: &anyhow::Error) -> bool {
+    let msg = error.to_string().to_ascii_lowercase();
+    msg.contains("statement timeout")
+        || (msg.contains("timeout") && msg.contains("statement"))
+        || msg.contains("retention_query_timeout")
+        || msg.contains("interrupted")
 }
 
 fn append_event_filters(
@@ -448,8 +501,12 @@ ORDER BY r.cohort_start ASC, r.period_offset ASC
     );
 
     let param_refs: Vec<&dyn duckdb::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let statement_timeout_ms = retention_statement_timeout_ms();
 
-    if let Err(error) = conn.execute_batch("SET statement_timeout = '5000ms'") {
+    if let Err(error) = conn.execute_batch(&format!(
+        "SET statement_timeout = '{}ms'",
+        statement_timeout_ms
+    )) {
         tracing::warn!(%error, "Could not set DuckDB statement_timeout");
     }
 
@@ -477,7 +534,17 @@ ORDER BY r.cohort_start ASC, r.period_offset ASC
         tracing::warn!(%error, "Could not reset DuckDB statement_timeout");
     }
 
-    let rows = build_rows(raw_rows_result?, clamped_periods);
+    let raw_rows = match raw_rows_result {
+        Ok(rows) => rows,
+        Err(error) => {
+            if is_statement_timeout_error(&error) {
+                return Err(anyhow!(RETENTION_QUERY_TIMEOUT_MARKER));
+            }
+            return Err(error);
+        }
+    };
+
+    let rows = build_rows(raw_rows, clamped_periods);
     let summary = compute_summary(&rows, &query.granularity, filter.end_date, clamped_periods);
 
     Ok(RetentionResponse {

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -297,6 +298,36 @@ async fn retention_endpoint_rejects_end_before_start() {
         .expect("build request");
     let response = app.clone().oneshot(request).await.expect("request");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn retention_endpoint_returns_429_when_query_slot_busy() {
+    let (state, app) = setup_none().await;
+    let website_id = create_website(&app).await;
+
+    let _permit_1 = state
+        .retention_semaphore
+        .acquire()
+        .await
+        .expect("acquire semaphore");
+    let _permit_2 = state
+        .retention_semaphore
+        .acquire()
+        .await
+        .expect("acquire semaphore");
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/websites/{website_id}/retention?cohort_granularity=week&max_periods=4&start_date=2026-01-01&end_date=2026-01-31"
+        ))
+        .body(Body::empty())
+        .expect("build request");
+    let response = tokio::time::timeout(Duration::from_secs(8), app.clone().oneshot(request))
+        .await
+        .expect("retention request should not hang")
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
 }
 
 #[tokio::test]

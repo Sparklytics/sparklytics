@@ -42,6 +42,9 @@ pub enum AppError {
     #[error("rate limited")]
     RateLimited,
 
+    #[error("query timed out")]
+    QueryTimeout { retry_after_seconds: u64 },
+
     #[error("payload too large")]
     PayloadTooLarge,
 
@@ -104,6 +107,14 @@ impl IntoResponse for AppError {
                 "Rate limit exceeded",
                 None,
             ),
+            AppError::QueryTimeout {
+                retry_after_seconds,
+            } => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "query_timeout",
+                "Query timed out, retry later",
+                Some(*retry_after_seconds),
+            ),
             AppError::PayloadTooLarge => (
                 StatusCode::BAD_REQUEST,
                 "payload_too_large",
@@ -156,5 +167,28 @@ impl IntoResponse for AppError {
         }
 
         response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppError;
+    use axum::{http::StatusCode, response::IntoResponse};
+
+    #[test]
+    fn query_timeout_maps_to_503_with_retry_after() {
+        let response = AppError::QueryTimeout {
+            retry_after_seconds: 2,
+        }
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let retry_after = response
+            .headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .expect("retry-after header")
+            .to_str()
+            .expect("valid retry-after");
+        assert_eq!(retry_after, "2");
     }
 }

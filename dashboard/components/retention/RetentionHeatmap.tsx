@@ -100,13 +100,19 @@ export function RetentionHeatmap({
     <div className="border border-line rounded-lg bg-surface-1 p-4">
       <div className="overflow-x-auto">
         <table className="min-w-full border-separate border-spacing-1">
+          <caption className="sr-only">Cohort retention heatmap</caption>
           <thead>
             <tr>
-              <th className="text-left text-[11px] text-ink-3 font-medium px-2 py-1">Cohort</th>
-              <th className="text-right text-[11px] text-ink-3 font-medium px-2 py-1">Size</th>
+              <th scope="col" className="text-left text-[11px] text-ink-3 font-medium px-2 py-1">
+                Cohort
+              </th>
+              <th scope="col" className="text-right text-[11px] text-ink-3 font-medium px-2 py-1">
+                Size
+              </th>
               {Array.from({ length: maxPeriods }, (_, idx) => (
                 <th
                   key={idx}
+                  scope="col"
                   className="text-center text-[11px] text-ink-3 font-medium px-1 py-1"
                 >
                   {columnLabel(granularity, idx)}
@@ -117,9 +123,9 @@ export function RetentionHeatmap({
           <tbody>
             {rows.map((row, rowIndex) => (
               <tr key={row.cohort_start}>
-                <td className="px-2 py-1 text-xs text-ink font-mono whitespace-nowrap">
+                <th scope="row" className="px-2 py-1 text-xs text-ink font-mono whitespace-nowrap">
                   {row.cohort_start.slice(0, 10)}
-                </td>
+                </th>
                 <td className="px-2 py-1 text-xs text-ink text-right font-mono tabular-nums whitespace-nowrap">
                   {row.cohort_size.toLocaleString()}
                 </td>
