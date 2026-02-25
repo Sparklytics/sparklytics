@@ -132,12 +132,13 @@ fn query_stats_for_ranges(
         .to_string();
 
     let mut filter_sql = String::new();
-    let mut filter_params: Vec<Box<dyn duckdb::types::ToSql>> = Vec::new();
-    filter_params.push(Box::new(website_id.to_string()));
-    filter_params.push(Box::new(current_start_str));
-    filter_params.push(Box::new(current_end_str));
-    filter_params.push(Box::new(prev_start_str));
-    filter_params.push(Box::new(prev_end_str));
+    let mut filter_params: Vec<Box<dyn duckdb::types::ToSql>> = vec![
+        Box::new(website_id.to_string()),
+        Box::new(current_start_str),
+        Box::new(current_end_str),
+        Box::new(prev_start_str),
+        Box::new(prev_end_str),
+    ];
     let mut param_idx = 6;
 
     if let Some(ref country) = params.filter_country {
