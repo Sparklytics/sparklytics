@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { AppShell } from '@/components/layout/AppShell';
 import { StatsRow } from '@/components/dashboard/StatsRow';
 import { PageviewsChart } from '@/components/dashboard/PageviewsChart';
@@ -17,7 +18,6 @@ import { FunnelsPage } from '@/components/funnels/FunnelsPage';
 import { JourneyPage } from '@/components/journey/JourneyPage';
 import { RetentionPage } from '@/components/retention/RetentionPage';
 import { ReportsPage } from '@/components/reports/ReportsPage';
-import { AttributionPage } from '@/components/attribution/AttributionPage';
 import { useStats } from '@/hooks/useStats';
 import { usePageviews } from '@/hooks/usePageviews';
 import { useMetrics } from '@/hooks/useMetrics';
@@ -25,6 +25,21 @@ import { useRealtime } from '@/hooks/useRealtime';
 import { useAuth } from '@/hooks/useAuth';
 import { useWebsites } from '@/hooks/useWebsites';
 import { cn } from '@/lib/utils';
+
+const AttributionPage = dynamic(
+  () =>
+    import('@/components/attribution/AttributionPage').then(
+      (mod) => mod.AttributionPage
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="border border-line rounded-lg bg-surface-1 px-4 py-6">
+        <p className="text-sm text-ink-2">Loading attribution…</p>
+      </div>
+    ),
+  }
+);
 
 
 
