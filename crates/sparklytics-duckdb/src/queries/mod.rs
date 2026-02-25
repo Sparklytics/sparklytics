@@ -5,6 +5,7 @@ pub mod goals;
 pub mod journey;
 pub mod metrics;
 pub mod realtime;
+pub mod reports;
 pub mod retention;
 pub mod session_detail;
 pub mod sessions;

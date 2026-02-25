@@ -19,6 +19,7 @@ import {
   Filter,
   Route,
   RefreshCw,
+  LineChart,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -71,6 +72,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
     { label: 'Funnels', path: `/dashboard/${websiteId}/funnels`, icon: Filter },
     { label: 'Journey', path: `/dashboard/${websiteId}/journey`, icon: Route },
     { label: 'Retention', path: `/dashboard/${websiteId}/retention`, icon: RefreshCw },
+    { label: 'Reports', path: `/dashboard/${websiteId}/reports`, icon: LineChart },
   ];
 
   const configItems: { label: string; path: string; icon: any }[] = [

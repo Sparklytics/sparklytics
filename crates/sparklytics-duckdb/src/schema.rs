@@ -199,6 +199,24 @@ CREATE INDEX IF NOT EXISTS idx_goals_website_id
     ON goals(website_id);
 
 -- ===========================================
+-- SAVED REPORTS (Insights Builder)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS saved_reports (
+    id              VARCHAR PRIMARY KEY,
+    website_id      VARCHAR NOT NULL,
+    name            VARCHAR NOT NULL,
+    description     VARCHAR,
+    config_json     VARCHAR NOT NULL,
+    last_run_at     TIMESTAMP,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_saved_reports_website
+    ON saved_reports(website_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_reports_name_website
+    ON saved_reports(website_id, name);
+
+-- ===========================================
 -- FUNNELS (self-hosted conversion paths)
 -- ===========================================
 CREATE TABLE IF NOT EXISTS funnels (

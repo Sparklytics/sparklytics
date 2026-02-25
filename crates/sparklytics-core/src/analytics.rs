@@ -437,6 +437,129 @@ pub struct RetentionResponse {
     pub summary: RetentionSummary,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportType {
+    #[default]
+    Stats,
+    Pageviews,
+    Metrics,
+    Events,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DateRangeType {
+    #[default]
+    Relative,
+    Absolute,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportConfig {
+    pub version: u32,
+    pub report_type: ReportType,
+    pub date_range_type: DateRangeType,
+    pub relative_days: Option<u32>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub timezone: Option<String>,
+    pub metric_type: Option<String>,
+    pub filter_country: Option<String>,
+    pub filter_browser: Option<String>,
+    pub filter_os: Option<String>,
+    pub filter_device: Option<String>,
+    pub filter_page: Option<String>,
+    pub filter_referrer: Option<String>,
+    pub filter_utm_source: Option<String>,
+    pub filter_utm_medium: Option<String>,
+    pub filter_utm_campaign: Option<String>,
+    pub filter_region: Option<String>,
+    pub filter_city: Option<String>,
+    pub filter_hostname: Option<String>,
+}
+
+impl Default for ReportConfig {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            report_type: ReportType::Stats,
+            date_range_type: DateRangeType::Relative,
+            relative_days: Some(30),
+            start_date: None,
+            end_date: None,
+            timezone: Some("UTC".to_string()),
+            metric_type: None,
+            filter_country: None,
+            filter_browser: None,
+            filter_os: None,
+            filter_device: None,
+            filter_page: None,
+            filter_referrer: None,
+            filter_utm_source: None,
+            filter_utm_medium: None,
+            filter_utm_campaign: None,
+            filter_region: None,
+            filter_city: None,
+            filter_hostname: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedReport {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub config: ReportConfig,
+    pub last_run_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedReportSummary {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub report_type: ReportType,
+    pub last_run_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateReportRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub config: ReportConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateReportRequest {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub description: Option<Option<String>>,
+    pub config: Option<ReportConfig>,
+}
+
+fn deserialize_optional_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(deserializer)?))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportRunResult {
+    pub report_id: Option<String>,
+    pub config: ReportConfig,
+    pub ran_at: String,
+    pub data: serde_json::Value,
+}
+
 pub const VALID_METRIC_TYPES: &[&str] = &[
     "page",
     "referrer",
@@ -648,4 +771,57 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         filter: &AnalyticsFilter,
         query: &RetentionQuery,
     ) -> anyhow::Result<RetentionResponse>;
+
+    async fn list_reports(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<SavedReportSummary>>;
+
+    async fn get_report(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<Option<SavedReport>>;
+
+    async fn create_report(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        req: CreateReportRequest,
+    ) -> anyhow::Result<SavedReport>;
+
+    async fn update_report(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        report_id: &str,
+        req: UpdateReportRequest,
+    ) -> anyhow::Result<Option<SavedReport>>;
+
+    async fn delete_report(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<bool>;
+
+    async fn count_reports(&self, website_id: &str, tenant_id: Option<&str>)
+        -> anyhow::Result<i64>;
+
+    async fn report_name_exists(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        name: &str,
+        exclude_report_id: Option<&str>,
+    ) -> anyhow::Result<bool>;
+
+    async fn touch_report_last_run(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<()>;
 }

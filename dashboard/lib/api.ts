@@ -187,6 +187,27 @@ export const api = {
     request<{ data: RetentionResponse }>(
       `/api/websites/${websiteId}/retention?${toQuery(params)}`
     ),
+
+  // Insights Builder / Saved Reports (Sprint 16)
+  listReports: (websiteId: string) =>
+    request<{ data: SavedReportSummary[] }>(`/api/websites/${websiteId}/reports`),
+  getReport: (websiteId: string, reportId: string) =>
+    request<{ data: SavedReport }>(`/api/websites/${websiteId}/reports/${reportId}`),
+  createReport: (websiteId: string, body: CreateReportPayload) =>
+    request<{ data: SavedReport }>(`/api/websites/${websiteId}/reports`, { method: 'POST', body }),
+  updateReport: (websiteId: string, reportId: string, body: UpdateReportPayload) =>
+    request<{ data: SavedReport }>(`/api/websites/${websiteId}/reports/${reportId}`, { method: 'PUT', body }),
+  deleteReport: (websiteId: string, reportId: string) =>
+    request<void>(`/api/websites/${websiteId}/reports/${reportId}`, { method: 'DELETE' }),
+  previewReport: (websiteId: string, config: ReportConfig) =>
+    request<{ data: ReportRunResult }>(`/api/websites/${websiteId}/reports/preview`, {
+      method: 'POST',
+      body: config,
+    }),
+  runReport: (websiteId: string, reportId: string) =>
+    request<{ data: ReportRunResult }>(`/api/websites/${websiteId}/reports/${reportId}/run`, {
+      method: 'POST',
+    }),
 };
 
 function toQuery<T extends object>(params: T): string {
@@ -585,4 +606,72 @@ export interface RetentionParams {
   filter_region?: string;
   filter_city?: string;
   filter_hostname?: string;
+}
+
+// --- Insights Builder / Saved Reports types (Sprint 16) ---
+
+export type ReportType = 'stats' | 'pageviews' | 'metrics' | 'events';
+export type DateRangeType = 'relative' | 'absolute';
+
+export interface ReportConfig {
+  version: number;
+  report_type: ReportType;
+  date_range_type: DateRangeType;
+  relative_days?: number;
+  start_date?: string;
+  end_date?: string;
+  timezone?: string;
+  metric_type?: string;
+  filter_country?: string;
+  filter_browser?: string;
+  filter_os?: string;
+  filter_device?: string;
+  filter_page?: string;
+  filter_referrer?: string;
+  filter_utm_source?: string;
+  filter_utm_medium?: string;
+  filter_utm_campaign?: string;
+  filter_region?: string;
+  filter_city?: string;
+  filter_hostname?: string;
+}
+
+export interface SavedReportSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  report_type: ReportType;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedReport {
+  id: string;
+  website_id: string;
+  name: string;
+  description: string | null;
+  config: ReportConfig;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateReportPayload {
+  name: string;
+  description?: string | null;
+  config: ReportConfig;
+}
+
+export interface UpdateReportPayload {
+  name?: string;
+  description?: string | null;
+  config?: ReportConfig;
+}
+
+export interface ReportRunResult {
+  report_id: string | null;
+  config: ReportConfig;
+  ran_at: string;
+  data: unknown;
 }

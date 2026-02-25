@@ -2,11 +2,12 @@ use async_trait::async_trait;
 use chrono::NaiveDate;
 
 use sparklytics_core::analytics::{
-    AnalyticsBackend, AnalyticsFilter, CreateFunnelRequest, CreateGoalRequest, EventNamesResult,
-    EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal, GoalStats,
-    JourneyQuery, JourneyResponse, MetricRow, MetricsPage, RealtimeEvent, RealtimePagination,
-    RealtimeResult, RetentionQuery, RetentionResponse, SessionDetailResponse, SessionsQuery,
-    SessionsResponse, StatsResult, TimeseriesResult, UpdateFunnelRequest, UpdateGoalRequest,
+    AnalyticsBackend, AnalyticsFilter, CreateFunnelRequest, CreateGoalRequest, CreateReportRequest,
+    EventNamesResult, EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal,
+    GoalStats, JourneyQuery, JourneyResponse, MetricRow, MetricsPage, RealtimeEvent,
+    RealtimePagination, RealtimeResult, RetentionQuery, RetentionResponse, SavedReport,
+    SavedReportSummary, SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult,
+    TimeseriesResult, UpdateFunnelRequest, UpdateGoalRequest, UpdateReportRequest,
 };
 use sparklytics_core::event::Event;
 
@@ -336,5 +337,78 @@ impl AnalyticsBackend for DuckDbBackend {
         query: &RetentionQuery,
     ) -> anyhow::Result<RetentionResponse> {
         crate::queries::retention::get_retention_inner(self, website_id, filter, query).await
+    }
+
+    async fn list_reports(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<SavedReportSummary>> {
+        crate::queries::reports::list_reports_inner(self, website_id).await
+    }
+
+    async fn get_report(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<Option<SavedReport>> {
+        crate::queries::reports::get_report_inner(self, website_id, report_id).await
+    }
+
+    async fn create_report(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        req: CreateReportRequest,
+    ) -> anyhow::Result<SavedReport> {
+        crate::queries::reports::create_report_inner(self, website_id, req).await
+    }
+
+    async fn update_report(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        report_id: &str,
+        req: UpdateReportRequest,
+    ) -> anyhow::Result<Option<SavedReport>> {
+        crate::queries::reports::update_report_inner(self, website_id, report_id, req).await
+    }
+
+    async fn delete_report(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<bool> {
+        crate::queries::reports::delete_report_inner(self, website_id, report_id).await
+    }
+
+    async fn count_reports(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<i64> {
+        crate::queries::reports::count_reports_inner(self, website_id).await
+    }
+
+    async fn report_name_exists(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        name: &str,
+        exclude_report_id: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        crate::queries::reports::report_name_exists_inner(self, website_id, name, exclude_report_id)
+            .await
+    }
+
+    async fn touch_report_last_run(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<()> {
+        crate::queries::reports::touch_report_last_run_inner(self, website_id, report_id).await
     }
 }
