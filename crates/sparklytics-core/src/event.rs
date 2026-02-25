@@ -27,6 +27,10 @@ pub struct CollectPayload {
     pub utm_campaign: Option<String>,
     pub utm_term: Option<String>,
     pub utm_content: Option<String>,
+    /// Optional client-supplied visitor ID for cross-session stitching.
+    /// When present, the server uses this instead of computing from IP + User-Agent.
+    /// Should be a hashed/tokenised identifier (max 64 chars), never a raw email or user ID.
+    pub visitor_id: Option<String>,
 }
 
 /// Accepts either a single event or a batch array at POST /api/collect.

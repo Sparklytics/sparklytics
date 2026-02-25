@@ -127,11 +127,18 @@ pub async fn collect(
     // --- Build enriched Event structs ---
     let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
     let base_now = Utc::now();
-    let visitor_id = compute_visitor_id(&client_ip, &user_agent);
+    let server_visitor_id = compute_visitor_id(&client_ip, &user_agent);
 
     for (idx, p) in payloads.into_iter().enumerate() {
         let website_id = p.website_id.clone();
         let referrer_domain = p.referrer.as_deref().and_then(extract_referrer_domain);
+
+        // Use client-supplied visitor_id when present (max 64 chars),
+        // otherwise fall back to the server-computed hash.
+        let visitor_id = p
+            .visitor_id
+            .filter(|id| !id.is_empty() && id.len() <= 64)
+            .unwrap_or_else(|| server_visitor_id.clone());
 
         // Extract UTM params from the URL query string as fallback.
         let url_utm = extract_utm_from_url(&p.url);
@@ -152,7 +159,7 @@ pub async fn collect(
             tenant_id: None,
             // Session is resolved in the ingest worker right before persistence.
             session_id: AppState::pending_session_marker().to_string(),
-            visitor_id: visitor_id.clone(),
+            visitor_id,
             event_type: p.event_type,
             url: p.url,
             referrer_url: p.referrer.clone(),
