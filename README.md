@@ -4,6 +4,10 @@
 
 [![CI](https://github.com/Sparklytics/sparklytics/actions/workflows/ci.yml/badge.svg)](https://github.com/Sparklytics/sparklytics/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Sparklytics/sparklytics?utm_source=oss&utm_medium=github&utm_campaign=Sparklytics%2Fsparklytics&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Sparklytics/sparklytics-js?utm_source=oss&utm_medium=github&utm_campaign=Sparklytics%2Fsparklytics-js&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Sparklytics/sparklytics-next?utm_source=oss&utm_medium=github&utm_campaign=Sparklytics%2Fsparklytics-next&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Sparklytics/sparklytics-vue?utm_source=oss&utm_medium=github&utm_campaign=Sparklytics%2Fsparklytics-vue&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 Track pageviews, sessions, custom events, funnels, and retention — with full data ownership and no cookies.
 
@@ -153,7 +157,7 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 | `SPARKLYTICS_DUCKDB_MEMORY` | `1GB` | Query memory limit (raise to `2GB`–`8GB` on larger VPS) |
 | `SPARKLYTICS_CORS_ORIGINS` | — | Comma-separated allowed origins for analytics API |
 | `SPARKLYTICS_RETENTION_DAYS` | `365` | How long to keep raw events |
-| `SPARKLYTICS_GEOIP_PATH` | auto | Docker images bundle DB-IP automatically |
+| `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | Path to city MMDB. Docker images bundle DB-IP automatically; you can override this path. |
 
 ### Auth modes
 

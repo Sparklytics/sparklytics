@@ -130,6 +130,7 @@ git ls-files cloud/ sdk/next/   # must return empty
 4. **Never commit `ops/`, `migrations/`, `.env` files, or any secrets to `sparklytics/` root.** Run `git ls-files cloud/ sdk/next/ ops/ migrations/` before pushing — must return empty.
 5. **`cloud/.cargo/config.toml` must be in `cloud/.gitignore`.** It contains local path overrides (`../../crates/sparklytics-*`) that work only on your machine and must never reach the private remote.
 6. **SDK changes go in `sparklytics/sdk/next/` once Sprint 7 setup is complete.** Until then, `sdk/` is tracked by the parent repo — commit SDK changes there as normal files.
+7. **When the user asks to commit or push work, open a pull request by default.** Do not push directly to `main` unless the user explicitly asks for direct push.
 
 ### Correct commit flow (post-Sprint 7 setup)
 

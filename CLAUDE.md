@@ -186,7 +186,7 @@ If you cannot start the dev server (e.g., no Node installed), describe the chang
 | `SPARKLYTICS_CORS_ORIGINS` | — | Allowed origins for query endpoints |
 | `SPARKLYTICS_ARGON2_MEMORY_KB` | `65536` | Argon2id memory parameter in KB (64MB default). Only relevant when `SPARKLYTICS_AUTH=local`. |
 | `SPARKLYTICS_DUCKDB_MEMORY` | `1GB` | DuckDB memory limit. Any DuckDB size string (`"512MB"`, `"2GB"`, `"8GB"`). Set higher on 16–32 GB VPS for better analytics query performance. |
-| `SPARKLYTICS_GEOIP_PATH` | `./dbip-city-lite.mmdb` | Path to MMDB GeoIP file (DB-IP City Lite by default; MaxMind GeoLite2 also supported). Docker images bundle DB-IP automatically at `/geoip/dbip-city-lite.mmdb`. If missing, geo fields stored as NULL (server still runs). |
+| `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | Path to MMDB GeoIP file. Docker images set this to bundled DB-IP at `/geoip/dbip-city-lite.mmdb`. MaxMind GeoLite2 is also supported. If missing, geo fields are stored as NULL (server still runs). |
 
 ### Cloud Mode (additional)
 | Variable | Description |
