@@ -108,13 +108,7 @@ async fn seed_compare_data(state: &AppState, website_id: &str) {
             )
             "#,
             sparklytics_duckdb::duckdb::params![
-                id,
-                website_id,
-                session_id,
-                visitor_id,
-                url,
-                utm_source,
-                created_at
+                id, website_id, session_id, visitor_id, url, utm_source, created_at
             ],
         )
         .expect("insert event");
@@ -167,7 +161,11 @@ async fn compare_mode_stats_and_pageviews_include_metadata() {
         ))
         .body(Body::empty())
         .expect("stats request");
-    let stats_res = app.clone().oneshot(stats_req).await.expect("stats response");
+    let stats_res = app
+        .clone()
+        .oneshot(stats_req)
+        .await
+        .expect("stats response");
     assert_eq!(stats_res.status(), StatusCode::OK);
     let stats_json = json_body(stats_res).await;
     assert_eq!(stats_json["compare"]["mode"], "previous_period");

@@ -38,13 +38,7 @@ pub async fn get_timeseries_inner(
     let conn = db.conn.lock().await;
 
     if let Some(comparison_range) = comparison {
-        let rows = query_period_buckets(
-            &conn,
-            website_id,
-            filter,
-            &gran,
-            Some(comparison_range),
-        )?;
+        let rows = query_period_buckets(&conn, website_id, filter, &gran, Some(comparison_range))?;
 
         let primary_buckets = generate_buckets(&filter.start_date, &filter.end_date, &gran);
         let bucket_count = primary_buckets.len();
@@ -150,7 +144,9 @@ fn query_period_buckets(
 
     let mut param_idx = 4;
     if let Some(compare) = comparison {
-        filter_params.push(Box::new(compare.comparison_start.format("%Y-%m-%d").to_string()));
+        filter_params.push(Box::new(
+            compare.comparison_start.format("%Y-%m-%d").to_string(),
+        ));
         filter_params.push(Box::new(
             (compare.comparison_end + chrono::Duration::days(1))
                 .format("%Y-%m-%d")

@@ -152,7 +152,8 @@ fn is_goal_match(goal: &GoalDefinition, row: &EventRow) -> bool {
             row.event_type == "pageview" && row.url.contains(&goal.match_value)
         }
         (GoalType::Event, MatchOperator::Equals) => {
-            row.event_type == "event" && row.event_name.as_deref() == Some(goal.match_value.as_str())
+            row.event_type == "event"
+                && row.event_name.as_deref() == Some(goal.match_value.as_str())
         }
         (GoalType::Event, MatchOperator::Contains) => {
             row.event_type == "event"
@@ -288,7 +289,10 @@ fn aggregate_rows(
 ) -> (Vec<AttributionRow>, AttributionTotals) {
     let mut sessions: BTreeMap<String, Vec<EventRow>> = BTreeMap::new();
     for row in rows {
-        sessions.entry(row.session_id.clone()).or_default().push(row);
+        sessions
+            .entry(row.session_id.clone())
+            .or_default()
+            .push(row);
     }
 
     let mut by_channel: HashMap<String, (i64, f64)> = HashMap::new();
@@ -337,9 +341,11 @@ fn aggregate_rows(
         .collect::<Vec<_>>();
 
     rows.sort_by(|a, b| {
-        b.conversions
-            .cmp(&a.conversions)
-            .then_with(|| b.revenue.partial_cmp(&a.revenue).unwrap_or(std::cmp::Ordering::Equal))
+        b.conversions.cmp(&a.conversions).then_with(|| {
+            b.revenue
+                .partial_cmp(&a.revenue)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     });
 
     (

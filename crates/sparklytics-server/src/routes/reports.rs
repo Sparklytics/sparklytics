@@ -88,7 +88,13 @@ fn parse_absolute_range(
 
 fn build_analytics_context(
     config: &ReportConfig,
-) -> Result<(AnalyticsFilter, Option<sparklytics_core::analytics::ComparisonRange>), AppError> {
+) -> Result<
+    (
+        AnalyticsFilter,
+        Option<sparklytics_core::analytics::ComparisonRange>,
+    ),
+    AppError,
+> {
     let (start_date, end_date) = match config.date_range_type {
         DateRangeType::Relative => parse_relative_range(config.relative_days)?,
         DateRangeType::Absolute => {
@@ -206,7 +212,15 @@ async fn execute_report_config(
             })?;
             let page = state
                 .analytics
-                .get_metrics(website_id, None, metric_type, 25, 0, &filter, comparison.as_ref())
+                .get_metrics(
+                    website_id,
+                    None,
+                    metric_type,
+                    25,
+                    0,
+                    &filter,
+                    comparison.as_ref(),
+                )
                 .await
                 .map_err(AppError::Internal)?;
             serde_json::to_value(json!({

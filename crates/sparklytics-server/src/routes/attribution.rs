@@ -49,7 +49,8 @@ fn parse_date_range(
             })
             .transpose()
     };
-    let start = parse(start_date, "start_date")?.unwrap_or_else(|| today - chrono::Duration::days(6));
+    let start =
+        parse(start_date, "start_date")?.unwrap_or_else(|| today - chrono::Duration::days(6));
     let end = parse(end_date, "end_date")?.unwrap_or(today);
     if end < start {
         return Err(AppError::BadRequest(
@@ -69,8 +70,11 @@ fn parse_model(raw: Option<&str>) -> Result<AttributionModel, AppError> {
     }
 }
 
-fn build_filter(query: AttributionRequestQuery) -> Result<(AnalyticsFilter, AttributionQuery), AppError> {
-    let (start_date, end_date) = parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+fn build_filter(
+    query: AttributionRequestQuery,
+) -> Result<(AnalyticsFilter, AttributionQuery), AppError> {
+    let (start_date, end_date) =
+        parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
     let model = parse_model(query.model.as_deref())?;
 
     let filter = AnalyticsFilter {

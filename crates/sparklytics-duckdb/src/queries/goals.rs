@@ -161,7 +161,8 @@ fn map_goal_row(row: &duckdb::Row<'_>) -> Result<Goal, duckdb::Error> {
         match_value: row.get(4)?,
         match_operator: match_op_from_str(&match_op_raw)
             .map_err(|_| duckdb::Error::InvalidQuery)?,
-        value_mode: value_mode_from_str(&value_mode_raw).map_err(|_| duckdb::Error::InvalidQuery)?,
+        value_mode: value_mode_from_str(&value_mode_raw)
+            .map_err(|_| duckdb::Error::InvalidQuery)?,
         fixed_value: row.get(7)?,
         value_property_key: row.get(8)?,
         currency: row.get(9)?,
@@ -440,10 +441,9 @@ pub async fn update_goal_inner(
     let (next_fixed_value, next_value_property_key) = match next_value_mode {
         GoalValueMode::None => (None, None),
         GoalValueMode::Fixed => (req.fixed_value.or(existing.fixed_value), None),
-        GoalValueMode::EventProperty => (
-            None,
-            req.value_property_key.or(existing.value_property_key),
-        ),
+        GoalValueMode::EventProperty => {
+            (None, req.value_property_key.or(existing.value_property_key))
+        }
     };
     let next_currency = req.currency.unwrap_or(existing.currency);
 

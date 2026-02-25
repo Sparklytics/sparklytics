@@ -64,11 +64,7 @@ async fn create_website(app: &axum::Router) -> String {
     body["data"]["id"].as_str().expect("website id").to_string()
 }
 
-async fn create_event_goal(
-    app: &axum::Router,
-    website_id: &str,
-    payload: Value,
-) -> String {
+async fn create_event_goal(app: &axum::Router, website_id: &str, payload: Value) -> String {
     let req = Request::builder()
         .method("POST")
         .uri(format!("/api/websites/{website_id}/goals"))

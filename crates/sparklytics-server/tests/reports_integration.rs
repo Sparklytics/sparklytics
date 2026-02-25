@@ -297,10 +297,7 @@ async fn test_reports_preview_with_compare_returns_compare_metadata() {
     let res = app.clone().oneshot(req).await.expect("preview report");
     assert_eq!(res.status(), StatusCode::OK);
     let body = json_body(res).await;
-    assert_eq!(
-        body["data"]["data"]["compare"]["mode"],
-        "previous_period"
-    );
+    assert_eq!(body["data"]["data"]["compare"]["mode"], "previous_period");
     assert!(body["data"]["data"]["compare"]["comparison_range"][0].is_string());
 }
 

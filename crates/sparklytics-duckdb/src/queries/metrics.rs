@@ -54,7 +54,9 @@ pub async fn get_metrics_inner(
 
     let mut idx = 4;
     if let Some(compare) = comparison {
-        params.push(Box::new(compare.comparison_start.format("%Y-%m-%d").to_string()));
+        params.push(Box::new(
+            compare.comparison_start.format("%Y-%m-%d").to_string(),
+        ));
         params.push(Box::new(
             (compare.comparison_end + chrono::Duration::days(1))
                 .format("%Y-%m-%d")

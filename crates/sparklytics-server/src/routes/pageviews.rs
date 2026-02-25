@@ -12,9 +12,7 @@ use serde_json::json;
 use sparklytics_core::analytics::AnalyticsFilter;
 
 use crate::{
-    error::AppError,
-    routes::compare::metadata_json,
-    routes::compare::resolve_compare_range,
+    error::AppError, routes::compare::metadata_json, routes::compare::resolve_compare_range,
     state::AppState,
 };
 

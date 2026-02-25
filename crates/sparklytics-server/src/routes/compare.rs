@@ -130,13 +130,8 @@ mod tests {
     fn custom_rejects_invalid_date() {
         let start = NaiveDate::from_ymd_opt(2026, 2, 10).expect("date");
         let end = NaiveDate::from_ymd_opt(2026, 2, 20).expect("date");
-        let result = resolve_compare_range(
-            start,
-            end,
-            Some("custom"),
-            Some("bad"),
-            Some("2026-01-01"),
-        );
+        let result =
+            resolve_compare_range(start, end, Some("custom"), Some("bad"), Some("2026-01-01"));
         assert!(result.is_err());
     }
 
