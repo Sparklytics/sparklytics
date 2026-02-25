@@ -15,5 +15,12 @@
       "port": 3002,
       "cwd": "dashboard"
     }
+  ,{
+      "name": "marketing",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3002,
+      "cwd": "marketing"
+    }
   ]
 }
