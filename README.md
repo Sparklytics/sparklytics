@@ -111,7 +111,7 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 
 | Feature | Sparklytics | Umami | Plausible |
 |---------|:-----------:|:-----:|:---------:|
-| Open source | ✅ MIT | ✅ MIT | ✅ AGPL |
+| Open source | ✅ MIT | ✅ MIT | ✅ Open source |
 | Self-hostable | ✅ | ✅ | ✅ |
 | Single binary | ✅ | ❌ Node + DB | ❌ Elixir + DB |
 | No cookies | ✅ | ✅ | ✅ |
@@ -127,8 +127,6 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 | Multi-site | ✅ | ✅ | ✅ |
 | Next.js SDK | ✅ | ❌ | ❌ |
 | Docker arm64 | ✅ | ✅ | ✅ |
-
-> Umami ~6,400 GitHub stars. Plausible is source-available (AGPL, not MIT).
 
 ---
 
@@ -150,14 +148,14 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SPARKLYTICS_AUTH` | `local` | Auth mode: `none` · `password` · `local` |
-| `SPARKLYTICS_PASSWORD` | — | Required when `AUTH=password` |
+| `SPARKLYTICS_PASSWORD` | — | Required when `SPARKLYTICS_AUTH=password` |
 | `SPARKLYTICS_HTTPS` | `true` | Set `false` only for plain-HTTP local dev |
 | `SPARKLYTICS_PORT` | `3000` | Listen port |
 | `SPARKLYTICS_DATA_DIR` | `./data` | DuckDB data directory |
 | `SPARKLYTICS_DUCKDB_MEMORY` | `1GB` | Query memory limit (raise to `2GB`–`8GB` on larger VPS) |
 | `SPARKLYTICS_CORS_ORIGINS` | — | Comma-separated allowed origins for analytics API |
 | `SPARKLYTICS_RETENTION_DAYS` | `365` | How long to keep raw events |
-| `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | Path to city MMDB. Docker images bundle DB-IP automatically; you can override this path. |
+| `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | Path to city MMDB. Canonical default is `./GeoLite2-City.mmdb`; the bare-metal download script writes `./dbip-city-lite.mmdb`, so set this env var accordingly when using that script. |
 
 ### Auth modes
 
@@ -177,6 +175,8 @@ For bare-metal installs:
 ./scripts/download-geoip.sh
 export SPARKLYTICS_GEOIP_PATH=./dbip-city-lite.mmdb
 ```
+
+`SPARKLYTICS_GEOIP_PATH` defaults to `./GeoLite2-City.mmdb` (generic packaged default), but the download script outputs `dbip-city-lite.mmdb`, so keep the env var aligned with the file you actually install.
 
 > You can also use MaxMind GeoLite2-City.mmdb — just point `SPARKLYTICS_GEOIP_PATH` at it.
 

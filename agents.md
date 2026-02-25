@@ -138,21 +138,27 @@ git ls-files cloud/ sdk/next/   # must return empty
 # Committing backend/dashboard changes (public):
 cd sparklytics/           # make sure you're at root
 git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics
+git checkout -b feat/my-change
 git add crates/ dashboard/ Cargo.toml
 git commit -m "feat: ..."
-git push origin main
+git push origin feat/my-change
+gh pr create --base main --head feat/my-change --title "feat: ..." --body "..."
 
 # Committing cloud changes (private):
 cd sparklytics/cloud/
 git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics-cloud
+git checkout -b feat/clickhouse-sessions
 git add crates/ src/
 git commit -m "feat: clickhouse sessions"
-git push origin main
+git push origin feat/clickhouse-sessions
+gh pr create --base main --head feat/clickhouse-sessions --title "feat: clickhouse sessions" --body "..."
 
 # Committing SDK changes (public):
 cd sparklytics/sdk/next/
 git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics-next
+git checkout -b fix/spa-navigation
 git add src/ package.json
 git commit -m "fix: spa navigation"
-git push origin main
+git push origin fix/spa-navigation
+gh pr create --base main --head fix/spa-navigation --title "fix: spa navigation" --body "..."
 ```
