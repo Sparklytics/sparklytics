@@ -21,6 +21,8 @@ import {
   RefreshCw,
   LineChart,
   DollarSign,
+  Link2,
+  Image,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -75,6 +77,10 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
     { label: 'Retention', path: `/dashboard/${websiteId}/retention`, icon: RefreshCw },
     { label: 'Attribution', path: `/dashboard/${websiteId}/attribution`, icon: DollarSign },
     { label: 'Reports', path: `/dashboard/${websiteId}/reports`, icon: LineChart },
+  ];
+  const acquisitionItems = [
+    { label: 'Campaign Links', path: `/dashboard/${websiteId}/acquisition/links`, icon: Link2 },
+    { label: 'Tracking Pixels', path: `/dashboard/${websiteId}/acquisition/pixels`, icon: Image },
   ];
 
   const configItems: { label: string; path: string; icon: any }[] = [
@@ -181,6 +187,11 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
             <SectionLabel label="Explore" />
             <div className="space-y-px">
               {exploreItems.map((item) => <NavItem key={item.label} {...item} />)}
+            </div>
+
+            <SectionLabel label="Acquisition" />
+            <div className="space-y-px">
+              {acquisitionItems.map((item) => <NavItem key={item.label} {...item} />)}
             </div>
 
             <div className="mt-3 pt-3 border-t border-line/50">

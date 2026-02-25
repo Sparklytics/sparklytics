@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use tokio::io::AsyncWriteExt;
@@ -11,7 +11,7 @@ use tokio::sync::{Mutex, RwLock, Semaphore};
 use tracing::{error, info, warn};
 
 use sparklytics_core::{
-    analytics::AnalyticsBackend,
+    analytics::{AnalyticsBackend, CampaignLink, TrackingPixel},
     billing::{BillingGate, NullBillingGate},
     config::Config,
     event::Event,
@@ -29,6 +29,9 @@ const DEFAULT_INGEST_RETRY_BASE_MS: u64 = 200;
 const DEFAULT_INGEST_RETRY_MAX_MS: u64 = 5_000;
 const DEFAULT_SESSION_CACHE_MAX_ENTRIES: usize = 50_000;
 const DEFAULT_SESSION_CACHE_TTL_SECONDS: i64 = 1_800;
+const DEFAULT_RATE_LIMIT_MAX_KEYS: usize = 100_000;
+const DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES: usize = 10_000;
+const DEFAULT_ACQUISITION_CACHE_TTL_SECONDS: u64 = 60;
 const INGEST_WAL_LOG_FILE: &str = "segment.log";
 const INGEST_WAL_CURSOR_FILE: &str = "segment.cursor";
 
@@ -43,6 +46,18 @@ struct IngestBatch {
 struct CachedSession {
     session_id: String,
     last_seen_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedCampaignLink {
+    value: CampaignLink,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct CachedTrackingPixel {
+    value: TrackingPixel,
+    expires_at: Instant,
 }
 
 /// Shared application state injected into every Axum handler via
@@ -65,6 +80,11 @@ pub struct AppState {
 
     /// Per-IP sliding-window rate limiter for POST /api/collect.
     rate_limiter: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+    rate_limiter_max_entries: usize,
+    campaign_link_cache: Arc<Mutex<HashMap<String, CachedCampaignLink>>>,
+    tracking_pixel_cache: Arc<Mutex<HashMap<String, CachedTrackingPixel>>>,
+    acquisition_cache_max_entries: usize,
+    acquisition_cache_ttl: Duration,
 
     /// Plan-limit gate.
     pub billing_gate: Arc<dyn BillingGate>,
@@ -168,6 +188,18 @@ impl AppState {
             "SPARKLYTICS_SESSION_CACHE_TTL_SECONDS",
             DEFAULT_SESSION_CACHE_TTL_SECONDS,
         );
+        let rate_limiter_max_entries = Self::env_usize(
+            "SPARKLYTICS_RATE_LIMIT_MAX_KEYS",
+            DEFAULT_RATE_LIMIT_MAX_KEYS,
+        );
+        let acquisition_cache_max_entries = Self::env_usize(
+            "SPARKLYTICS_ACQUISITION_CACHE_MAX_ENTRIES",
+            DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES,
+        );
+        let acquisition_cache_ttl_seconds = Self::env_u64(
+            "SPARKLYTICS_ACQUISITION_CACHE_TTL_SECONDS",
+            DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
+        );
         let ingest_wal_log_path = ingest_wal_dir.join(INGEST_WAL_LOG_FILE);
         let ingest_wal_cursor_path = ingest_wal_dir.join(INGEST_WAL_CURSOR_FILE);
 
@@ -209,6 +241,11 @@ impl AppState {
             buffer: Arc::new(Mutex::new(Vec::new())),
             website_cache: Arc::new(RwLock::new(HashSet::new())),
             rate_limiter: Arc::new(Mutex::new(HashMap::new())),
+            rate_limiter_max_entries,
+            campaign_link_cache: Arc::new(Mutex::new(HashMap::new())),
+            tracking_pixel_cache: Arc::new(Mutex::new(HashMap::new())),
+            acquisition_cache_max_entries,
+            acquisition_cache_ttl: Duration::from_secs(acquisition_cache_ttl_seconds),
             billing_gate: Arc::new(NullBillingGate),
             export_semaphore: Arc::new(Semaphore::new(1)),
             funnel_results_semaphore: Arc::new(Semaphore::new(1)),
@@ -664,12 +701,92 @@ impl AppState {
                 map.remove(&key);
             }
         }
+        if !map.contains_key(&key) && map.len() >= self.rate_limiter_max_entries {
+            map.retain(|_, window| {
+                while window.front().is_some_and(|t| *t < cutoff) {
+                    window.pop_front();
+                }
+                !window.is_empty()
+            });
+            if !map.contains_key(&key) && map.len() >= self.rate_limiter_max_entries {
+                return false;
+            }
+        }
         let window = map.entry(key).or_default();
         if window.len() >= max_per_min {
             return false;
         }
         window.push_back(Instant::now());
         true
+    }
+
+    pub async fn get_campaign_link_by_slug_cached(
+        &self,
+        slug: &str,
+    ) -> anyhow::Result<Option<CampaignLink>> {
+        let now = Instant::now();
+        {
+            let mut cache = self.campaign_link_cache.lock().await;
+            if let Some(entry) = cache.get(slug) {
+                if entry.expires_at > now {
+                    return Ok(Some(entry.value.clone()));
+                }
+                cache.remove(slug);
+            }
+        }
+
+        let link = self.analytics.get_campaign_link_by_slug(slug).await?;
+        if let Some(link_value) = link.as_ref() {
+            let mut cache = self.campaign_link_cache.lock().await;
+            if cache.len() >= self.acquisition_cache_max_entries {
+                cache.clear();
+            }
+            cache.insert(
+                slug.to_string(),
+                CachedCampaignLink {
+                    value: link_value.clone(),
+                    expires_at: now + self.acquisition_cache_ttl,
+                },
+            );
+        }
+        Ok(link)
+    }
+
+    pub async fn get_tracking_pixel_by_key_cached(
+        &self,
+        pixel_key: &str,
+    ) -> anyhow::Result<Option<TrackingPixel>> {
+        let now = Instant::now();
+        {
+            let mut cache = self.tracking_pixel_cache.lock().await;
+            if let Some(entry) = cache.get(pixel_key) {
+                if entry.expires_at > now {
+                    return Ok(Some(entry.value.clone()));
+                }
+                cache.remove(pixel_key);
+            }
+        }
+
+        let pixel = self.analytics.get_tracking_pixel_by_key(pixel_key).await?;
+        if let Some(pixel_value) = pixel.as_ref() {
+            let mut cache = self.tracking_pixel_cache.lock().await;
+            if cache.len() >= self.acquisition_cache_max_entries {
+                cache.clear();
+            }
+            cache.insert(
+                pixel_key.to_string(),
+                CachedTrackingPixel {
+                    value: pixel_value.clone(),
+                    expires_at: now + self.acquisition_cache_ttl,
+                },
+            );
+        }
+        Ok(pixel)
+    }
+
+    pub async fn invalidate_acquisition_cache(&self) {
+        self.campaign_link_cache.lock().await.clear();
+        self.tracking_pixel_cache.lock().await.clear();
     }
 
     /// Background loop: rotate the daily salt at midnight UTC.

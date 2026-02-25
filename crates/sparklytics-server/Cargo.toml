@@ -39,6 +39,9 @@ hex = { workspace = true }
 csv = { workspace = true }
 include_dir = "0.7"
 ureq = "2"
+url = { workspace = true }
+psl = { workspace = true }
+ipnet = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }

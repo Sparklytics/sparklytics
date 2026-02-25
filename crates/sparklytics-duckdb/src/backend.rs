@@ -162,6 +162,7 @@ impl DuckDbBackend {
                     browser, browser_version, os, os_version, device_type,
                     screen, language,
                     utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+                    link_id, pixel_id,
                     created_at
                 ) VALUES (
                     ?1,  ?2,  ?3,  ?4,  ?5,
@@ -171,7 +172,8 @@ impl DuckDbBackend {
                     ?15, ?16, ?17, ?18, ?19,
                     ?20, ?21,
                     ?22, ?23, ?24, ?25, ?26,
-                    ?27
+                    ?27, ?28,
+                    ?29
                 )"#,
         )?;
 
@@ -203,6 +205,8 @@ impl DuckDbBackend {
                 event.utm_campaign,
                 event.utm_term,
                 event.utm_content,
+                event.link_id,
+                event.pixel_id,
                 event.created_at.to_rfc3339(),
             ])?;
         }

@@ -72,5 +72,7 @@ pub struct Event {
     pub utm_campaign: Option<String>,
     pub utm_term: Option<String>,
     pub utm_content: Option<String>,
+    pub link_id: Option<String>,
+    pub pixel_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }

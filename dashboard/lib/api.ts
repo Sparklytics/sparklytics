@@ -178,6 +178,28 @@ export const api = {
       `/api/websites/${websiteId}/revenue/summary?${toQuery(params)}`
     ),
 
+  // Campaign Links + Tracking Pixels (Sprint 19)
+  listCampaignLinks: (websiteId: string) =>
+    request<{ data: CampaignLink[] }>(`/api/websites/${websiteId}/links`),
+  createCampaignLink: (websiteId: string, body: CreateCampaignLinkPayload) =>
+    request<{ data: CampaignLink }>(`/api/websites/${websiteId}/links`, { method: 'POST', body }),
+  updateCampaignLink: (websiteId: string, linkId: string, body: UpdateCampaignLinkPayload) =>
+    request<{ data: CampaignLink }>(`/api/websites/${websiteId}/links/${linkId}`, { method: 'PUT', body }),
+  deleteCampaignLink: (websiteId: string, linkId: string) =>
+    request<void>(`/api/websites/${websiteId}/links/${linkId}`, { method: 'DELETE' }),
+  getCampaignLinkStats: (websiteId: string, linkId: string) =>
+    request<{ data: LinkStatsResponse }>(`/api/websites/${websiteId}/links/${linkId}/stats`),
+  listTrackingPixels: (websiteId: string) =>
+    request<{ data: TrackingPixel[] }>(`/api/websites/${websiteId}/pixels`),
+  createTrackingPixel: (websiteId: string, body: CreateTrackingPixelPayload) =>
+    request<{ data: TrackingPixel }>(`/api/websites/${websiteId}/pixels`, { method: 'POST', body }),
+  updateTrackingPixel: (websiteId: string, pixelId: string, body: UpdateTrackingPixelPayload) =>
+    request<{ data: TrackingPixel }>(`/api/websites/${websiteId}/pixels/${pixelId}`, { method: 'PUT', body }),
+  deleteTrackingPixel: (websiteId: string, pixelId: string) =>
+    request<void>(`/api/websites/${websiteId}/pixels/${pixelId}`, { method: 'DELETE' }),
+  getTrackingPixelStats: (websiteId: string, pixelId: string) =>
+    request<{ data: PixelStatsResponse }>(`/api/websites/${websiteId}/pixels/${pixelId}/stats`),
+
   // Funnel Analysis (Sprint 13)
   listFunnels: (websiteId: string) =>
     request<{ data: FunnelSummary[] }>(`/api/websites/${websiteId}/funnels`),
@@ -506,6 +528,88 @@ export interface RevenueSummary {
   model: AttributionModel;
   conversions: number;
   revenue: number;
+}
+
+// --- Acquisition types (Sprint 19) ---
+
+export interface CampaignLink {
+  id: string;
+  website_id: string;
+  name: string;
+  slug: string;
+  destination_url: string;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_term: string | null;
+  utm_content: string | null;
+  is_active: boolean;
+  created_at: string;
+  clicks?: number;
+  unique_visitors?: number;
+  conversions?: number;
+  revenue?: number;
+  tracking_url: string;
+}
+
+export interface CreateCampaignLinkPayload {
+  name: string;
+  destination_url: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+}
+
+export interface UpdateCampaignLinkPayload {
+  name?: string;
+  destination_url?: string;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_term?: string | null;
+  utm_content?: string | null;
+  is_active?: boolean;
+}
+
+export interface LinkStatsResponse {
+  link_id: string;
+  clicks: number;
+  unique_visitors: number;
+  conversions: number;
+  revenue: number;
+}
+
+export interface TrackingPixel {
+  id: string;
+  website_id: string;
+  name: string;
+  pixel_key: string;
+  default_url: string | null;
+  is_active: boolean;
+  created_at: string;
+  views?: number;
+  unique_visitors?: number;
+  pixel_url: string;
+  snippet: string;
+}
+
+export interface CreateTrackingPixelPayload {
+  name: string;
+  default_url?: string;
+}
+
+export interface UpdateTrackingPixelPayload {
+  name?: string;
+  default_url?: string | null;
+  is_active?: boolean;
+}
+
+export interface PixelStatsResponse {
+  pixel_id: string;
+  views: number;
+  unique_visitors: number;
 }
 
 export interface AttributionParams {

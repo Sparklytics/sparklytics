@@ -57,6 +57,8 @@ fn sample_event(website_id: &str, session_id: String) -> Event {
         utm_campaign: Some("launch".to_string()),
         utm_term: None,
         utm_content: None,
+        link_id: None,
+        pixel_id: None,
         created_at: Utc::now(),
     }
 }
@@ -96,6 +98,8 @@ fn sample_custom_event(
         utm_campaign: None,
         utm_term: None,
         utm_content: None,
+        link_id: None,
+        pixel_id: None,
         created_at,
     }
 }

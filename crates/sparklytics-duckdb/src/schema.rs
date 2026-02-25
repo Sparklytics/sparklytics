@@ -137,6 +137,8 @@ CREATE TABLE IF NOT EXISTS events (
     utm_campaign    VARCHAR,
     utm_term        VARCHAR,
     utm_content     VARCHAR,
+    link_id         VARCHAR,                       -- Sprint 19 campaign link attribution key
+    pixel_id        VARCHAR,                       -- Sprint 19 tracking pixel attribution key
 
     -- Timestamp
     created_at      TIMESTAMP NOT NULL
@@ -146,6 +148,8 @@ CREATE TABLE IF NOT EXISTS events (
     -- m001_drop_events_fk() in backend.rs which drops this constraint on
     -- existing databases that were created with the old FK declaration.
 );
+ALTER TABLE events ADD COLUMN IF NOT EXISTS link_id VARCHAR;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS pixel_id VARCHAR;
 
 -- Primary query pattern: website + date range
 CREATE INDEX IF NOT EXISTS idx_events_website_time
@@ -181,6 +185,10 @@ CREATE INDEX IF NOT EXISTS idx_events_country_date
 -- Schema-parity index with ClickHouse cloud schema (tenant_id always NULL in self-hosted)
 CREATE INDEX IF NOT EXISTS idx_events_tenant
     ON events(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_link_id_time
+    ON events(website_id, event_name, link_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_pixel_id_time
+    ON events(website_id, event_name, pixel_id, created_at DESC);
 
 -- ===========================================
 -- GOALS (self-hosted conversions)
@@ -223,6 +231,38 @@ CREATE INDEX IF NOT EXISTS idx_saved_reports_website
     ON saved_reports(website_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_reports_name_website
     ON saved_reports(website_id, name);
+
+-- ===========================================
+-- ACQUISITION (Sprint 19)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS campaign_links (
+    id               VARCHAR PRIMARY KEY,
+    website_id       VARCHAR NOT NULL,
+    name             VARCHAR NOT NULL,
+    slug             VARCHAR NOT NULL UNIQUE,
+    destination_url  VARCHAR NOT NULL,
+    utm_source       VARCHAR,
+    utm_medium       VARCHAR,
+    utm_campaign     VARCHAR,
+    utm_term         VARCHAR,
+    utm_content      VARCHAR,
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_campaign_links_website
+    ON campaign_links(website_id);
+
+CREATE TABLE IF NOT EXISTS tracking_pixels (
+    id               VARCHAR PRIMARY KEY,
+    website_id       VARCHAR NOT NULL,
+    name             VARCHAR NOT NULL,
+    pixel_key        VARCHAR NOT NULL UNIQUE,
+    default_url      VARCHAR,
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_tracking_pixels_website
+    ON tracking_pixels(website_id);
 
 -- ===========================================
 -- FUNNELS (self-hosted conversion paths)

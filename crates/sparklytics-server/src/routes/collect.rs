@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
+use std::sync::OnceLock;
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{ConnectInfo, FromRequestParts, State},
     http::{HeaderMap, HeaderValue},
     response::{IntoResponse, Response},
     Json,
@@ -22,6 +24,28 @@ use sparklytics_core::{
 };
 
 use crate::{error::AppError, state::AppState};
+
+#[derive(Debug)]
+pub struct MaybeConnectInfo(pub Option<SocketAddr>);
+
+impl<S> FromRequestParts<S> for MaybeConnectInfo
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(Self(
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|info| info.0),
+        ))
+    }
+}
 
 /// `POST /api/collect` — ingest a single event or a batch of up to 50 events.
 ///
@@ -49,6 +73,7 @@ use crate::{error::AppError, state::AppState};
 #[tracing::instrument(skip(state, headers, payload))]
 pub async fn collect(
     State(state): State<Arc<AppState>>,
+    maybe_connect_info: MaybeConnectInfo,
     headers: HeaderMap,
     Json(payload): Json<CollectOrBatch>,
 ) -> Result<Response, AppError> {
@@ -99,9 +124,8 @@ pub async fn collect(
         }
     }
 
-    // --- Extract client IP (X-Forwarded-For or a placeholder) ---
-    // The real remote-addr fallback is wired in Sprint 1 via ConnectInfo middleware.
-    let client_ip = extract_client_ip(&headers);
+    // --- Extract client IP ---
+    let client_ip = extract_client_ip(&headers, maybe_connect_info.0);
 
     // --- Rate limiting: 60 req/min per IP ---
     // SPARKLYTICS_RATE_LIMIT_DISABLE bypasses this for load testing only.
@@ -187,6 +211,8 @@ pub async fn collect(
             utm_content: p
                 .utm_content
                 .or_else(|| url_utm.get("utm_content").cloned()),
+            link_id: None,
+            pixel_id: None,
             // Preserve deterministic ordering for batched events so strict
             // funnel step sequencing (`created_at > prev.matched_at`) works.
             created_at: base_now + chrono::Duration::microseconds(idx as i64),
@@ -221,25 +247,55 @@ pub async fn collect(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Extract the real client IP from `X-Forwarded-For` (first entry).
+/// Extract client IP.
 ///
-/// Falls back to `"unknown"` when the header is absent. Sprint 1 will wire
-/// in `ConnectInfo<SocketAddr>` as a proper TCP-addr fallback once the
-/// Tower `into_make_service_with_connect_info` plumbing is added.
-fn extract_client_ip(headers: &HeaderMap) -> String {
+/// Prefer the direct socket address when available. `X-Forwarded-For` is only
+/// used as fallback when socket metadata is unavailable.
+pub(crate) fn extract_client_ip(headers: &HeaderMap, remote_addr: Option<SocketAddr>) -> String {
+    let forwarded_ip = parse_forwarded_ip(headers);
+    if let Some(addr) = remote_addr {
+        let remote_ip = addr.ip();
+        if trusted_proxy_cidrs()
+            .iter()
+            .any(|cidr| cidr.contains(&remote_ip))
+        {
+            return forwarded_ip.unwrap_or(remote_ip).to_string();
+        }
+        return remote_ip.to_string();
+    }
+
+    forwarded_ip
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn parse_forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
     headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.split(',').next())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
+        .and_then(|s| s.trim().parse::<IpAddr>().ok())
+}
+
+fn trusted_proxy_cidrs() -> &'static Vec<ipnet::IpNet> {
+    static TRUSTED: OnceLock<Vec<ipnet::IpNet>> = OnceLock::new();
+    TRUSTED.get_or_init(|| {
+        std::env::var("SPARKLYTICS_TRUSTED_PROXIES")
+            .ok()
+            .map(|raw| {
+                raw.split(',')
+                    .filter_map(|entry| entry.trim().parse::<ipnet::IpNet>().ok())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    })
 }
 
 /// GeoIP result from a MaxMind lookup.
-struct GeoInfo {
-    country: Option<String>,
-    region: Option<String>,
-    city: Option<String>,
+pub(crate) struct GeoInfo {
+    pub country: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
 }
 
 /// Attempt a GeoIP lookup for `ip` using the MaxMind database at `path`.
@@ -247,16 +303,20 @@ struct GeoInfo {
 /// Returns `None` if the database file is missing or the IP cannot be parsed.
 /// This is the Sprint 0 non-fatal behaviour: events are stored with NULL geo
 /// fields rather than panicking.
-fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
+pub(crate) fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
     use std::net::IpAddr;
     use std::str::FromStr;
 
-    if !std::path::Path::new(path).exists() {
-        // Database absent — non-fatal. Warning already logged at startup.
-        return None;
-    }
-
-    let reader = maxminddb::Reader::open_readfile(path).ok()?;
+    type GeoReader = maxminddb::Reader<Vec<u8>>;
+    static GEOIP_READER: OnceLock<Option<GeoReader>> = OnceLock::new();
+    let reader = GEOIP_READER.get_or_init(|| {
+        if !std::path::Path::new(path).exists() {
+            return None;
+        }
+        let bytes = std::fs::read(path).ok()?;
+        maxminddb::Reader::from_source(bytes).ok()
+    });
+    let reader = reader.as_ref()?;
     let ip_addr = IpAddr::from_str(ip).ok()?;
 
     let lookup = reader.lookup(ip_addr).ok()?;
@@ -284,7 +344,7 @@ fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
 /// Returns a map of utm_source / utm_medium / utm_campaign / utm_term /
 /// utm_content → value. Used as a fallback when the caller does not supply
 /// explicit top-level utm_* fields in the payload.
-fn extract_utm_from_url(url: &str) -> HashMap<String, String> {
+pub(crate) fn extract_utm_from_url(url: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     let query = match url.find('?') {
         Some(pos) => &url[pos + 1..],
@@ -309,18 +369,18 @@ fn extract_utm_from_url(url: &str) -> HashMap<String, String> {
 }
 
 /// Parsed User-Agent fields.
-struct UaInfo {
-    browser: String,
-    browser_version: Option<String>,
-    os: String,
-    os_version: Option<String>,
-    device_type: String,
+pub(crate) struct UaInfo {
+    pub browser: String,
+    pub browser_version: Option<String>,
+    pub os: String,
+    pub os_version: Option<String>,
+    pub device_type: String,
 }
 
 /// Parse a `User-Agent` string via the `woothee` crate.
 ///
 /// Returns `None` if the UA string is empty or `woothee` cannot classify it.
-fn parse_user_agent(user_agent: &str) -> Option<UaInfo> {
+pub(crate) fn parse_user_agent(user_agent: &str) -> Option<UaInfo> {
     if user_agent.is_empty() {
         return None;
     }

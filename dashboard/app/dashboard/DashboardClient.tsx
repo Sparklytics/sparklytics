@@ -18,6 +18,8 @@ import { FunnelsPage } from '@/components/funnels/FunnelsPage';
 import { JourneyPage } from '@/components/journey/JourneyPage';
 import { RetentionPage } from '@/components/retention/RetentionPage';
 import { ReportsPage } from '@/components/reports/ReportsPage';
+import { LinksPage } from '@/components/acquisition/LinksPage';
+import { PixelsPage } from '@/components/acquisition/PixelsPage';
 import { useStats } from '@/hooks/useStats';
 import { usePageviews } from '@/hooks/usePageviews';
 import { useMetrics } from '@/hooks/useMetrics';
@@ -76,7 +78,7 @@ export function DashboardClient() {
   const analyticsEnabled = subPage !== 'settings' && subPage !== 'realtime'
     && subPage !== 'sessions' && subPage !== 'goals' && subPage !== 'funnels'
     && subPage !== 'journey' && subPage !== 'retention' && subPage !== 'reports'
-    && subPage !== 'attribution';
+    && subPage !== 'attribution' && subPage !== 'acquisition';
 
   // Auth redirect guard
   useEffect(() => {
@@ -189,6 +191,18 @@ export function DashboardClient() {
     return (
       <AppShell websiteId={websiteId}>
         <AttributionPage websiteId={websiteId} />
+      </AppShell>
+    );
+  }
+
+  if (subPage === 'acquisition') {
+    return (
+      <AppShell websiteId={websiteId}>
+        {subSubPage === 'pixels' ? (
+          <PixelsPage websiteId={websiteId} />
+        ) : (
+          <LinksPage websiteId={websiteId} />
+        )}
       </AppShell>
     );
   }

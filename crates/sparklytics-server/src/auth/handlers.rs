@@ -11,7 +11,7 @@ use serde_json::json;
 
 use sparklytics_core::config::AuthMode;
 
-use crate::{error::AppError, state::AppState};
+use crate::{error::AppError, routes::collect, state::AppState};
 
 use super::api_keys::{generate_api_key, generate_key_id};
 use super::jwt::{decode_jwt, encode_jwt};
@@ -120,10 +120,11 @@ pub struct LoginRequest {
 /// Rate limited: 5 failed attempts per 15 min per IP.
 pub async fn auth_login(
     State(state): State<Arc<AppState>>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let client_ip = extract_client_ip(&headers);
+    let client_ip = collect::extract_client_ip(&headers, maybe_connect_info.0);
 
     // Check rate limit.
     let allowed = state
@@ -450,15 +451,6 @@ pub async fn delete_api_key(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
-}
 
 fn build_session_cookie(token: &str, https: bool, session_days: u32) -> String {
     let secure = if https { "; Secure" } else { "" };

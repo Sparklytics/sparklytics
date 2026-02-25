@@ -231,7 +231,7 @@ impl DuckDbBackend {
     /// events as already deleted within the current transaction and the FK check
     /// passes. The EXISTS check must be inside the same transaction for this
     /// to work correctly. Order: events → sessions → saved_reports → goals
-    /// → funnel_steps → funnels → website.
+    /// → campaign_links → tracking_pixels → funnel_steps → funnels → website.
     pub async fn delete_website(&self, id: &str) -> Result<bool> {
         let mut conn = self.conn.lock().await;
         let tx = conn.transaction()?;
@@ -260,6 +260,14 @@ impl DuckDbBackend {
         )?;
         tx.execute(
             "DELETE FROM goals WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM campaign_links WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM tracking_pixels WHERE website_id = ?1",
             duckdb::params![id],
         )?;
         tx.execute(

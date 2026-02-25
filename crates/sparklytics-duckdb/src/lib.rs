@@ -1,3 +1,4 @@
+pub mod acquisition;
 pub mod analytics_impl;
 pub mod auth;
 pub mod backend;

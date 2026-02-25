@@ -196,12 +196,16 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             "/api/share/{share_id}/metrics",
             get(routes::share::share_metrics),
         );
+    let acquisition_public_router = Router::new()
+        .route("/l/{slug}", get(routes::links::track_link_redirect))
+        .route("/p/{pixel_key}", get(routes::pixels::track_pixel));
 
     // Always-public routes.
     let mut app = Router::new()
         .route("/health", get(routes::health::health))
         .merge(collect_router)
-        .merge(share_router);
+        .merge(share_router)
+        .merge(acquisition_public_router);
 
     match auth_mode {
         AuthMode::None => {
@@ -298,6 +302,30 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/reports/{report_id}/run",
                     post(routes::reports::run_report),
+                )
+                .route(
+                    "/api/websites/{id}/links",
+                    get(routes::links::list_links).post(routes::links::create_link),
+                )
+                .route(
+                    "/api/websites/{id}/links/{link_id}",
+                    put(routes::links::update_link).delete(routes::links::delete_link),
+                )
+                .route(
+                    "/api/websites/{id}/links/{link_id}/stats",
+                    get(routes::links::get_link_stats),
+                )
+                .route(
+                    "/api/websites/{id}/pixels",
+                    get(routes::pixels::list_pixels).post(routes::pixels::create_pixel),
+                )
+                .route(
+                    "/api/websites/{id}/pixels/{pixel_id}",
+                    put(routes::pixels::update_pixel).delete(routes::pixels::delete_pixel),
+                )
+                .route(
+                    "/api/websites/{id}/pixels/{pixel_id}/stats",
+                    get(routes::pixels::get_pixel_stats),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",
@@ -423,6 +451,30 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/reports/{report_id}/run",
                     post(routes::reports::run_report),
+                )
+                .route(
+                    "/api/websites/{id}/links",
+                    get(routes::links::list_links).post(routes::links::create_link),
+                )
+                .route(
+                    "/api/websites/{id}/links/{link_id}",
+                    put(routes::links::update_link).delete(routes::links::delete_link),
+                )
+                .route(
+                    "/api/websites/{id}/links/{link_id}/stats",
+                    get(routes::links::get_link_stats),
+                )
+                .route(
+                    "/api/websites/{id}/pixels",
+                    get(routes::pixels::list_pixels).post(routes::pixels::create_pixel),
+                )
+                .route(
+                    "/api/websites/{id}/pixels/{pixel_id}",
+                    put(routes::pixels::update_pixel).delete(routes::pixels::delete_pixel),
+                )
+                .route(
+                    "/api/websites/{id}/pixels/{pixel_id}/stats",
+                    get(routes::pixels::get_pixel_stats),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",

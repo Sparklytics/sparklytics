@@ -2,13 +2,15 @@ use async_trait::async_trait;
 use chrono::NaiveDate;
 
 use sparklytics_core::analytics::{
-    AnalyticsBackend, AnalyticsFilter, AttributionQuery, AttributionResponse, ComparisonRange,
-    CreateFunnelRequest, CreateGoalRequest, CreateReportRequest, EventNamesResult,
-    EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal, GoalStats,
-    JourneyQuery, JourneyResponse, MetricRow, MetricsPage, RealtimeEvent, RealtimePagination,
-    RealtimeResult, RetentionQuery, RetentionResponse, RevenueSummary, SavedReport,
-    SavedReportSummary, SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult,
-    TimeseriesResult, UpdateFunnelRequest, UpdateGoalRequest, UpdateReportRequest,
+    AnalyticsBackend, AnalyticsFilter, AttributionQuery, AttributionResponse, CampaignLink,
+    ComparisonRange, CreateCampaignLinkRequest, CreateFunnelRequest, CreateGoalRequest,
+    CreateReportRequest, CreateTrackingPixelRequest, EventNamesResult, EventPropertiesResult,
+    ExportRow, Funnel, FunnelResults, FunnelSummary, Goal, GoalStats, JourneyQuery,
+    JourneyResponse, LinkStatsResponse, MetricRow, MetricsPage, PixelStatsResponse,
+    RealtimeEvent, RealtimePagination, RealtimeResult, RetentionQuery, RetentionResponse,
+    RevenueSummary, SavedReport, SavedReportSummary, SessionDetailResponse, SessionsQuery,
+    SessionsResponse, StatsResult, TimeseriesResult, TrackingPixel, UpdateCampaignLinkRequest,
+    UpdateFunnelRequest, UpdateGoalRequest, UpdateReportRequest, UpdateTrackingPixelRequest,
 };
 use sparklytics_core::event::Event;
 
@@ -375,6 +377,107 @@ impl AnalyticsBackend for DuckDbBackend {
         query: &RetentionQuery,
     ) -> anyhow::Result<RetentionResponse> {
         crate::queries::retention::get_retention_inner(self, website_id, filter, query).await
+    }
+
+    async fn list_campaign_links(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<CampaignLink>> {
+        self.list_campaign_links_with_stats(website_id).await
+    }
+
+    async fn create_campaign_link(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        req: CreateCampaignLinkRequest,
+    ) -> anyhow::Result<CampaignLink> {
+        DuckDbBackend::create_campaign_link(self, website_id, req).await
+    }
+
+    async fn update_campaign_link(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        link_id: &str,
+        req: UpdateCampaignLinkRequest,
+    ) -> anyhow::Result<Option<CampaignLink>> {
+        DuckDbBackend::update_campaign_link(self, website_id, link_id, req).await
+    }
+
+    async fn delete_campaign_link(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        link_id: &str,
+    ) -> anyhow::Result<bool> {
+        DuckDbBackend::delete_campaign_link(self, website_id, link_id).await
+    }
+
+    async fn get_campaign_link_stats(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        link_id: &str,
+    ) -> anyhow::Result<LinkStatsResponse> {
+        DuckDbBackend::get_campaign_link_stats(self, website_id, link_id).await
+    }
+
+    async fn get_campaign_link_by_slug(&self, slug: &str) -> anyhow::Result<Option<CampaignLink>> {
+        DuckDbBackend::get_campaign_link_by_slug(self, slug).await
+    }
+
+    async fn list_tracking_pixels(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<TrackingPixel>> {
+        DuckDbBackend::list_tracking_pixels_with_stats(self, website_id).await
+    }
+
+    async fn create_tracking_pixel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        req: CreateTrackingPixelRequest,
+    ) -> anyhow::Result<TrackingPixel> {
+        DuckDbBackend::create_tracking_pixel(self, website_id, req).await
+    }
+
+    async fn update_tracking_pixel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        pixel_id: &str,
+        req: UpdateTrackingPixelRequest,
+    ) -> anyhow::Result<Option<TrackingPixel>> {
+        DuckDbBackend::update_tracking_pixel(self, website_id, pixel_id, req).await
+    }
+
+    async fn delete_tracking_pixel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        pixel_id: &str,
+    ) -> anyhow::Result<bool> {
+        DuckDbBackend::delete_tracking_pixel(self, website_id, pixel_id).await
+    }
+
+    async fn get_tracking_pixel_stats(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        pixel_id: &str,
+    ) -> anyhow::Result<PixelStatsResponse> {
+        DuckDbBackend::get_tracking_pixel_stats(self, website_id, pixel_id).await
+    }
+
+    async fn get_tracking_pixel_by_key(
+        &self,
+        pixel_key: &str,
+    ) -> anyhow::Result<Option<TrackingPixel>> {
+        DuckDbBackend::get_tracking_pixel_by_key(self, pixel_key).await
     }
 
     async fn list_reports(

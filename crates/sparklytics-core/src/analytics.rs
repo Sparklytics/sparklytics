@@ -633,6 +633,103 @@ pub struct RetentionResponse {
     pub summary: RetentionSummary,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CampaignLink {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub slug: String,
+    pub destination_url: String,
+    pub utm_source: Option<String>,
+    pub utm_medium: Option<String>,
+    pub utm_campaign: Option<String>,
+    pub utm_term: Option<String>,
+    pub utm_content: Option<String>,
+    pub is_active: bool,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clicks: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unique_visitors: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversions: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revenue: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateCampaignLinkRequest {
+    pub name: String,
+    pub destination_url: String,
+    pub utm_source: Option<String>,
+    pub utm_medium: Option<String>,
+    pub utm_campaign: Option<String>,
+    pub utm_term: Option<String>,
+    pub utm_content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateCampaignLinkRequest {
+    pub name: Option<String>,
+    pub destination_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_source: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_medium: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_campaign: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_term: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_content: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkStatsResponse {
+    pub link_id: String,
+    pub clicks: i64,
+    pub unique_visitors: i64,
+    pub conversions: i64,
+    pub revenue: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackingPixel {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub pixel_key: String,
+    pub default_url: Option<String>,
+    pub is_active: bool,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub views: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unique_visitors: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTrackingPixelRequest {
+    pub name: String,
+    pub default_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateTrackingPixelRequest {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub default_url: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PixelStatsResponse {
+    pub pixel_id: String,
+    pub views: i64,
+    pub unique_visitors: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportType {
@@ -1035,6 +1132,83 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         filter: &AnalyticsFilter,
         query: &RetentionQuery,
     ) -> anyhow::Result<RetentionResponse>;
+
+    async fn list_campaign_links(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<CampaignLink>>;
+
+    async fn create_campaign_link(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        req: CreateCampaignLinkRequest,
+    ) -> anyhow::Result<CampaignLink>;
+
+    async fn update_campaign_link(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        link_id: &str,
+        req: UpdateCampaignLinkRequest,
+    ) -> anyhow::Result<Option<CampaignLink>>;
+
+    async fn delete_campaign_link(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        link_id: &str,
+    ) -> anyhow::Result<bool>;
+
+    async fn get_campaign_link_stats(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        link_id: &str,
+    ) -> anyhow::Result<LinkStatsResponse>;
+
+    async fn get_campaign_link_by_slug(&self, slug: &str) -> anyhow::Result<Option<CampaignLink>>;
+
+    async fn list_tracking_pixels(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<TrackingPixel>>;
+
+    async fn create_tracking_pixel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        req: CreateTrackingPixelRequest,
+    ) -> anyhow::Result<TrackingPixel>;
+
+    async fn update_tracking_pixel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        pixel_id: &str,
+        req: UpdateTrackingPixelRequest,
+    ) -> anyhow::Result<Option<TrackingPixel>>;
+
+    async fn delete_tracking_pixel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        pixel_id: &str,
+    ) -> anyhow::Result<bool>;
+
+    async fn get_tracking_pixel_stats(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        pixel_id: &str,
+    ) -> anyhow::Result<PixelStatsResponse>;
+
+    async fn get_tracking_pixel_by_key(
+        &self,
+        pixel_key: &str,
+    ) -> anyhow::Result<Option<TrackingPixel>>;
 
     async fn list_reports(
         &self,
