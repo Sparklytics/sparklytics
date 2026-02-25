@@ -274,6 +274,37 @@ async fn test_reports_preview_invalid_absolute_range_returns_400() {
 }
 
 #[tokio::test]
+async fn test_reports_preview_with_compare_returns_compare_metadata() {
+    let (_state, app) = setup_none().await;
+    let website_id = create_website(&app).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/websites/{website_id}/reports/preview"))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "version": 1,
+                "report_type": "stats",
+                "date_range_type": "relative",
+                "relative_days": 7,
+                "compare_mode": "previous_period",
+                "timezone": "UTC"
+            })
+            .to_string(),
+        ))
+        .expect("build request");
+    let res = app.clone().oneshot(req).await.expect("preview report");
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = json_body(res).await;
+    assert_eq!(
+        body["data"]["data"]["compare"]["mode"],
+        "previous_period"
+    );
+    assert!(body["data"]["data"]["compare"]["comparison_range"][0].is_string());
+}
+
+#[tokio::test]
 async fn test_reports_create_invalid_name_returns_400() {
     let (_state, app) = setup_none().await;
     let website_id = create_website(&app).await;

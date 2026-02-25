@@ -1,4 +1,6 @@
+pub mod attribution;
 pub mod collect;
+pub mod compare;
 pub mod events;
 pub mod export;
 pub mod funnels;

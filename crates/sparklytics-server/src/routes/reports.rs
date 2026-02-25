@@ -14,7 +14,11 @@ use sparklytics_core::analytics::{
     UpdateReportRequest, VALID_METRIC_TYPES,
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::compare::{metadata_json, resolve_compare_range},
+    state::AppState,
+};
 
 const MAX_REPORTS_PER_WEBSITE: i64 = 100;
 
@@ -82,7 +86,9 @@ fn parse_absolute_range(
     Ok((start, end))
 }
 
-fn build_analytics_filter(config: &ReportConfig) -> Result<AnalyticsFilter, AppError> {
+fn build_analytics_context(
+    config: &ReportConfig,
+) -> Result<(AnalyticsFilter, Option<sparklytics_core::analytics::ComparisonRange>), AppError> {
     let (start_date, end_date) = match config.date_range_type {
         DateRangeType::Relative => parse_relative_range(config.relative_days)?,
         DateRangeType::Absolute => {
@@ -111,24 +117,44 @@ fn build_analytics_filter(config: &ReportConfig) -> Result<AnalyticsFilter, AppE
         }
     });
 
-    Ok(AnalyticsFilter {
+    let compare_mode = config
+        .compare_mode
+        .clone()
+        .unwrap_or(sparklytics_core::analytics::CompareMode::None);
+    let comparison = resolve_compare_range(
         start_date,
         end_date,
-        timezone,
-        filter_country: config.filter_country.clone(),
-        filter_page: config.filter_page.clone(),
-        filter_referrer: config.filter_referrer.clone(),
-        filter_browser: config.filter_browser.clone(),
-        filter_os: config.filter_os.clone(),
-        filter_device: config.filter_device.clone(),
-        filter_language: None,
-        filter_utm_source: config.filter_utm_source.clone(),
-        filter_utm_medium: config.filter_utm_medium.clone(),
-        filter_utm_campaign: config.filter_utm_campaign.clone(),
-        filter_region: config.filter_region.clone(),
-        filter_city: config.filter_city.clone(),
-        filter_hostname: config.filter_hostname.clone(),
-    })
+        Some(match compare_mode {
+            sparklytics_core::analytics::CompareMode::None => "none",
+            sparklytics_core::analytics::CompareMode::PreviousPeriod => "previous_period",
+            sparklytics_core::analytics::CompareMode::PreviousYear => "previous_year",
+            sparklytics_core::analytics::CompareMode::Custom => "custom",
+        }),
+        config.compare_start_date.as_deref(),
+        config.compare_end_date.as_deref(),
+    )?;
+
+    Ok((
+        AnalyticsFilter {
+            start_date,
+            end_date,
+            timezone,
+            filter_country: config.filter_country.clone(),
+            filter_page: config.filter_page.clone(),
+            filter_referrer: config.filter_referrer.clone(),
+            filter_browser: config.filter_browser.clone(),
+            filter_os: config.filter_os.clone(),
+            filter_device: config.filter_device.clone(),
+            filter_language: None,
+            filter_utm_source: config.filter_utm_source.clone(),
+            filter_utm_medium: config.filter_utm_medium.clone(),
+            filter_utm_campaign: config.filter_utm_campaign.clone(),
+            filter_region: config.filter_region.clone(),
+            filter_city: config.filter_city.clone(),
+            filter_hostname: config.filter_hostname.clone(),
+        },
+        comparison,
+    ))
 }
 
 async fn execute_report_config(
@@ -136,23 +162,43 @@ async fn execute_report_config(
     website_id: &str,
     config: &ReportConfig,
 ) -> Result<Value, AppError> {
-    let filter = build_analytics_filter(config)?;
+    let (filter, comparison) = build_analytics_context(config)?;
     match config.report_type {
         ReportType::Stats => {
             let data = state
                 .analytics
-                .get_stats(website_id, None, &filter)
+                .get_stats(website_id, None, &filter, comparison.as_ref())
                 .await
                 .map_err(AppError::Internal)?;
-            serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
+            if comparison.is_some() {
+                serde_json::to_value(json!({
+                    "data": data,
+                    "compare": metadata_json(comparison.as_ref()),
+                }))
+                .map_err(|e| AppError::Internal(e.into()))
+            } else {
+                serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
+            }
         }
         ReportType::Pageviews => {
             let data = state
                 .analytics
-                .get_timeseries(website_id, None, &filter, None)
+                .get_timeseries(website_id, None, &filter, None, comparison.as_ref())
                 .await
                 .map_err(AppError::Internal)?;
-            serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
+            if comparison.is_some() {
+                serde_json::to_value(json!({
+                    "data": {
+                        "series": data.series,
+                        "granularity": data.granularity,
+                        "compare_series": data.compare_series,
+                    },
+                    "compare": metadata_json(comparison.as_ref()),
+                }))
+                .map_err(|e| AppError::Internal(e.into()))
+            } else {
+                serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
+            }
         }
         ReportType::Metrics => {
             let metric_type = config.metric_type.as_deref().ok_or_else(|| {
@@ -160,13 +206,14 @@ async fn execute_report_config(
             })?;
             let page = state
                 .analytics
-                .get_metrics(website_id, None, metric_type, 25, 0, &filter)
+                .get_metrics(website_id, None, metric_type, 25, 0, &filter, comparison.as_ref())
                 .await
                 .map_err(AppError::Internal)?;
             serde_json::to_value(json!({
                 "type": metric_type,
                 "rows": page.rows,
-                "total": page.total
+                "total": page.total,
+                "compare": metadata_json(comparison.as_ref()),
             }))
             .map_err(|e| AppError::Internal(e.into()))
         }
@@ -224,7 +271,7 @@ pub async fn create_report(
     }
     validate_name(&req.name)?;
     // Validate config semantics before persisting.
-    build_analytics_filter(&req.config)?;
+    build_analytics_context(&req.config)?;
 
     let count = state
         .analytics
@@ -300,7 +347,7 @@ pub async fn update_report(
         }
     }
     if let Some(ref config) = req.config {
-        build_analytics_filter(config)?;
+        build_analytics_context(config)?;
     }
 
     let report = match state
@@ -403,6 +450,9 @@ mod tests {
             relative_days: Some(30),
             start_date: None,
             end_date: None,
+            compare_mode: None,
+            compare_start_date: None,
+            compare_end_date: None,
             timezone: Some("UTC".to_string()),
             metric_type: None,
             filter_country: None,
@@ -453,7 +503,7 @@ mod tests {
         let mut cfg = default_config();
         cfg.report_type = ReportType::Metrics;
         cfg.metric_type = None;
-        let err = build_analytics_filter(&cfg).expect_err("missing metric type should fail");
+        let err = build_analytics_context(&cfg).expect_err("missing metric type should fail");
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
@@ -462,7 +512,7 @@ mod tests {
         let mut cfg = default_config();
         cfg.report_type = ReportType::Metrics;
         cfg.metric_type = Some("bogus".to_string());
-        let err = build_analytics_filter(&cfg).expect_err("unknown metric type should fail");
+        let err = build_analytics_context(&cfg).expect_err("unknown metric type should fail");
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 

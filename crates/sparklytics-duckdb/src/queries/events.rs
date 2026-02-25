@@ -455,6 +455,8 @@ pub async fn get_event_timeseries_inner(
     Ok(TimeseriesResult {
         series,
         granularity: gran,
+        compare_series: None,
+        compare: None,
     })
 }
 

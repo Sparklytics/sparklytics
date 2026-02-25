@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::NaiveDate;
 
-use sparklytics_core::analytics::{AnalyticsFilter, StatsResult};
+use sparklytics_core::analytics::{AnalyticsFilter, ComparisonRange, StatsResult};
 
 use crate::DuckDbBackend;
 
@@ -23,10 +23,15 @@ pub struct StatsParams {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub comparison: Option<ComparisonRange>,
 }
 
 impl StatsParams {
-    pub fn from_filter(website_id: &str, filter: &AnalyticsFilter) -> Self {
+    pub fn from_filter(
+        website_id: &str,
+        filter: &AnalyticsFilter,
+        comparison: Option<&ComparisonRange>,
+    ) -> Self {
         Self {
             website_id: website_id.to_string(),
             start_date: filter.start_date,
@@ -44,6 +49,7 @@ impl StatsParams {
             filter_region: filter.filter_region.clone(),
             filter_city: filter.filter_city.clone(),
             filter_hostname: filter.filter_hostname.clone(),
+            comparison: comparison.cloned(),
         }
     }
 }
@@ -57,8 +63,16 @@ pub async fn get_stats_inner(db: &DuckDbBackend, params: &StatsParams) -> Result
         .unwrap_or_else(|_| "UTC".to_string());
 
     let range_days = (params.end_date - params.start_date).num_days() + 1;
-    let prev_end = params.start_date - chrono::Duration::days(1);
-    let prev_start = prev_end - chrono::Duration::days(range_days - 1);
+    let prev_end = params
+        .comparison
+        .as_ref()
+        .map(|range| range.comparison_end)
+        .unwrap_or_else(|| params.start_date - chrono::Duration::days(1));
+    let prev_start = params
+        .comparison
+        .as_ref()
+        .map(|range| range.comparison_start)
+        .unwrap_or_else(|| prev_end - chrono::Duration::days(range_days - 1));
     let (current, prev) = query_stats_for_ranges(
         &conn,
         &params.website_id,
@@ -81,6 +95,7 @@ pub async fn get_stats_inner(db: &DuckDbBackend, params: &StatsParams) -> Result
         prev_bounce_rate: prev.bounce_rate,
         prev_avg_duration_seconds: prev.avg_duration,
         timezone,
+        compare: params.comparison.as_ref().map(ComparisonRange::to_metadata),
     })
 }
 

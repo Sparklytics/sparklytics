@@ -11,7 +11,11 @@ use serde_json::json;
 
 use sparklytics_core::analytics::AnalyticsFilter;
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::compare::{metadata_json, resolve_compare_range},
+    state::AppState,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct StatsQuery {
@@ -31,6 +35,9 @@ pub struct StatsQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub compare_mode: Option<String>,
+    pub compare_start_date: Option<String>,
+    pub compare_end_date: Option<String>,
 }
 
 /// `GET /api/websites/:id/stats` - Summary statistics.
@@ -82,11 +89,38 @@ pub async fn get_stats(
         filter_hostname: query.filter_hostname,
     };
 
+    let compare = resolve_compare_range(
+        start_date,
+        end_date,
+        query.compare_mode.as_deref(),
+        query.compare_start_date.as_deref(),
+        query.compare_end_date.as_deref(),
+    )?;
+
     let result = state
         .analytics
-        .get_stats(&website_id, None, &filter)
+        .get_stats(&website_id, None, &filter, compare.as_ref())
         .await
         .map_err(AppError::Internal)?;
+
+    if let Some(compare_range) = compare {
+        return Ok(Json(json!({
+            "data": {
+                "pageviews": result.pageviews,
+                "visitors": result.visitors,
+                "sessions": result.sessions,
+                "bounce_rate": result.bounce_rate,
+                "avg_duration_seconds": result.avg_duration_seconds,
+                "prev_pageviews": result.prev_pageviews,
+                "prev_visitors": result.prev_visitors,
+                "prev_sessions": result.prev_sessions,
+                "prev_bounce_rate": result.prev_bounce_rate,
+                "prev_avg_duration_seconds": result.prev_avg_duration_seconds,
+                "timezone": result.timezone,
+            },
+            "compare": metadata_json(Some(&compare_range))
+        })));
+    }
 
     Ok(Json(json!({ "data": result })))
 }

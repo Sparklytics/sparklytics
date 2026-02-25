@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Menu } from 'lucide-react';
 import { DateRangePicker } from '@/components/filters/DateRangePicker';
+import { CompareModePicker } from '@/components/filters/CompareModePicker';
 import { FilterBar } from '@/components/filters/FilterBar';
 import { ExportButton } from '@/components/dashboard/ExportButton';
 import { useFilters } from '@/hooks/useFilters';
@@ -45,6 +46,7 @@ const SUB_PAGE_LABELS: Record<string, string> = {
   funnels: 'Funnels',
   journey: 'Journey',
   retention: 'Retention',
+  attribution: 'Attribution',
   realtime: 'Realtime',
   settings: 'Settings',
 };
@@ -94,6 +96,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
           endDate={dateRange.end_date}
         />
       )}
+      {subPage !== 'settings' && <CompareModePicker />}
       {subPage !== 'settings' && <DateRangePicker />}
     </header>
   );

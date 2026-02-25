@@ -11,7 +11,12 @@ use serde_json::json;
 
 use sparklytics_core::analytics::AnalyticsFilter;
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::compare::metadata_json,
+    routes::compare::resolve_compare_range,
+    state::AppState,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct PageviewsQuery {
@@ -32,6 +37,9 @@ pub struct PageviewsQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub compare_mode: Option<String>,
+    pub compare_start_date: Option<String>,
+    pub compare_end_date: Option<String>,
 }
 
 /// `GET /api/websites/:id/pageviews` - Time series data.
@@ -75,16 +83,42 @@ pub async fn get_pageviews(
         filter_hostname: query.filter_hostname,
     };
 
+    let compare = resolve_compare_range(
+        start_date,
+        end_date,
+        query.compare_mode.as_deref(),
+        query.compare_start_date.as_deref(),
+        query.compare_end_date.as_deref(),
+    )?;
+
     let result = state
         .analytics
-        .get_timeseries(&website_id, None, &filter, query.granularity.as_deref())
+        .get_timeseries(
+            &website_id,
+            None,
+            &filter,
+            query.granularity.as_deref(),
+            compare.as_ref(),
+        )
         .await
         .map_err(AppError::Internal)?;
+
+    if let Some(compare_range) = compare {
+        return Ok(Json(json!({
+            "data": {
+                "series": result.series,
+                "granularity": result.granularity,
+                "compare_series": result.compare_series.unwrap_or_default(),
+            },
+            "compare": metadata_json(Some(&compare_range))
+        })));
+    }
 
     Ok(Json(json!({
         "data": {
             "series": result.series,
             "granularity": result.granularity,
+            "compare_series": result.compare_series,
         }
     })))
 }

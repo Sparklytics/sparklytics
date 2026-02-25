@@ -13,9 +13,11 @@ import { useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatNumber } from '@/lib/utils';
 import type { PageviewsPoint } from '@/lib/api';
+import { useMemo } from 'react';
 
 interface PageviewsChartProps {
   data?: PageviewsPoint[];
+  compareData?: PageviewsPoint[];
   loading: boolean;
 }
 
@@ -50,8 +52,25 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
-export function PageviewsChart({ data, loading }: PageviewsChartProps) {
+export function PageviewsChart({ data, compareData, loading }: PageviewsChartProps) {
   const [metric, setMetric] = useState<'both' | 'visitors' | 'pageviews'>('both');
+  const merged = useMemo(() => {
+    const rows = (data ?? []).map((point) => ({
+      ...point,
+      compare_visitors: 0,
+      compare_pageviews: 0,
+    }));
+    if (!compareData?.length) {
+      return rows;
+    }
+    for (let i = 0; i < rows.length; i += 1) {
+      const compare = compareData[i];
+      if (!compare) break;
+      rows[i].compare_visitors = compare.visitors;
+      rows[i].compare_pageviews = compare.pageviews;
+    }
+    return rows;
+  }, [data, compareData]);
 
   if (loading) {
     return (
@@ -90,7 +109,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
       </div>
 
       <ResponsiveContainer width="100%" height={240}>
-        <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+        <LineChart data={merged} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
           <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="date"
@@ -125,6 +144,28 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
               dataKey="pageviews"
               stroke="var(--neutral)"
               strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+            />
+          )}
+          {compareData?.length && (metric === 'both' || metric === 'visitors') && (
+            <Line
+              type="monotone"
+              dataKey="compare_visitors"
+              stroke="var(--spark)"
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+          )}
+          {compareData?.length && (metric === 'both' || metric === 'pageviews') && (
+            <Line
+              type="monotone"
+              dataKey="compare_pageviews"
+              stroke="var(--neutral)"
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
               dot={false}
               isAnimationActive={false}
             />

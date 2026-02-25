@@ -41,6 +41,7 @@ function defaultConfig(): ReportConfig {
     report_type: 'stats',
     date_range_type: 'relative',
     relative_days: 30,
+    compare_mode: 'none',
     timezone: 'UTC',
   };
 }
@@ -60,6 +61,11 @@ function normalizeConfig(config: ReportConfig): ReportConfig {
     relative_days: dateRangeType === 'relative' ? config.relative_days : undefined,
     start_date: dateRangeType === 'absolute' ? config.start_date : undefined,
     end_date: dateRangeType === 'absolute' ? config.end_date : undefined,
+    compare_mode: config.compare_mode ?? 'none',
+    compare_start_date:
+      config.compare_mode === 'custom' ? config.compare_start_date : undefined,
+    compare_end_date:
+      config.compare_mode === 'custom' ? config.compare_end_date : undefined,
   };
 }
 
@@ -139,7 +145,7 @@ export function ReportFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
-      <DialogContent className="bg-surface-1 border-line sm:rounded-xl max-w-lg">
+      <DialogContent className="bg-surface-1 border-line sm:rounded-xl max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-ink">
             {isEditing ? 'Edit report' : 'New report'}
@@ -276,6 +282,66 @@ export function ReportFormDialog({
                     type="date"
                     value={config.end_date ?? ''}
                     onChange={(e) => setConfig((prev) => ({ ...prev, end_date: e.target.value }))}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className={labelClass}>Compare</label>
+              <select
+                value={config.compare_mode ?? 'none'}
+                onChange={(e) =>
+                  setConfig((prev) => {
+                    const mode = e.target.value as typeof prev.compare_mode;
+                    if (mode === 'custom') {
+                      return {
+                        ...prev,
+                        compare_mode: mode,
+                        compare_start_date: prev.compare_start_date ?? prev.start_date,
+                        compare_end_date: prev.compare_end_date ?? prev.end_date,
+                      };
+                    }
+                    return {
+                      ...prev,
+                      compare_mode: mode,
+                      compare_start_date: undefined,
+                      compare_end_date: undefined,
+                    };
+                  })
+                }
+                className={selectClass}
+              >
+                <option value="none">No compare</option>
+                <option value="previous_period">Previous period</option>
+                <option value="previous_year">Previous year</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            {config.compare_mode === 'custom' && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelClass}>Compare start</label>
+                  <input
+                    type="date"
+                    value={config.compare_start_date ?? ''}
+                    onChange={(e) =>
+                      setConfig((prev) => ({ ...prev, compare_start_date: e.target.value || undefined }))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Compare end</label>
+                  <input
+                    type="date"
+                    value={config.compare_end_date ?? ''}
+                    onChange={(e) =>
+                      setConfig((prev) => ({ ...prev, compare_end_date: e.target.value || undefined }))
+                    }
                     className={inputClass}
                   />
                 </div>

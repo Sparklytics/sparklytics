@@ -46,6 +46,23 @@ function payloadForType(reportType: string) {
   };
 }
 
+function withOptionalCompare(config: Record<string, any>, payload: unknown) {
+  if (!config.compare_mode || config.compare_mode === 'none') {
+    return payload;
+  }
+  return {
+    data: payload,
+    compare: {
+      mode: config.compare_mode,
+      primary_range: ['2026-02-14', '2026-02-20'],
+      comparison_range:
+        config.compare_mode === 'custom'
+          ? [config.compare_start_date ?? '2026-02-01', config.compare_end_date ?? '2026-02-07']
+          : ['2026-02-07', '2026-02-13'],
+    },
+  };
+}
+
 test('reports supports preview/run across report types and absolute ranges', async ({ page }) => {
   const websiteId = 'site_test';
   let nextId = 1;
@@ -132,7 +149,7 @@ test('reports supports preview/run across report types and absolute ranges', asy
           report_id: null,
           config,
           ran_at: '2026-02-25T12:01:00Z',
-          data: payloadForType(config.report_type),
+          data: withOptionalCompare(config, payloadForType(config.report_type)),
         },
       });
     }
@@ -157,7 +174,7 @@ test('reports supports preview/run across report types and absolute ranges', asy
           report_id: report.id,
           config: report.config,
           ran_at: '2026-02-25T12:02:00Z',
-          data: payloadForType(String(report.config.report_type)),
+          data: withOptionalCompare(report.config, payloadForType(String(report.config.report_type))),
         },
       });
     }
@@ -168,17 +185,26 @@ test('reports supports preview/run across report types and absolute ranges', asy
   await page.goto('/dashboard');
   await page.getByRole('button', { name: 'Reports' }).click();
 
-  // Metrics + preview
+  // Stats + compare metadata
   await page.getByRole('button', { name: 'New Report' }).click();
   let dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('e.g. Weekly KPI').fill('Compare Stats');
+  await dialog.locator('select').nth(2).selectOption('previous_period');
+  await dialog.getByRole('button', { name: 'Preview' }).click();
+  await expect(page.getByText('Preview: Compare Stats')).toBeVisible();
+  await expect(page.getByText(/previous_period:/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Create report' }).click();
+
+  // Metrics + preview
+  await page.getByRole('button', { name: 'New Report' }).click();
+  dialog = page.getByRole('dialog');
   await dialog.getByPlaceholder('e.g. Weekly KPI').fill('Metrics Report');
   await dialog.locator('select').first().selectOption('metrics');
   await dialog.getByRole('button', { name: 'Preview' }).click();
   await expect(page.getByText('Preview: Metrics Report')).toBeVisible();
   await expect(page.getByText('"rows"')).toBeVisible();
   await dialog.getByRole('button', { name: 'Create report' }).click();
-  const metricsCard = page.locator('main').filter({ hasText: 'Metrics Report' });
-  await metricsCard.getByTitle('Run report').click();
+  await page.getByTitle('Run report').nth(1).click();
   await expect(page.getByText('Run: Metrics Report')).toBeVisible();
 
   // Pageviews
@@ -187,7 +213,7 @@ test('reports supports preview/run across report types and absolute ranges', asy
   await dialog.getByPlaceholder('e.g. Weekly KPI').fill('Pageviews Report');
   await dialog.locator('select').first().selectOption('pageviews');
   await dialog.getByRole('button', { name: 'Create report' }).click();
-  await page.getByTitle('Run report').nth(1).click();
+  await page.getByTitle('Run report').nth(2).click();
   await expect(page.getByText('Run: Pageviews Report')).toBeVisible();
   await expect(page.getByText('"series"')).toBeVisible();
 
@@ -200,7 +226,7 @@ test('reports supports preview/run across report types and absolute ranges', asy
   await dialog.locator('input[type="date"]').first().fill('2026-01-01');
   await dialog.locator('input[type="date"]').nth(1).fill('2026-01-31');
   await dialog.getByRole('button', { name: 'Create report' }).click();
-  await page.getByTitle('Run report').nth(2).click();
+  await page.getByTitle('Run report').nth(3).click();
   await expect(page.getByText('Run: Events Report')).toBeVisible();
   await expect(page.getByText('"event_name": "signup"')).toBeVisible();
 });

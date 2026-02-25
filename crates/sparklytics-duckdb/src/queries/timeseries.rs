@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate, Timelike};
 
-use sparklytics_core::analytics::{AnalyticsFilter, TimeseriesPoint, TimeseriesResult};
+use sparklytics_core::analytics::{
+    AnalyticsFilter, ComparisonRange, TimeseriesPoint, TimeseriesResult,
+};
 
 use crate::DuckDbBackend;
 
@@ -22,6 +26,7 @@ pub async fn get_timeseries_inner(
     website_id: &str,
     filter: &AnalyticsFilter,
     granularity: Option<&str>,
+    comparison: Option<&ComparisonRange>,
 ) -> Result<TimeseriesResult> {
     let gran = match granularity {
         Some("hour") => "hour".to_string(),
@@ -32,142 +37,282 @@ pub async fn get_timeseries_inner(
 
     let conn = db.conn.lock().await;
 
+    if let Some(comparison_range) = comparison {
+        let rows = query_period_buckets(
+            &conn,
+            website_id,
+            filter,
+            &gran,
+            Some(comparison_range),
+        )?;
+
+        let primary_buckets = generate_buckets(&filter.start_date, &filter.end_date, &gran);
+        let bucket_count = primary_buckets.len();
+        let mut primary_values = vec![(0_i64, 0_i64); bucket_count];
+        let mut compare_values = vec![(0_i64, 0_i64); bucket_count];
+
+        for (period, bucket_index, pageviews, visitors) in rows {
+            if bucket_index < 0 {
+                continue;
+            }
+            let idx = bucket_index as usize;
+            if idx >= bucket_count {
+                continue;
+            }
+
+            if period == "primary" {
+                primary_values[idx] = (pageviews, visitors);
+            } else {
+                compare_values[idx] = (pageviews, visitors);
+            }
+        }
+
+        let series = primary_buckets
+            .iter()
+            .enumerate()
+            .map(|(idx, bucket)| {
+                let (pageviews, visitors) = primary_values[idx];
+                TimeseriesPoint {
+                    date: bucket.clone(),
+                    pageviews,
+                    visitors,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let compare_series = primary_buckets
+            .iter()
+            .enumerate()
+            .map(|(idx, bucket)| {
+                let (pageviews, visitors) = compare_values[idx];
+                TimeseriesPoint {
+                    date: bucket.clone(),
+                    pageviews,
+                    visitors,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        return Ok(TimeseriesResult {
+            series,
+            granularity: gran,
+            compare_series: Some(compare_series),
+            compare: Some(comparison_range.to_metadata()),
+        });
+    }
+
+    let rows = query_period_buckets(&conn, website_id, filter, &gran, None)?;
+    let mut data_map: HashMap<i64, (i64, i64)> = HashMap::new();
+    for (_, idx, pageviews, visitors) in rows {
+        data_map.insert(idx, (pageviews, visitors));
+    }
+
+    let all_buckets = generate_buckets(&filter.start_date, &filter.end_date, &gran);
+    let series = all_buckets
+        .into_iter()
+        .enumerate()
+        .map(|(idx, bucket)| {
+            let (pageviews, visitors) = data_map.get(&(idx as i64)).copied().unwrap_or((0, 0));
+            TimeseriesPoint {
+                date: bucket,
+                pageviews,
+                visitors,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(TimeseriesResult {
+        series,
+        granularity: gran,
+        compare_series: None,
+        compare: None,
+    })
+}
+
+fn query_period_buckets(
+    conn: &duckdb::Connection,
+    website_id: &str,
+    filter: &AnalyticsFilter,
+    granularity: &str,
+    comparison: Option<&ComparisonRange>,
+) -> Result<Vec<(String, i64, i64, i64)>> {
     let start_str = filter.start_date.format("%Y-%m-%d").to_string();
-    let end_next = filter.end_date + chrono::Duration::days(1);
-    let end_str = end_next.format("%Y-%m-%d").to_string();
+    let end_str = (filter.end_date + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
 
     let mut filter_sql = String::new();
-    let mut filter_params: Vec<Box<dyn duckdb::types::ToSql>> = Vec::new();
-    filter_params.push(Box::new(website_id.to_string()));
-    filter_params.push(Box::new(start_str.clone()));
-    filter_params.push(Box::new(end_str.clone()));
+    let mut filter_params: Vec<Box<dyn duckdb::types::ToSql>> = vec![
+        Box::new(website_id.to_string()),
+        Box::new(start_str),
+        Box::new(end_str),
+    ];
+
     let mut param_idx = 4;
+    if let Some(compare) = comparison {
+        filter_params.push(Box::new(compare.comparison_start.format("%Y-%m-%d").to_string()));
+        filter_params.push(Box::new(
+            (compare.comparison_end + chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string(),
+        ));
+        param_idx = 6;
+    }
 
     if let Some(ref country) = filter.filter_country {
-        filter_sql.push_str(&format!(" AND country = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.country = ?{}", param_idx));
         filter_params.push(Box::new(country.clone()));
         param_idx += 1;
     }
     if let Some(ref page) = filter.filter_page {
-        filter_sql.push_str(&format!(" AND url LIKE ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.url LIKE ?{}", param_idx));
         filter_params.push(Box::new(format!("%{}%", page)));
         param_idx += 1;
     }
     if let Some(ref referrer) = filter.filter_referrer {
-        filter_sql.push_str(&format!(" AND referrer_domain = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.referrer_domain = ?{}", param_idx));
         filter_params.push(Box::new(referrer.clone()));
         param_idx += 1;
     }
     if let Some(ref browser) = filter.filter_browser {
-        filter_sql.push_str(&format!(" AND browser = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.browser = ?{}", param_idx));
         filter_params.push(Box::new(browser.clone()));
         param_idx += 1;
     }
     if let Some(ref os) = filter.filter_os {
-        filter_sql.push_str(&format!(" AND os = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.os = ?{}", param_idx));
         filter_params.push(Box::new(os.clone()));
         param_idx += 1;
     }
     if let Some(ref device) = filter.filter_device {
-        filter_sql.push_str(&format!(" AND device_type = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.device_type = ?{}", param_idx));
         filter_params.push(Box::new(device.clone()));
         param_idx += 1;
     }
     if let Some(ref language) = filter.filter_language {
-        filter_sql.push_str(&format!(" AND language = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.language = ?{}", param_idx));
         filter_params.push(Box::new(language.clone()));
         param_idx += 1;
     }
     if let Some(ref utm_source) = filter.filter_utm_source {
-        filter_sql.push_str(&format!(" AND utm_source = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.utm_source = ?{}", param_idx));
         filter_params.push(Box::new(utm_source.clone()));
         param_idx += 1;
     }
     if let Some(ref utm_medium) = filter.filter_utm_medium {
-        filter_sql.push_str(&format!(" AND utm_medium = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.utm_medium = ?{}", param_idx));
         filter_params.push(Box::new(utm_medium.clone()));
         param_idx += 1;
     }
     if let Some(ref utm_campaign) = filter.filter_utm_campaign {
-        filter_sql.push_str(&format!(" AND utm_campaign = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.utm_campaign = ?{}", param_idx));
         filter_params.push(Box::new(utm_campaign.clone()));
         param_idx += 1;
     }
     if let Some(ref region) = filter.filter_region {
-        filter_sql.push_str(&format!(" AND region = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.region = ?{}", param_idx));
         filter_params.push(Box::new(region.clone()));
         param_idx += 1;
     }
     if let Some(ref city) = filter.filter_city {
-        filter_sql.push_str(&format!(" AND city = ?{}", param_idx));
+        filter_sql.push_str(&format!(" AND e.city = ?{}", param_idx));
         filter_params.push(Box::new(city.clone()));
         param_idx += 1;
     }
     if let Some(ref hostname) = filter.filter_hostname {
         filter_sql.push_str(&format!(
-            " AND lower(regexp_extract(url, '^https?://([^/?#]+)', 1)) = lower(?{})",
+            " AND lower(regexp_extract(e.url, '^https?://([^/?#]+)', 1)) = lower(?{})",
             param_idx
         ));
         filter_params.push(Box::new(hostname.clone()));
     }
 
-    let trunc_fn = match gran.as_str() {
-        "hour" => "CAST(date_trunc('hour', created_at) AS VARCHAR)",
-        "month" => "CAST(date_trunc('month', created_at) AS VARCHAR)",
-        _ => "CAST(date_trunc('day', created_at) AS VARCHAR)",
+    let bucket_idx_expr = match granularity {
+        "hour" => "CAST(DATEDIFF('hour', p.period_start, e.created_at) AS BIGINT)",
+        "month" => {
+            "CAST(((EXTRACT(year FROM e.created_at) - EXTRACT(year FROM p.period_start)) * 12 + (EXTRACT(month FROM e.created_at) - EXTRACT(month FROM p.period_start))) AS BIGINT)"
+        }
+        _ => "CAST(DATEDIFF('day', p.period_start, e.created_at) AS BIGINT)",
     };
 
-    let sql = format!(
-        r#"
-        SELECT
-            {trunc_fn} AS bucket,
-            COUNT(*) AS pageviews,
-            COUNT(DISTINCT visitor_id) AS visitors
-        FROM events
-        WHERE website_id = ?1
-          AND created_at >= ?2
-          AND created_at < ?3
-          {filter_sql}
-        GROUP BY bucket
-        ORDER BY bucket
-        "#
-    );
+    let sql = if comparison.is_some() {
+        format!(
+            r#"
+            WITH periods AS (
+                SELECT 'primary' AS period_name, CAST(?2 AS TIMESTAMP) AS period_start, CAST(?3 AS TIMESTAMP) AS period_end
+                UNION ALL
+                SELECT 'comparison' AS period_name, CAST(?4 AS TIMESTAMP) AS period_start, CAST(?5 AS TIMESTAMP) AS period_end
+            ),
+            filtered AS (
+                SELECT
+                    p.period_name,
+                    {bucket_idx_expr} AS bucket_index,
+                    e.visitor_id
+                FROM periods p
+                JOIN events e
+                  ON e.website_id = ?1
+                 AND e.created_at >= p.period_start
+                 AND e.created_at < p.period_end
+                WHERE 1 = 1
+                  {filter_sql}
+            )
+            SELECT
+                period_name,
+                bucket_index,
+                COUNT(*) AS pageviews,
+                COUNT(DISTINCT visitor_id) AS visitors
+            FROM filtered
+            GROUP BY period_name, bucket_index
+            ORDER BY period_name, bucket_index
+            "#
+        )
+    } else {
+        format!(
+            r#"
+            WITH periods AS (
+                SELECT 'primary' AS period_name, CAST(?2 AS TIMESTAMP) AS period_start, CAST(?3 AS TIMESTAMP) AS period_end
+            ),
+            filtered AS (
+                SELECT
+                    p.period_name,
+                    {bucket_idx_expr} AS bucket_index,
+                    e.visitor_id
+                FROM periods p
+                JOIN events e
+                  ON e.website_id = ?1
+                 AND e.created_at >= p.period_start
+                 AND e.created_at < p.period_end
+                WHERE 1 = 1
+                  {filter_sql}
+            )
+            SELECT
+                period_name,
+                bucket_index,
+                COUNT(*) AS pageviews,
+                COUNT(DISTINCT visitor_id) AS visitors
+            FROM filtered
+            GROUP BY period_name, bucket_index
+            ORDER BY period_name, bucket_index
+            "#
+        )
+    };
 
     let param_refs: Vec<&dyn duckdb::types::ToSql> =
         filter_params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
-        let bucket: String = row.get(0)?;
-        let pageviews: i64 = row.get(1)?;
-        let visitors: i64 = row.get(2)?;
-        Ok((bucket, pageviews, visitors))
+        let period_name: String = row.get(0)?;
+        let bucket_index: i64 = row.get(1)?;
+        let pageviews: i64 = row.get(2)?;
+        let visitors: i64 = row.get(3)?;
+        Ok((period_name, bucket_index, pageviews, visitors))
     })?;
 
-    let mut data_map: std::collections::HashMap<String, (i64, i64)> =
-        std::collections::HashMap::new();
+    let mut out = Vec::new();
     for row in rows {
-        let (bucket, pv, vis) = row?;
-        data_map.insert(bucket, (pv, vis));
+        out.push(row?);
     }
-
-    let all_buckets = generate_buckets(&filter.start_date, &filter.end_date, &gran);
-
-    let series: Vec<TimeseriesPoint> = all_buckets
-        .into_iter()
-        .map(|bucket_key| {
-            let (pageviews, visitors) = find_bucket_match(&data_map, &bucket_key);
-            TimeseriesPoint {
-                date: bucket_key,
-                pageviews,
-                visitors,
-            }
-        })
-        .collect();
-
-    Ok(TimeseriesResult {
-        series,
-        granularity: gran,
-    })
+    Ok(out)
 }
 
 impl DuckDbBackend {
@@ -176,24 +321,10 @@ impl DuckDbBackend {
         website_id: &str,
         filter: &AnalyticsFilter,
         granularity: Option<&str>,
+        comparison: Option<&ComparisonRange>,
     ) -> Result<TimeseriesResult> {
-        get_timeseries_inner(self, website_id, filter, granularity).await
+        get_timeseries_inner(self, website_id, filter, granularity, comparison).await
     }
-}
-
-fn find_bucket_match(
-    data_map: &std::collections::HashMap<String, (i64, i64)>,
-    bucket_key: &str,
-) -> (i64, i64) {
-    if let Some(&(pv, vis)) = data_map.get(bucket_key) {
-        return (pv, vis);
-    }
-    for (key, &(pv, vis)) in data_map {
-        if key.starts_with(bucket_key) || bucket_key.starts_with(key) {
-            return (pv, vis);
-        }
-    }
-    (0, 0)
 }
 
 fn generate_buckets(start: &NaiveDate, end: &NaiveDate, gran: &str) -> Vec<String> {

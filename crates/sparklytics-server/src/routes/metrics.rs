@@ -11,7 +11,11 @@ use serde_json::json;
 
 use sparklytics_core::analytics::{AnalyticsFilter, VALID_METRIC_TYPES};
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::compare::{metadata_json, resolve_compare_range},
+    state::AppState,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct MetricsQuery {
@@ -35,6 +39,9 @@ pub struct MetricsQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub compare_mode: Option<String>,
+    pub compare_start_date: Option<String>,
+    pub compare_end_date: Option<String>,
 }
 
 /// `GET /api/websites/:id/metrics` - Breakdown by dimension.
@@ -88,6 +95,14 @@ pub async fn get_metrics(
         filter_hostname: query.filter_hostname,
     };
 
+    let compare = resolve_compare_range(
+        start_date,
+        end_date,
+        query.compare_mode.as_deref(),
+        query.compare_start_date.as_deref(),
+        query.compare_end_date.as_deref(),
+    )?;
+
     let page = state
         .analytics
         .get_metrics(
@@ -97,6 +112,7 @@ pub async fn get_metrics(
             limit,
             offset,
             &filter,
+            compare.as_ref(),
         )
         .await
         .map_err(AppError::Internal)?;
@@ -112,5 +128,6 @@ pub async fn get_metrics(
             "offset": offset,
             "has_more": offset + limit < page.total,
         },
+        "compare": metadata_json(compare.as_ref()),
     })))
 }

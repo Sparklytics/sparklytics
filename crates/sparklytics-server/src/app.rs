@@ -248,6 +248,14 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::goals::get_goal_stats),
                 )
                 .route(
+                    "/api/websites/{id}/attribution",
+                    get(routes::attribution::get_attribution),
+                )
+                .route(
+                    "/api/websites/{id}/revenue/summary",
+                    get(routes::attribution::get_revenue_summary),
+                )
+                .route(
                     "/api/websites/{id}/funnels",
                     get(routes::funnels::list_funnels),
                 )
@@ -363,6 +371,14 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/goals/{goal_id}/stats",
                     get(routes::goals::get_goal_stats),
+                )
+                .route(
+                    "/api/websites/{id}/attribution",
+                    get(routes::attribution::get_attribution),
+                )
+                .route(
+                    "/api/websites/{id}/revenue/summary",
+                    get(routes::attribution::get_revenue_summary),
                 )
                 .route(
                     "/api/websites/{id}/funnels",
