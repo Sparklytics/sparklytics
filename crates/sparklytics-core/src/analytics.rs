@@ -730,6 +730,157 @@ pub struct PixelStatsResponse {
     pub unique_visitors: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubscriptionSchedule {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationChannel {
+    Email,
+    Webhook,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertMetric {
+    Pageviews,
+    Visitors,
+    Conversions,
+    ConversionRate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertConditionType {
+    Spike,
+    Drop,
+    ThresholdAbove,
+    ThresholdBelow,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationSourceType {
+    Subscription,
+    Alert,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationDeliveryStatus {
+    Sent,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportSubscription {
+    pub id: String,
+    pub website_id: String,
+    pub report_id: String,
+    pub schedule: SubscriptionSchedule,
+    pub timezone: String,
+    pub channel: NotificationChannel,
+    pub target: String,
+    pub is_active: bool,
+    pub last_run_at: Option<String>,
+    pub next_run_at: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateReportSubscriptionRequest {
+    pub report_id: String,
+    pub schedule: SubscriptionSchedule,
+    pub timezone: Option<String>,
+    pub channel: NotificationChannel,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateReportSubscriptionRequest {
+    pub report_id: Option<String>,
+    pub schedule: Option<SubscriptionSchedule>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub timezone: Option<Option<String>>,
+    pub channel: Option<NotificationChannel>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub target: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertRule {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub metric: AlertMetric,
+    pub condition_type: AlertConditionType,
+    pub threshold_value: f64,
+    pub lookback_days: i64,
+    pub channel: NotificationChannel,
+    pub target: String,
+    pub is_active: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAlertRuleRequest {
+    pub name: String,
+    pub metric: AlertMetric,
+    pub condition_type: AlertConditionType,
+    pub threshold_value: f64,
+    pub lookback_days: Option<i64>,
+    pub channel: NotificationChannel,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateAlertRuleRequest {
+    pub name: Option<String>,
+    pub metric: Option<AlertMetric>,
+    pub condition_type: Option<AlertConditionType>,
+    pub threshold_value: Option<f64>,
+    pub lookback_days: Option<i64>,
+    pub channel: Option<NotificationChannel>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub target: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertEvaluationResult {
+    pub alert_id: String,
+    pub triggered: bool,
+    pub metric_value: f64,
+    pub baseline_mean: Option<f64>,
+    pub baseline_stddev: Option<f64>,
+    pub z_score: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationDelivery {
+    pub id: String,
+    pub source_type: NotificationSourceType,
+    pub source_id: String,
+    pub idempotency_key: String,
+    pub status: NotificationDeliveryStatus,
+    pub error_message: Option<String>,
+    pub delivered_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportPayload {
+    pub website_id: String,
+    pub report_id: String,
+    pub generated_at: String,
+    pub data: serde_json::Value,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportType {
@@ -1063,6 +1214,20 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         filter: &AnalyticsFilter,
         query: &AttributionQuery,
     ) -> anyhow::Result<RevenueSummary>;
+
+    async fn evaluate_alert_rules(
+        &self,
+        tenant_id: Option<&str>,
+        website_id: &str,
+    ) -> anyhow::Result<Vec<AlertEvaluationResult>>;
+
+    async fn render_report_payload(
+        &self,
+        tenant_id: Option<&str>,
+        website_id: &str,
+        report_id: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<ReportPayload>;
 
     async fn count_goals(&self, website_id: &str, tenant_id: Option<&str>) -> anyhow::Result<i64>;
 

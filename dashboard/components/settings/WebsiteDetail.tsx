@@ -7,6 +7,7 @@ import { TrackingSnippet } from '@/components/settings/TrackingSnippet';
 import { SharingToggle } from '@/components/settings/SharingToggle';
 import { ApiKeysSection } from '@/components/settings/ApiKeysSection';
 import { ChangePasswordSection } from '@/components/settings/ChangePasswordSection';
+import { NotificationsSettingsPage } from '@/components/notifications/NotificationsSettingsPage';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useWebsite, useUpdateWebsite, useDeleteWebsite } from '@/hooks/useWebsites';
 import { useAuth } from '@/hooks/useAuth';
@@ -153,6 +154,12 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
         <section className="bg-surface-1 border border-line rounded-lg p-6">
           <h2 className="text-sm font-semibold text-ink mb-4">Change password</h2>
           <ChangePasswordSection />
+        </section>
+      )}
+
+      {subSubPage === 'notifications' && (
+        <section className="bg-surface-1 border border-line rounded-lg p-6">
+          <NotificationsSettingsPage websiteId={websiteId} />
         </section>
       )}
 

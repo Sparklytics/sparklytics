@@ -200,6 +200,43 @@ export const api = {
   getTrackingPixelStats: (websiteId: string, pixelId: string) =>
     request<{ data: PixelStatsResponse }>(`/api/websites/${websiteId}/pixels/${pixelId}/stats`),
 
+  // Scheduled Reports + Alerts (Sprint 20)
+  listReportSubscriptions: (websiteId: string) =>
+    request<{ data: ReportSubscription[] }>(`/api/websites/${websiteId}/subscriptions`),
+  createReportSubscription: (websiteId: string, body: CreateReportSubscriptionPayload) =>
+    request<{ data: ReportSubscription }>(`/api/websites/${websiteId}/subscriptions`, { method: 'POST', body }),
+  updateReportSubscription: (
+    websiteId: string,
+    subscriptionId: string,
+    body: UpdateReportSubscriptionPayload,
+  ) => request<{ data: ReportSubscription }>(`/api/websites/${websiteId}/subscriptions/${subscriptionId}`, {
+    method: 'PUT',
+    body,
+  }),
+  deleteReportSubscription: (websiteId: string, subscriptionId: string) =>
+    request<void>(`/api/websites/${websiteId}/subscriptions/${subscriptionId}`, { method: 'DELETE' }),
+  testReportSubscription: (websiteId: string, subscriptionId: string) =>
+    request<{ data: NotificationDelivery | null }>(
+      `/api/websites/${websiteId}/subscriptions/${subscriptionId}/test`,
+      { method: 'POST' }
+    ),
+  listAlertRules: (websiteId: string) =>
+    request<{ data: AlertRule[] }>(`/api/websites/${websiteId}/alerts`),
+  createAlertRule: (websiteId: string, body: CreateAlertRulePayload) =>
+    request<{ data: AlertRule }>(`/api/websites/${websiteId}/alerts`, { method: 'POST', body }),
+  updateAlertRule: (websiteId: string, alertId: string, body: UpdateAlertRulePayload) =>
+    request<{ data: AlertRule }>(`/api/websites/${websiteId}/alerts/${alertId}`, { method: 'PUT', body }),
+  deleteAlertRule: (websiteId: string, alertId: string) =>
+    request<void>(`/api/websites/${websiteId}/alerts/${alertId}`, { method: 'DELETE' }),
+  testAlertRule: (websiteId: string, alertId: string) =>
+    request<{ data: NotificationDelivery | null }>(`/api/websites/${websiteId}/alerts/${alertId}/test`, {
+      method: 'POST',
+    }),
+  getNotificationHistory: (websiteId: string, limit = 50) =>
+    request<{ data: NotificationDelivery[] }>(
+      `/api/websites/${websiteId}/notifications/history?${toQuery({ limit })}`
+    ),
+
   // Funnel Analysis (Sprint 13)
   listFunnels: (websiteId: string) =>
     request<{ data: FunnelSummary[] }>(`/api/websites/${websiteId}/funnels`),
@@ -610,6 +647,91 @@ export interface PixelStatsResponse {
   pixel_id: string;
   views: number;
   unique_visitors: number;
+}
+
+// --- Notifications types (Sprint 20) ---
+
+export type SubscriptionSchedule = 'daily' | 'weekly' | 'monthly';
+export type NotificationChannel = 'email' | 'webhook';
+export type AlertMetric = 'pageviews' | 'visitors' | 'conversions' | 'conversion_rate';
+export type AlertConditionType = 'spike' | 'drop' | 'threshold_above' | 'threshold_below';
+export type NotificationSourceType = 'subscription' | 'alert';
+export type NotificationDeliveryStatus = 'sent' | 'failed';
+
+export interface ReportSubscription {
+  id: string;
+  website_id: string;
+  report_id: string;
+  schedule: SubscriptionSchedule;
+  timezone: string;
+  channel: NotificationChannel;
+  target: string;
+  is_active: boolean;
+  last_run_at: string | null;
+  next_run_at: string;
+  created_at: string;
+}
+
+export interface CreateReportSubscriptionPayload {
+  report_id: string;
+  schedule: SubscriptionSchedule;
+  timezone?: string;
+  channel: NotificationChannel;
+  target: string;
+}
+
+export interface UpdateReportSubscriptionPayload {
+  report_id?: string;
+  schedule?: SubscriptionSchedule;
+  timezone?: string | null;
+  channel?: NotificationChannel;
+  target?: string | null;
+  is_active?: boolean;
+}
+
+export interface AlertRule {
+  id: string;
+  website_id: string;
+  name: string;
+  metric: AlertMetric;
+  condition_type: AlertConditionType;
+  threshold_value: number;
+  lookback_days: number;
+  channel: NotificationChannel;
+  target: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface CreateAlertRulePayload {
+  name: string;
+  metric: AlertMetric;
+  condition_type: AlertConditionType;
+  threshold_value: number;
+  lookback_days?: number;
+  channel: NotificationChannel;
+  target: string;
+}
+
+export interface UpdateAlertRulePayload {
+  name?: string;
+  metric?: AlertMetric;
+  condition_type?: AlertConditionType;
+  threshold_value?: number;
+  lookback_days?: number;
+  channel?: NotificationChannel;
+  target?: string | null;
+  is_active?: boolean;
+}
+
+export interface NotificationDelivery {
+  id: string;
+  source_type: NotificationSourceType;
+  source_id: string;
+  idempotency_key: string;
+  status: NotificationDeliveryStatus;
+  error_message: string | null;
+  delivered_at: string;
 }
 
 export interface AttributionParams {

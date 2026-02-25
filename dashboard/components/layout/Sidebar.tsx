@@ -14,6 +14,7 @@ import {
   Key,
   Shield,
   AlertTriangle,
+  Bell,
   Users,
   Target,
   Filter,
@@ -87,6 +88,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
     { label: 'General', path: `/dashboard/${websiteId}/settings/general`, icon: Settings },
     { label: 'Snippet', path: `/dashboard/${websiteId}/settings/snippet`, icon: Code },
     { label: 'Sharing', path: `/dashboard/${websiteId}/settings/sharing`, icon: Share2 },
+    { label: 'Notifications', path: `/dashboard/${websiteId}/settings/notifications`, icon: Bell },
     { label: 'Danger Zone', path: `/dashboard/${websiteId}/settings/danger`, icon: AlertTriangle },
   ];
   if (showApiKeys) {

@@ -304,6 +304,37 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     post(routes::reports::run_report),
                 )
                 .route(
+                    "/api/websites/{id}/subscriptions",
+                    get(routes::notifications::list_subscriptions)
+                        .post(routes::notifications::create_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions/{subscription_id}",
+                    put(routes::notifications::update_subscription)
+                        .delete(routes::notifications::delete_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions/{subscription_id}/test",
+                    post(routes::notifications::test_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/alerts",
+                    get(routes::notifications::list_alerts).post(routes::notifications::create_alert),
+                )
+                .route(
+                    "/api/websites/{id}/alerts/{alert_id}",
+                    put(routes::notifications::update_alert)
+                        .delete(routes::notifications::delete_alert),
+                )
+                .route(
+                    "/api/websites/{id}/alerts/{alert_id}/test",
+                    post(routes::notifications::test_alert),
+                )
+                .route(
+                    "/api/websites/{id}/notifications/history",
+                    get(routes::notifications::notification_history),
+                )
+                .route(
                     "/api/websites/{id}/links",
                     get(routes::links::list_links).post(routes::links::create_link),
                 )
@@ -451,6 +482,37 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/reports/{report_id}/run",
                     post(routes::reports::run_report),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions",
+                    get(routes::notifications::list_subscriptions)
+                        .post(routes::notifications::create_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions/{subscription_id}",
+                    put(routes::notifications::update_subscription)
+                        .delete(routes::notifications::delete_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions/{subscription_id}/test",
+                    post(routes::notifications::test_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/alerts",
+                    get(routes::notifications::list_alerts).post(routes::notifications::create_alert),
+                )
+                .route(
+                    "/api/websites/{id}/alerts/{alert_id}",
+                    put(routes::notifications::update_alert)
+                        .delete(routes::notifications::delete_alert),
+                )
+                .route(
+                    "/api/websites/{id}/alerts/{alert_id}/test",
+                    post(routes::notifications::test_alert),
+                )
+                .route(
+                    "/api/websites/{id}/notifications/history",
+                    get(routes::notifications::notification_history),
                 )
                 .route(
                     "/api/websites/{id}/links",

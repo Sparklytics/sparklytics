@@ -66,6 +66,10 @@ pub struct AppState {
     /// DuckDB backend used for self-hosted metadata operations.
     pub db: Arc<DuckDbBackend>,
 
+    /// Scheduler DuckDB backend for background jobs. Can be dedicated via
+    /// `SPARKLYTICS_SCHEDULER_DEDICATED_DUCKDB=1`, otherwise reuses `db`.
+    pub scheduler_db: Arc<DuckDbBackend>,
+
     /// Analytics backend used by all analytics routes and buffer flush.
     pub analytics: Arc<dyn AnalyticsBackend>,
 
@@ -147,6 +151,18 @@ impl AppState {
             .ok()
             .and_then(|v| v.parse::<i64>().ok())
             .filter(|v| *v > 0)
+            .unwrap_or(default)
+    }
+
+    fn env_bool(name: &str, default: bool) -> bool {
+        std::env::var(name)
+            .ok()
+            .map(|v| {
+                let trimmed = v.trim();
+                trimmed.eq_ignore_ascii_case("1")
+                    || trimmed.eq_ignore_ascii_case("true")
+                    || trimmed.eq_ignore_ascii_case("yes")
+            })
             .unwrap_or(default)
     }
 
@@ -232,10 +248,33 @@ impl AppState {
             .unwrap_or(0)
             .min(ingest_wal_next_offset);
 
+        let db_path = format!("{}/sparklytics.db", config.data_dir);
         let db = Arc::new(db);
+        // Default to a dedicated scheduler connection in normal builds to reduce
+        // contention with ingest/query traffic. Tests default to shared DB for
+        // deterministic visibility unless explicitly overridden.
+        let scheduler_db = if Self::env_bool(
+            "SPARKLYTICS_SCHEDULER_DEDICATED_DUCKDB",
+            !cfg!(test),
+        ) {
+            match DuckDbBackend::open(&db_path, &config.duckdb_memory_limit) {
+                Ok(backend) => Arc::new(backend),
+                Err(err) => {
+                    warn!(
+                        error = %err,
+                        db_path = %db_path,
+                        "Failed to open dedicated scheduler DB connection; falling back to primary"
+                    );
+                    Arc::clone(&db)
+                }
+            }
+        } else {
+            Arc::clone(&db)
+        };
         let analytics: Arc<dyn AnalyticsBackend> = db.clone();
         Self {
             db,
+            scheduler_db,
             analytics,
             config: Arc::new(config),
             buffer: Arc::new(Mutex::new(Vec::new())),

@@ -9,6 +9,7 @@ pub mod health;
 pub mod journey;
 pub mod links;
 pub mod metrics;
+pub mod notifications;
 pub mod pageviews;
 pub mod pixels;
 pub mod realtime;

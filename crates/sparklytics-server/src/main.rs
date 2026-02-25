@@ -108,6 +108,14 @@ async fn main() -> Result<()> {
         });
     }
 
+    // Spawn notifications scheduler worker.
+    {
+        let state = Arc::clone(&state);
+        tokio::spawn(async move {
+            sparklytics_server::scheduler::run_scheduler_loop(state).await;
+        });
+    }
+
     let addr = format!("0.0.0.0:{}", cfg.port);
     let app = sparklytics_server::app::build_app(Arc::clone(&state));
 

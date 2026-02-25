@@ -42,6 +42,8 @@ ureq = "2"
 url = { workspace = true }
 psl = { workspace = true }
 ipnet = { workspace = true }
+reqwest = { workspace = true }
+lettre = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }

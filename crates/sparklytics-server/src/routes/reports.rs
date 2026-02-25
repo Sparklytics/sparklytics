@@ -191,16 +191,15 @@ fn build_analytics_context(
     ))
 }
 
-async fn execute_report_config(
-    state: &AppState,
+pub(crate) async fn execute_report_config_with_backend(
+    analytics: &dyn sparklytics_core::analytics::AnalyticsBackend,
     website_id: &str,
     config: &ReportConfig,
 ) -> Result<Value, AppError> {
     let (filter, comparison) = build_analytics_context(config)?;
     match config.report_type {
         ReportType::Stats => {
-            let data = state
-                .analytics
+            let data = analytics
                 .get_stats(website_id, None, &filter, comparison.as_ref())
                 .await
                 .map_err(AppError::Internal)?;
@@ -215,8 +214,7 @@ async fn execute_report_config(
             }
         }
         ReportType::Pageviews => {
-            let data = state
-                .analytics
+            let data = analytics
                 .get_timeseries(website_id, None, &filter, None, comparison.as_ref())
                 .await
                 .map_err(AppError::Internal)?;
@@ -238,8 +236,7 @@ async fn execute_report_config(
             let metric_type = config.metric_type.as_deref().ok_or_else(|| {
                 AppError::BadRequest("metric_type is required for metrics reports".to_string())
             })?;
-            let page = state
-                .analytics
+            let page = analytics
                 .get_metrics(
                     website_id,
                     None,
@@ -260,14 +257,21 @@ async fn execute_report_config(
             .map_err(|e| AppError::Internal(e.into()))
         }
         ReportType::Events => {
-            let data = state
-                .analytics
+            let data = analytics
                 .get_event_names(website_id, None, &filter)
                 .await
                 .map_err(AppError::Internal)?;
             serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
         }
     }
+}
+
+pub(crate) async fn execute_report_config(
+    state: &AppState,
+    website_id: &str,
+    config: &ReportConfig,
+) -> Result<Value, AppError> {
+    execute_report_config_with_backend(state.analytics.as_ref(), website_id, config).await
 }
 
 pub async fn list_reports(

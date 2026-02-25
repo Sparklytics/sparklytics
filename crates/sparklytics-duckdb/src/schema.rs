@@ -233,6 +233,55 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_reports_name_website
     ON saved_reports(website_id, name);
 
 -- ===========================================
+-- NOTIFICATIONS (Sprint 20)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS report_subscriptions (
+    id               VARCHAR PRIMARY KEY,
+    website_id        VARCHAR NOT NULL,
+    report_id         VARCHAR NOT NULL,
+    schedule          VARCHAR NOT NULL, -- daily|weekly|monthly
+    timezone          VARCHAR NOT NULL DEFAULT 'UTC',
+    channel           VARCHAR NOT NULL, -- email|webhook
+    target            VARCHAR NOT NULL,
+    is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+    last_run_at       TIMESTAMP,
+    next_run_at       TIMESTAMP NOT NULL,
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_report_subscriptions_website
+    ON report_subscriptions(website_id);
+CREATE INDEX IF NOT EXISTS idx_report_subscriptions_due
+    ON report_subscriptions(is_active, next_run_at);
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+    id               VARCHAR PRIMARY KEY,
+    website_id        VARCHAR NOT NULL,
+    name              VARCHAR NOT NULL,
+    metric            VARCHAR NOT NULL, -- pageviews|visitors|conversions|conversion_rate
+    condition_type    VARCHAR NOT NULL, -- spike|drop|threshold_above|threshold_below
+    threshold_value   DOUBLE NOT NULL,
+    lookback_days     INTEGER NOT NULL DEFAULT 7,
+    channel           VARCHAR NOT NULL, -- email|webhook
+    target            VARCHAR NOT NULL,
+    is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_alert_rules_website
+    ON alert_rules(website_id);
+
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+    id               VARCHAR PRIMARY KEY,
+    source_type       VARCHAR NOT NULL, -- subscription|alert
+    source_id         VARCHAR NOT NULL,
+    idempotency_key   VARCHAR NOT NULL UNIQUE,
+    status            VARCHAR NOT NULL, -- sent|failed
+    error_message     VARCHAR,
+    delivered_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_notification_deliveries_source
+    ON notification_deliveries(source_type, source_id, delivered_at DESC);
+
+-- ===========================================
 -- ACQUISITION (Sprint 19)
 -- ===========================================
 CREATE TABLE IF NOT EXISTS campaign_links (
