@@ -130,6 +130,7 @@ git ls-files cloud/ sdk/next/   # must return empty
 4. **Never commit `ops/`, `migrations/`, `.env` files, or any secrets to `sparklytics/` root.** Run `git ls-files cloud/ sdk/next/ ops/ migrations/` before pushing — must return empty.
 5. **`cloud/.cargo/config.toml` must be in `cloud/.gitignore`.** It contains local path overrides (`../../crates/sparklytics-*`) that work only on your machine and must never reach the private remote.
 6. **SDK changes go in `sparklytics/sdk/next/` once Sprint 7 setup is complete.** Until then, `sdk/` is tracked by the parent repo — commit SDK changes there as normal files.
+7. **When the user asks to commit or push work, open a pull request by default.** Do not push directly to `main` unless the user explicitly asks for direct push.
 
 ### Correct commit flow (post-Sprint 7 setup)
 
@@ -137,21 +138,27 @@ git ls-files cloud/ sdk/next/   # must return empty
 # Committing backend/dashboard changes (public):
 cd sparklytics/           # make sure you're at root
 git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics
+git checkout -b feat/my-change
 git add crates/ dashboard/ Cargo.toml
 git commit -m "feat: ..."
-git push origin main
+git push origin feat/my-change
+gh pr create --base main --head feat/my-change --title "feat: ..." --body "..."
 
 # Committing cloud changes (private):
 cd sparklytics/cloud/
 git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics-cloud
+git checkout -b feat/clickhouse-sessions
 git add crates/ src/
 git commit -m "feat: clickhouse sessions"
-git push origin main
+git push origin feat/clickhouse-sessions
+gh pr create --base main --head feat/clickhouse-sessions --title "feat: clickhouse sessions" --body "..."
 
 # Committing SDK changes (public):
 cd sparklytics/sdk/next/
 git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics-next
+git checkout -b fix/spa-navigation
 git add src/ package.json
 git commit -m "fix: spa navigation"
-git push origin main
+git push origin fix/spa-navigation
+gh pr create --base main --head fix/spa-navigation --title "fix: spa navigation" --body "..."
 ```
