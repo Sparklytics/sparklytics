@@ -54,10 +54,14 @@ pub async fn get_timeseries_inner(
                 continue;
             }
 
-            if period == "primary" {
-                primary_values[idx] = (pageviews, visitors);
-            } else {
-                compare_values[idx] = (pageviews, visitors);
+            match period.as_str() {
+                "primary" => {
+                    primary_values[idx] = (pageviews, visitors);
+                }
+                "comparison" => {
+                    compare_values[idx] = (pageviews, visitors);
+                }
+                _ => {}
             }
         }
 

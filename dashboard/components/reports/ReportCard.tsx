@@ -40,6 +40,7 @@ export function ReportCard({ report, isRunning, onRun, onEdit, onDelete }: Repor
             type="button"
             onClick={() => onRun(report.id)}
             disabled={isRunning}
+            aria-label="Run report"
             className="p-1.5 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-md transition-colors disabled:opacity-50"
             title="Run report"
           >
@@ -48,6 +49,7 @@ export function ReportCard({ report, isRunning, onRun, onEdit, onDelete }: Repor
           <button
             type="button"
             onClick={() => onEdit(report.id)}
+            aria-label="Edit report"
             className="p-1.5 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-md transition-colors"
             title="Edit report"
           >
@@ -56,6 +58,7 @@ export function ReportCard({ report, isRunning, onRun, onEdit, onDelete }: Repor
           <button
             type="button"
             onClick={() => onDelete(report.id)}
+            aria-label="Delete report"
             className="p-1.5 text-ink-3 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
             title="Delete report"
           >

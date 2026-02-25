@@ -11,10 +11,24 @@ use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
 use sparklytics_server::state::AppState;
 
+fn unique_data_dir(prefix: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock should be after unix epoch")
+        .as_nanos();
+    std::env::temp_dir()
+        .join(format!(
+            "sparklytics-{prefix}-{}-{nanos}",
+            std::process::id()
+        ))
+        .to_string_lossy()
+        .into_owned()
+}
+
 fn config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: unique_data_dir("compare"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,

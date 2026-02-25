@@ -18,7 +18,7 @@ WORKDIR /app
 COPY . .
 
 # Build for the native target platform selected by Buildx.
-RUN cargo build --release && cp target/release/sparklytics /sparklytics
+RUN cargo build --release --locked && cp target/release/sparklytics /sparklytics
 
 # Build the Next.js dashboard (static export → dashboard/out/).
 WORKDIR /app/dashboard

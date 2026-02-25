@@ -9,6 +9,14 @@ interface ReportResultPanelProps {
   isPending: boolean;
 }
 
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
 export function ReportResultPanel({ result, title, isPending }: ReportResultPanelProps) {
   if (!result) {
     return (
@@ -27,7 +35,7 @@ export function ReportResultPanel({ result, title, isPending }: ReportResultPane
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-line">
         <div className="min-w-0">
           <p className="text-sm font-medium text-ink truncate">{title}</p>
-          <p className="text-xs text-ink-3 font-mono tabular-nums">{result.ran_at}</p>
+          <p className="text-xs text-ink-3 font-mono tabular-nums">{formatDateTime(result.ran_at)}</p>
           {compare?.mode && (
             <p className="text-[11px] text-ink-4 font-mono tabular-nums mt-1">
               {compare.mode}: {compare.primary_range?.join(' → ')} vs {compare.comparison_range?.join(' → ')}

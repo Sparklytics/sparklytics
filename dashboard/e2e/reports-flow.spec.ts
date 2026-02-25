@@ -166,7 +166,7 @@ test('reports page supports create, run, edit, and delete flow', async ({ page }
     if (reportMatch && method === 'DELETE') {
       const index = reports.findIndex((item) => item.id === reportMatch[1]);
       if (index >= 0) reports.splice(index, 1);
-      return json(204, {});
+      return route.fulfill({ status: 204 });
     }
 
     const runMatch = path.match(new RegExp(`/api/websites/${websiteId}/reports/([^/]+)/run$`));

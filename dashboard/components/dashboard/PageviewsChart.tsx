@@ -23,6 +23,8 @@ interface PageviewsChartProps {
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
+  const rows = payload.filter((point: any) => typeof point.value === 'number');
+  if (!rows.length) return null;
 
   let dateStr = label;
   try {
@@ -38,7 +40,7 @@ function CustomTooltip({ active, payload, label }: any) {
     <div className="bg-surface-1 border border-line rounded p-3 text-xs min-w-[150px]">
       <div className="text-ink font-medium mb-3">{dateStr}</div>
       <div className="flex flex-col gap-2">
-        {payload.map((p: any) => (
+        {rows.map((p: any) => (
           <div key={p.name} className="flex justify-between items-center tabular-nums">
             <div className="flex items-center gap-1.5 text-ink-3 capitalize">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: p.color }} />
@@ -57,8 +59,8 @@ export function PageviewsChart({ data, compareData, loading }: PageviewsChartPro
   const merged = useMemo(() => {
     const rows = (data ?? []).map((point) => ({
       ...point,
-      compare_visitors: 0,
-      compare_pageviews: 0,
+      compare_visitors: null as number | null,
+      compare_pageviews: null as number | null,
     }));
     if (!compareData?.length) {
       return rows;

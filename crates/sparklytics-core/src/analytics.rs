@@ -1,7 +1,7 @@
 //! Analytics backend abstraction.
 
 use anyhow::{anyhow, Result};
-use chrono::NaiveDate;
+use chrono::{Months, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
@@ -102,10 +102,15 @@ pub fn resolve_comparison_range(
             let start = end - chrono::Duration::days(primary_days - 1);
             (start, end)
         }
-        CompareMode::PreviousYear => (
-            primary_start - chrono::Duration::days(365),
-            primary_end - chrono::Duration::days(365),
-        ),
+        CompareMode::PreviousYear => {
+            let start = primary_start
+                .checked_sub_months(Months::new(12))
+                .ok_or_else(|| anyhow!("previous_year comparison_start out of range"))?;
+            let end = primary_end
+                .checked_sub_months(Months::new(12))
+                .ok_or_else(|| anyhow!("previous_year comparison_end out of range"))?;
+            (start, end)
+        }
         CompareMode::Custom => {
             let start = compare_start
                 .ok_or_else(|| anyhow!("compare_start_date is required for custom compare"))?;
@@ -135,14 +140,6 @@ pub fn resolve_comparison_range(
         comparison_start,
         comparison_end,
     }))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeltaValue {
-    pub current: f64,
-    pub previous: f64,
-    pub delta_abs: f64,
-    pub delta_pct: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -763,6 +760,48 @@ pub struct ReportRunResult {
     pub config: ReportConfig,
     pub ran_at: String,
     pub data: serde_json::Value,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn previous_year_uses_calendar_alignment() {
+        let start = NaiveDate::from_ymd_opt(2025, 3, 1).expect("valid date");
+        let end = NaiveDate::from_ymd_opt(2025, 3, 31).expect("valid date");
+
+        let range = resolve_comparison_range(start, end, CompareMode::PreviousYear, None, None)
+            .expect("comparison should resolve")
+            .expect("comparison range should exist");
+
+        assert_eq!(
+            range.comparison_start,
+            NaiveDate::from_ymd_opt(2024, 3, 1).expect("valid date")
+        );
+        assert_eq!(
+            range.comparison_end,
+            NaiveDate::from_ymd_opt(2024, 3, 31).expect("valid date")
+        );
+    }
+
+    #[test]
+    fn previous_year_clamps_leap_day_to_feb_28() {
+        let date = NaiveDate::from_ymd_opt(2024, 2, 29).expect("valid date");
+
+        let range = resolve_comparison_range(date, date, CompareMode::PreviousYear, None, None)
+            .expect("comparison should resolve")
+            .expect("comparison range should exist");
+
+        assert_eq!(
+            range.comparison_start,
+            NaiveDate::from_ymd_opt(2023, 2, 28).expect("valid date")
+        );
+        assert_eq!(
+            range.comparison_end,
+            NaiveDate::from_ymd_opt(2023, 2, 28).expect("valid date")
+        );
+    }
 }
 
 pub const VALID_METRIC_TYPES: &[&str] = &[

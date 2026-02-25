@@ -27,10 +27,10 @@ import { useWebsites } from '@/hooks/useWebsites';
 import { cn } from '@/lib/utils';
 
 const AttributionPage = dynamic(
-  () =>
-    import('@/components/attribution/AttributionPage').then(
-      (mod) => mod.AttributionPage
-    ),
+  async () => {
+    const mod = await import('@/components/attribution/AttributionPage');
+    return mod.AttributionPage;
+  },
   {
     ssr: false,
     loading: () => (

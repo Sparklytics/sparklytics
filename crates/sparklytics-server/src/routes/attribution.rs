@@ -38,8 +38,22 @@ pub struct AttributionRequestQuery {
 fn parse_date_range(
     start_date: Option<&str>,
     end_date: Option<&str>,
+    timezone: Option<&str>,
 ) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let today = chrono::Utc::now().date_naive();
+    let today = match timezone {
+        None => chrono::Utc::now().date_naive(),
+        Some(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                chrono::Utc::now().date_naive()
+            } else {
+                let tz = trimmed
+                    .parse::<chrono_tz::Tz>()
+                    .map_err(|_| AppError::BadRequest("invalid timezone".to_string()))?;
+                chrono::Utc::now().with_timezone(&tz).date_naive()
+            }
+        }
+    };
     let parse = |value: Option<&str>, field: &str| -> Result<Option<NaiveDate>, AppError> {
         value
             .map(|raw| {
@@ -73,14 +87,28 @@ fn parse_model(raw: Option<&str>) -> Result<AttributionModel, AppError> {
 fn build_filter(
     query: AttributionRequestQuery,
 ) -> Result<(AnalyticsFilter, AttributionQuery), AppError> {
-    let (start_date, end_date) =
-        parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let normalized_timezone = query
+        .timezone
+        .as_ref()
+        .map(|raw| raw.trim())
+        .filter(|raw| !raw.is_empty())
+        .map(|raw| {
+            raw.parse::<chrono_tz::Tz>()
+                .map(|_| raw.to_string())
+                .map_err(|_| AppError::BadRequest("invalid timezone".to_string()))
+        })
+        .transpose()?;
+    let (start_date, end_date) = parse_date_range(
+        query.start_date.as_deref(),
+        query.end_date.as_deref(),
+        normalized_timezone.as_deref(),
+    )?;
     let model = parse_model(query.model.as_deref())?;
 
     let filter = AnalyticsFilter {
         start_date,
         end_date,
-        timezone: query.timezone,
+        timezone: normalized_timezone,
         filter_country: query.filter_country,
         filter_page: query.filter_page,
         filter_referrer: query.filter_referrer,
@@ -172,7 +200,7 @@ mod tests {
 
     #[test]
     fn parse_date_range_rejects_invalid_start_date() {
-        let result = parse_date_range(Some("2026-13-01"), Some("2026-02-20"));
+        let result = parse_date_range(Some("2026-13-01"), Some("2026-02-20"), None);
         assert!(result.is_err());
     }
 }

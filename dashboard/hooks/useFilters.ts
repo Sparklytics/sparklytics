@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import type { CompareMode, CompareParams } from '@/lib/api';
 import { toISODate, daysAgo } from '@/lib/utils';
 
 export type DateRange = {
@@ -11,12 +12,23 @@ export type DateRange = {
 // Filters are stored with the "filter_" prefix so they can be spread
 // directly into API call params (e.g. { filter_country: 'PL' }).
 export type Filters = Record<string, string>;
-export type CompareMode = 'none' | 'previous_period' | 'previous_year' | 'custom';
 export type CompareState = {
   mode: CompareMode;
   compare_start_date?: string;
   compare_end_date?: string;
 };
+
+export function toCompareParams(compare: CompareState): CompareParams {
+  if (compare.mode === 'custom') {
+    return {
+      compare_mode: compare.mode,
+      compare_start_date: compare.compare_start_date,
+      compare_end_date: compare.compare_end_date,
+    };
+  }
+
+  return { compare_mode: compare.mode };
+}
 
 interface FiltersState {
   dateRange: DateRange;

@@ -48,8 +48,12 @@ export function useUpdateReport(websiteId: string) {
   return useMutation({
     mutationFn: ({ reportId, payload }: { reportId: string; payload: UpdateReportPayload }) =>
       api.updateReport(websiteId, reportId, payload),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['reports', websiteId] });
+      queryClient.invalidateQueries({
+        queryKey: ['report', websiteId, variables.reportId],
+      });
+      queryClient.setQueryData(['report', websiteId, variables.reportId], data);
       toast({ title: 'Report updated' });
     },
     onError: (error: Error) => {
@@ -64,8 +68,9 @@ export function useDeleteReport(websiteId: string) {
 
   return useMutation({
     mutationFn: (reportId: string) => api.deleteReport(websiteId, reportId),
-    onSuccess: () => {
+    onSuccess: (_, reportId) => {
       queryClient.invalidateQueries({ queryKey: ['reports', websiteId] });
+      queryClient.removeQueries({ queryKey: ['report', websiteId, reportId] });
       toast({ title: 'Report deleted' });
     },
     onError: (error: Error) => {

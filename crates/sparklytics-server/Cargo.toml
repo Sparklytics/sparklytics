@@ -27,6 +27,7 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 maxminddb = { workspace = true }
 woothee = { workspace = true }
 rand = { workspace = true }

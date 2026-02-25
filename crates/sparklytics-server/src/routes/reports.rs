@@ -47,14 +47,48 @@ fn validate_name(name: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-fn parse_relative_range(relative_days: Option<u32>) -> Result<(NaiveDate, NaiveDate), AppError> {
+fn normalize_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError> {
+    match timezone {
+        None => Ok(None),
+        Some(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                trimmed
+                    .parse::<chrono_tz::Tz>()
+                    .map(|_| Some(trimmed.to_string()))
+                    .map_err(|_| AppError::BadRequest("invalid timezone".to_string()))
+            }
+        }
+    }
+}
+
+fn today_for_timezone(timezone: Option<&str>) -> Result<NaiveDate, AppError> {
+    let now = chrono::Utc::now();
+    let today = match timezone {
+        None => now.date_naive(),
+        Some(raw) => {
+            let tz = raw
+                .parse::<chrono_tz::Tz>()
+                .map_err(|_| AppError::BadRequest("invalid timezone".to_string()))?;
+            now.with_timezone(&tz).date_naive()
+        }
+    };
+    Ok(today)
+}
+
+fn parse_relative_range(
+    relative_days: Option<u32>,
+    timezone: Option<&str>,
+) -> Result<(NaiveDate, NaiveDate), AppError> {
     let days = relative_days.unwrap_or(30);
     if !(1..=365).contains(&days) {
         return Err(AppError::BadRequest(
             "relative_days must be between 1 and 365".to_string(),
         ));
     }
-    let today = chrono::Utc::now().date_naive();
+    let today = today_for_timezone(timezone)?;
     let start = today - chrono::Duration::days((days - 1) as i64);
     Ok((start, today))
 }
@@ -95,8 +129,10 @@ fn build_analytics_context(
     ),
     AppError,
 > {
+    let timezone = normalize_timezone(config.timezone.as_deref())?;
+
     let (start_date, end_date) = match config.date_range_type {
-        DateRangeType::Relative => parse_relative_range(config.relative_days)?,
+        DateRangeType::Relative => parse_relative_range(config.relative_days, timezone.as_deref())?,
         DateRangeType::Absolute => {
             parse_absolute_range(config.start_date.as_deref(), config.end_date.as_deref())?
         }
@@ -114,14 +150,6 @@ fn build_analytics_context(
             )));
         }
     }
-
-    let timezone = config.timezone.as_ref().map(|tz| tz.trim()).and_then(|tz| {
-        if tz.is_empty() {
-            None
-        } else {
-            Some(tz.to_string())
-        }
-    });
 
     let compare_mode = config
         .compare_mode
@@ -486,8 +514,8 @@ mod tests {
 
     #[test]
     fn relative_range_rejects_out_of_bounds() {
-        assert!(parse_relative_range(Some(0)).is_err());
-        assert!(parse_relative_range(Some(366)).is_err());
+        assert!(parse_relative_range(Some(0), None).is_err());
+        assert!(parse_relative_range(Some(366), None).is_err());
     }
 
     #[test]
@@ -507,9 +535,15 @@ mod tests {
     #[test]
     fn relative_range_resolves_expected_window() {
         let today = chrono::Utc::now().date_naive();
-        let (start, end) = parse_relative_range(Some(2)).expect("valid relative range");
+        let (start, end) = parse_relative_range(Some(2), None).expect("valid relative range");
         assert_eq!(end, today);
         assert_eq!(start, today - chrono::Duration::days(1));
+    }
+
+    #[test]
+    fn relative_range_rejects_invalid_timezone() {
+        let err = parse_relative_range(Some(7), Some("Mars/Base"));
+        assert!(err.is_err());
     }
 
     #[test]

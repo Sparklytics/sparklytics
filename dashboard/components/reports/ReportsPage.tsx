@@ -24,6 +24,7 @@ export function ReportsPage({ websiteId }: ReportsPageProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
+  const [runningReportId, setRunningReportId] = useState<string | null>(null);
   const [resultTitle, setResultTitle] = useState('Report output');
   const [result, setResult] = useState<ReportRunResult | null>(null);
   const { data: editingReportData } = useReport(websiteId, editingReportId);
@@ -31,10 +32,14 @@ export function ReportsPage({ websiteId }: ReportsPageProps) {
 
   function handleRun(reportId: string) {
     const report = reports.find((r) => r.id === reportId);
+    setRunningReportId(reportId);
     runReport.mutate(reportId, {
       onSuccess: (data) => {
         setResult(data.data);
         setResultTitle(report ? `Run: ${report.name}` : 'Run result');
+      },
+      onSettled: () => {
+        setRunningReportId(null);
       },
     });
   }
@@ -46,6 +51,11 @@ export function ReportsPage({ websiteId }: ReportsPageProps) {
         setDeletingReportId(null);
       },
     });
+  }
+
+  function handleEdit(reportId: string) {
+    setCreateDialogOpen(false);
+    setEditingReportId(reportId);
   }
 
   return (
@@ -87,9 +97,9 @@ export function ReportsPage({ websiteId }: ReportsPageProps) {
               <ReportCard
                 key={report.id}
                 report={report}
-                isRunning={runReport.isPending}
+                isRunning={runReport.isPending && runningReportId === report.id}
                 onRun={handleRun}
-                onEdit={setEditingReportId}
+                onEdit={handleEdit}
                 onDelete={setDeletingReportId}
               />
             ))
@@ -105,11 +115,12 @@ export function ReportsPage({ websiteId }: ReportsPageProps) {
 
       <ReportFormDialog
         websiteId={websiteId}
-        open={createDialogOpen || !!editingReport}
+        open={createDialogOpen || !!editingReportId}
         onClose={() => {
           setCreateDialogOpen(false);
           setEditingReportId(null);
         }}
+        editingReportId={editingReportId}
         editingReport={editingReport}
         onPreview={(title, previewResult) => {
           setResultTitle(title);

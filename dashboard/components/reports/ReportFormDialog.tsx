@@ -23,6 +23,7 @@ interface ReportFormDialogProps {
   websiteId: string;
   open: boolean;
   onClose: () => void;
+  editingReportId?: string | null;
   editingReport?: SavedReport | null;
   onPreview: (title: string, result: ReportRunResult) => void;
 }
@@ -73,10 +74,12 @@ export function ReportFormDialog({
   websiteId,
   open,
   onClose,
+  editingReportId,
   editingReport,
   onPreview,
 }: ReportFormDialogProps) {
-  const isEditing = !!editingReport;
+  const isEditing = !!editingReportId;
+  const isEditingLoading = isEditing && !editingReport;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [config, setConfig] = useState<ReportConfig>(defaultConfig());
@@ -89,7 +92,13 @@ export function ReportFormDialog({
   useEffect(() => {
     if (!open) return;
     setApiError(null);
-    if (editingReport) {
+    if (isEditingLoading) {
+      setName('');
+      setDescription('');
+      setConfig(defaultConfig());
+      return;
+    }
+    if (isEditing && editingReport) {
       setName(editingReport.name);
       setDescription(editingReport.description ?? '');
       setConfig(editingReport.config);
@@ -98,7 +107,7 @@ export function ReportFormDialog({
     setName('');
     setDescription('');
     setConfig(defaultConfig());
-  }, [open, editingReport]);
+  }, [open, editingReport, isEditing, isEditingLoading]);
 
   const isPending = createReport.isPending || updateReport.isPending;
 
@@ -154,8 +163,9 @@ export function ReportFormDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className={labelClass}>Name</label>
+            <label htmlFor="report-name" className={labelClass}>Name</label>
             <input
+              id="report-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -167,8 +177,9 @@ export function ReportFormDialog({
           </div>
 
           <div>
-            <label className={labelClass}>Description</label>
+            <label htmlFor="report-description" className={labelClass}>Description</label>
             <input
+              id="report-description"
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -180,8 +191,9 @@ export function ReportFormDialog({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>Report type</label>
+              <label htmlFor="report-type" className={labelClass}>Report type</label>
               <select
+                id="report-type"
                 value={config.report_type}
                 onChange={(e) =>
                   setConfig((prev) => {
@@ -203,8 +215,9 @@ export function ReportFormDialog({
               </select>
             </div>
             <div>
-              <label className={labelClass}>Timezone</label>
+              <label htmlFor="report-timezone" className={labelClass}>Timezone</label>
               <input
+                id="report-timezone"
                 type="text"
                 value={config.timezone ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, timezone: e.target.value }))}
@@ -216,8 +229,9 @@ export function ReportFormDialog({
 
           {config.report_type === 'metrics' && (
             <div>
-              <label className={labelClass}>Metric type</label>
+              <label htmlFor="report-metric-type" className={labelClass}>Metric type</label>
               <select
+                id="report-metric-type"
                 value={config.metric_type ?? 'page'}
                 onChange={(e) => setConfig((prev) => ({ ...prev, metric_type: e.target.value }))}
                 className={selectClass}
@@ -240,8 +254,9 @@ export function ReportFormDialog({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>Date range type</label>
+              <label htmlFor="report-date-range-type" className={labelClass}>Date range type</label>
               <select
+                id="report-date-range-type"
                 value={config.date_range_type}
                 onChange={(e) => setConfig((prev) => ({ ...prev, date_range_type: e.target.value as DateRangeType }))}
                 className={selectClass}
@@ -253,8 +268,9 @@ export function ReportFormDialog({
 
             {config.date_range_type === 'relative' ? (
               <div>
-                <label className={labelClass}>Relative days</label>
+                <label htmlFor="report-relative-days" className={labelClass}>Relative days</label>
                 <input
+                  id="report-relative-days"
                   type="number"
                   min={1}
                   max={365}
@@ -268,8 +284,9 @@ export function ReportFormDialog({
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className={labelClass}>Start date</label>
+                  <label htmlFor="report-start-date" className={labelClass}>Start date</label>
                   <input
+                    id="report-start-date"
                     type="date"
                     value={config.start_date ?? ''}
                     onChange={(e) => setConfig((prev) => ({ ...prev, start_date: e.target.value }))}
@@ -277,8 +294,9 @@ export function ReportFormDialog({
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>End date</label>
+                  <label htmlFor="report-end-date" className={labelClass}>End date</label>
                   <input
+                    id="report-end-date"
                     type="date"
                     value={config.end_date ?? ''}
                     onChange={(e) => setConfig((prev) => ({ ...prev, end_date: e.target.value }))}
@@ -291,8 +309,9 @@ export function ReportFormDialog({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>Compare</label>
+              <label htmlFor="report-compare-mode" className={labelClass}>Compare</label>
               <select
+                id="report-compare-mode"
                 value={config.compare_mode ?? 'none'}
                 onChange={(e) =>
                   setConfig((prev) => {
@@ -324,8 +343,9 @@ export function ReportFormDialog({
             {config.compare_mode === 'custom' && (
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className={labelClass}>Compare start</label>
+                  <label htmlFor="report-compare-start" className={labelClass}>Compare start</label>
                   <input
+                    id="report-compare-start"
                     type="date"
                     value={config.compare_start_date ?? ''}
                     onChange={(e) =>
@@ -335,8 +355,9 @@ export function ReportFormDialog({
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Compare end</label>
+                  <label htmlFor="report-compare-end" className={labelClass}>Compare end</label>
                   <input
+                    id="report-compare-end"
                     type="date"
                     value={config.compare_end_date ?? ''}
                     onChange={(e) =>
@@ -460,7 +481,7 @@ export function ReportFormDialog({
               variant="outline"
               size="sm"
               onClick={handlePreview}
-              disabled={previewReport.isPending || isPending}
+              disabled={previewReport.isPending || isPending || isEditingLoading}
               className="text-xs"
             >
               {previewReport.isPending ? 'Previewing…' : 'Preview'}
@@ -468,7 +489,7 @@ export function ReportFormDialog({
             <Button
               type="submit"
               size="sm"
-              disabled={isPending}
+              disabled={isPending || previewReport.isPending || isEditingLoading}
               className="text-xs"
             >
               {isPending ? 'Saving…' : isEditing ? 'Save changes' : 'Create report'}

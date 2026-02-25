@@ -135,10 +135,17 @@ fn append_event_filters(
 fn path_with_query(url: &str) -> String {
     if let Some(scheme_idx) = url.find("://") {
         let rest = &url[(scheme_idx + 3)..];
-        if let Some(path_idx) = rest.find('/') {
-            return rest[path_idx..].to_string();
+        if let Some(host_tail_idx) = rest.find(['/', '?', '#']) {
+            let suffix = &rest[host_tail_idx..];
+            if suffix.starts_with('/') {
+                return suffix.to_string();
+            }
+            return format!("/{suffix}");
         }
         return "/".to_string();
+    }
+    if url.starts_with('?') || url.starts_with('#') {
+        return format!("/{url}");
     }
     url.to_string()
 }
@@ -444,4 +451,19 @@ pub async fn get_revenue_summary_inner(
         conversions: attribution.totals.conversions,
         revenue: attribution.totals.revenue,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_with_query;
+
+    #[test]
+    fn path_with_query_handles_query_without_explicit_path() {
+        assert_eq!(path_with_query("https://example.com?utm=abc"), "/?utm=abc");
+    }
+
+    #[test]
+    fn path_with_query_preserves_relative_query_values() {
+        assert_eq!(path_with_query("?utm=abc"), "/?utm=abc");
+    }
 }

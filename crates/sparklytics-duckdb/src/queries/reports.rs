@@ -74,10 +74,11 @@ fn get_report_by_id(
         WHERE website_id = ?1 AND id = ?2
         "#,
     )?;
-    let report = stmt
-        .query_row(duckdb::params![website_id, report_id], map_saved_report_row)
-        .ok();
-    Ok(report)
+    match stmt.query_row(duckdb::params![website_id, report_id], map_saved_report_row) {
+        Ok(report) => Ok(Some(report)),
+        Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
 }
 
 pub async fn list_reports_inner(

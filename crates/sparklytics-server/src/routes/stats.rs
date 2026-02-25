@@ -104,20 +104,12 @@ pub async fn get_stats(
         .map_err(AppError::Internal)?;
 
     if let Some(compare_range) = compare {
+        let mut data = serde_json::to_value(&result).map_err(|e| AppError::Internal(e.into()))?;
+        if let Some(object) = data.as_object_mut() {
+            object.remove("compare");
+        }
         return Ok(Json(json!({
-            "data": {
-                "pageviews": result.pageviews,
-                "visitors": result.visitors,
-                "sessions": result.sessions,
-                "bounce_rate": result.bounce_rate,
-                "avg_duration_seconds": result.avg_duration_seconds,
-                "prev_pageviews": result.prev_pageviews,
-                "prev_visitors": result.prev_visitors,
-                "prev_sessions": result.prev_sessions,
-                "prev_bounce_rate": result.prev_bounce_rate,
-                "prev_avg_duration_seconds": result.prev_avg_duration_seconds,
-                "timezone": result.timezone,
-            },
+            "data": data,
             "compare": metadata_json(Some(&compare_range))
         })));
     }
