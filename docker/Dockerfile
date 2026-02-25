@@ -22,7 +22,14 @@ RUN cargo build --release && cp target/release/sparklytics /sparklytics
 
 # Build the Next.js dashboard (static export → dashboard/out/).
 WORKDIR /app/dashboard
-RUN npm ci && npm run build
+RUN set -eux; \
+    for attempt in 1 2 3; do \
+      npm ci && break; \
+      if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+      echo "npm ci failed on attempt ${attempt}; retrying..."; \
+      sleep 15; \
+    done; \
+    npm run build
 
 # Download DB-IP City Lite (free, CC BY 4.0 — no license key required).
 # Falls back to the previous month if this month's file isn't published yet.
