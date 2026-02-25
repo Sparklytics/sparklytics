@@ -23,8 +23,12 @@ RUN cargo build --release && cp target/release/sparklytics /sparklytics
 # Build the Next.js dashboard (static export → dashboard/out/).
 WORKDIR /app/dashboard
 RUN set -eux; \
+    npm config set registry https://registry.npmjs.org/; \
+    npm config set fetch-retries 5; \
+    npm config set fetch-retry-mintimeout 20000; \
+    npm config set fetch-retry-maxtimeout 120000; \
     for attempt in 1 2 3; do \
-      npm ci && break; \
+      timeout 10m npm ci --no-audit && break; \
       if [ "$attempt" -eq 3 ]; then exit 1; fi; \
       echo "npm ci failed on attempt ${attempt}; retrying..."; \
       sleep 15; \
