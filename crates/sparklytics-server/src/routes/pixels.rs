@@ -11,12 +11,17 @@ use serde_json::{json, Value};
 use url::Url;
 
 use sparklytics_core::{
-    analytics::{CreateTrackingPixelRequest, UpdateTrackingPixelRequest},
+    analytics::{BotPolicyMode, CreateTrackingPixelRequest, UpdateTrackingPixelRequest},
     event::Event,
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
 
-use crate::{error::AppError, routes::collect, state::AppState};
+use crate::{
+    bot_detection::{classify_event, BotOverrideDecision, BotPolicyInput},
+    error::AppError,
+    routes::collect,
+    state::AppState,
+};
 
 const TRANSPARENT_GIF: &[u8] = &[
     71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255, 33, 249, 4, 1, 0, 0, 0,
@@ -255,6 +260,8 @@ pub async fn track_pixel(
     let geo = collect::lookup_geo(&state.config.geoip_path, &client_ip);
     let ua = collect::parse_user_agent(&user_agent);
     let visitor_id = compute_visitor_id(&client_ip, &user_agent);
+    let has_accept_header = headers.get(axum::http::header::ACCEPT).is_some();
+    let has_accept_language_header = headers.get(axum::http::header::ACCEPT_LANGUAGE).is_some();
     let referrer_url = headers
         .get(axum::http::header::REFERER)
         .and_then(|v| v.to_str().ok())
@@ -273,6 +280,42 @@ pub async fn track_pixel(
         ));
     }
     let url_utm = collect::extract_utm_from_url(&event_url);
+    let bot_policy = state
+        .db
+        .get_bot_policy(&pixel.website_id)
+        .await
+        .map_err(AppError::Internal)?;
+    let threshold_score = match bot_policy.mode {
+        BotPolicyMode::Strict if bot_policy.threshold_score <= 0 => 60,
+        BotPolicyMode::Balanced | BotPolicyMode::Off if bot_policy.threshold_score <= 0 => 70,
+        _ => bot_policy.threshold_score,
+    };
+    let bot_policy_input = BotPolicyInput {
+        mode: bot_policy.mode,
+        threshold_score,
+    };
+    let override_decision = state
+        .db
+        .classify_override_for_request(&pixel.website_id, &client_ip, &user_agent)
+        .await
+        .map_err(AppError::Internal)?
+        .map(|is_bot| {
+            if is_bot {
+                BotOverrideDecision::ForceBot
+            } else {
+                BotOverrideDecision::ForceHuman
+            }
+        });
+    let bot_classification = classify_event(
+        &pixel.website_id,
+        &visitor_id,
+        &event_url,
+        &user_agent,
+        has_accept_header,
+        has_accept_language_header,
+        &bot_policy_input,
+        override_decision,
+    );
 
     let mut sanitized_query = serde_json::Map::new();
     for (k, v) in query {
@@ -330,9 +373,9 @@ pub async fn track_pixel(
         pixel_id: Some(pixel.id),
         source_ip: Some(client_ip),
         user_agent: Some(user_agent),
-        is_bot: false,
-        bot_score: 0,
-        bot_reason: None,
+        is_bot: bot_classification.is_bot,
+        bot_score: bot_classification.bot_score,
+        bot_reason: bot_classification.bot_reason,
         created_at: Utc::now(),
     };
     state.enqueue_ingest_events(vec![event]).await?;

@@ -75,10 +75,12 @@ pub async fn run_due_subscriptions(state: &Arc<AppState>) -> anyhow::Result<usiz
             continue;
         };
 
+        let include_bots = state.default_include_bots(&subscription.website_id).await;
         let report_data = match execute_report_config_with_backend(
             state.scheduler_db.as_ref(),
             &subscription.website_id,
             &report.config,
+            include_bots,
         )
         .await
         {
@@ -123,7 +125,7 @@ pub async fn run_due_subscriptions(state: &Arc<AppState>) -> anyhow::Result<usiz
             "data": report_data
         });
 
-        let delivered = deliver_and_record(
+        let _delivered = deliver_and_record(
             state,
             NotificationSourceType::Subscription,
             &subscription.id,
@@ -134,18 +136,16 @@ pub async fn run_due_subscriptions(state: &Arc<AppState>) -> anyhow::Result<usiz
         )
         .await?;
 
-        if delivered.is_some() {
-            state
-                .scheduler_db
-                .mark_report_subscription_ran(
-                    &subscription.id,
-                    now,
-                    &subscription.schedule,
-                    &subscription.timezone,
-                )
-                .await?;
-            runs += 1;
-        }
+        state
+            .scheduler_db
+            .mark_report_subscription_ran(
+                &subscription.id,
+                now,
+                &subscription.schedule,
+                &subscription.timezone,
+            )
+            .await?;
+        runs += 1;
     }
 
     Ok(runs)

@@ -253,6 +253,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_reports_name_website
     ON saved_reports(website_id, name);
 
 -- ===========================================
+-- ATTRIBUTION CACHE (Sprint 18, optional)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS attribution_cache (
+    website_id      VARCHAR NOT NULL,
+    goal_id         VARCHAR NOT NULL,
+    model           VARCHAR NOT NULL, -- first_touch|last_touch
+    range_start     TIMESTAMP NOT NULL,
+    range_end       TIMESTAMP NOT NULL,
+    payload_json    VARCHAR NOT NULL,
+    generated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_attribution_cache_lookup
+    ON attribution_cache(website_id, goal_id, model, range_start, range_end);
+CREATE INDEX IF NOT EXISTS idx_attribution_cache_generated
+    ON attribution_cache(generated_at);
+
+-- ===========================================
 -- NOTIFICATIONS (Sprint 20)
 -- ===========================================
 CREATE TABLE IF NOT EXISTS report_subscriptions (

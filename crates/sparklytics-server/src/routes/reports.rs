@@ -122,6 +122,7 @@ fn parse_absolute_range(
 
 fn build_analytics_context(
     config: &ReportConfig,
+    include_bots: bool,
 ) -> Result<
     (
         AnalyticsFilter,
@@ -181,7 +182,7 @@ fn build_analytics_context(
             filter_region: config.filter_region.clone(),
             filter_city: config.filter_city.clone(),
             filter_hostname: config.filter_hostname.clone(),
-            include_bots: false,
+            include_bots,
         },
         comparison,
     ))
@@ -191,8 +192,9 @@ pub(crate) async fn execute_report_config_with_backend(
     analytics: &dyn sparklytics_core::analytics::AnalyticsBackend,
     website_id: &str,
     config: &ReportConfig,
+    include_bots: bool,
 ) -> Result<Value, AppError> {
-    let (filter, comparison) = build_analytics_context(config)?;
+    let (filter, comparison) = build_analytics_context(config, include_bots)?;
     match config.report_type {
         ReportType::Stats => {
             let mut data = analytics
@@ -260,7 +262,9 @@ pub(crate) async fn execute_report_config(
     website_id: &str,
     config: &ReportConfig,
 ) -> Result<Value, AppError> {
-    execute_report_config_with_backend(state.analytics.as_ref(), website_id, config).await
+    let include_bots = state.default_include_bots(website_id).await;
+    execute_report_config_with_backend(state.analytics.as_ref(), website_id, config, include_bots)
+        .await
 }
 
 pub async fn list_reports(
@@ -306,7 +310,7 @@ pub async fn create_report(
     }
     validate_name(&req.name)?;
     // Validate config semantics before persisting.
-    build_analytics_context(&req.config)?;
+    build_analytics_context(&req.config, false)?;
 
     let count = state
         .analytics
@@ -382,7 +386,7 @@ pub async fn update_report(
         }
     }
     if let Some(ref config) = req.config {
-        build_analytics_context(config)?;
+        build_analytics_context(config, false)?;
     }
 
     let report = match state
@@ -544,7 +548,8 @@ mod tests {
         let mut cfg = default_config();
         cfg.report_type = ReportType::Metrics;
         cfg.metric_type = None;
-        let err = build_analytics_context(&cfg).expect_err("missing metric type should fail");
+        let err =
+            build_analytics_context(&cfg, false).expect_err("missing metric type should fail");
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
@@ -553,7 +558,8 @@ mod tests {
         let mut cfg = default_config();
         cfg.report_type = ReportType::Metrics;
         cfg.metric_type = Some("bogus".to_string());
-        let err = build_analytics_context(&cfg).expect_err("unknown metric type should fail");
+        let err =
+            build_analytics_context(&cfg, false).expect_err("unknown metric type should fail");
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 

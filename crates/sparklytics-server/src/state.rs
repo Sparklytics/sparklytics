@@ -318,6 +318,10 @@ impl AppState {
         billing_gate: Arc<dyn BillingGate>,
     ) -> Self {
         let mut s = Self::new(db, config);
+        // Custom-backend mode (cloud) may use a non-default DB filename.
+        // Reuse the already-opened primary DB handle for scheduler reads/writes
+        // so background jobs operate on the same data file.
+        s.scheduler_db = Arc::clone(&s.db);
         s.analytics = analytics;
         s.billing_gate = billing_gate;
         s
