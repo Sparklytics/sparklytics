@@ -35,6 +35,13 @@ fn auth_config() -> Config {
     }
 }
 
+/// Build a test Config with AuthMode::Local in Cloud mode.
+fn cloud_auth_config() -> Config {
+    let mut config = auth_config();
+    config.mode = AppMode::Cloud;
+    config
+}
+
 /// Build a test Config with AuthMode::None.
 fn none_config() -> Config {
     Config {
@@ -81,6 +88,15 @@ fn password_config() -> Config {
 async fn setup_auth() -> (Arc<AppState>, axum::Router) {
     let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
     let config = auth_config();
+    let state = Arc::new(AppState::new(db, config));
+    let app = build_app(Arc::clone(&state));
+    (state, app)
+}
+
+/// Create a fresh in-memory backend + state + app with AuthMode::Local in Cloud mode.
+async fn setup_auth_cloud() -> (Arc<AppState>, axum::Router) {
+    let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
+    let config = cloud_auth_config();
     let state = Arc::new(AppState::new(db, config));
     let app = build_app(Arc::clone(&state));
     (state, app)
@@ -457,6 +473,47 @@ async fn test_api_key_grants_analytics_access() {
     );
 
     // Use the API key to access a protected analytics endpoint.
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/websites")
+        .header("authorization", format!("Bearer {}", raw_key))
+        .body(Body::empty())
+        .expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+// ============================================================
+// BDD: Cloud mode API key uses spk_live_ prefix
+// ============================================================
+#[tokio::test]
+async fn test_cloud_api_key_prefix_and_access() {
+    let (_state, app) = setup_auth_cloud().await;
+
+    let cookie = setup_and_login(&app).await;
+
+    let create_key_body = json!({ "name": "cloud-key" });
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/auth/keys")
+        .header("content-type", "application/json")
+        .header("cookie", &cookie)
+        .body(Body::from(create_key_body.to_string()))
+        .expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("request");
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let json = json_body(response).await;
+    let raw_key = json["data"]["key"]
+        .as_str()
+        .expect("API key should be returned");
+    assert!(
+        raw_key.starts_with("spk_live_"),
+        "API key must start with spk_live_ prefix in cloud mode"
+    );
+
     let request = Request::builder()
         .method("GET")
         .uri("/api/websites")

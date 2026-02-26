@@ -3,6 +3,7 @@ pub mod auth;
 pub mod bot_detection;
 pub mod config;
 pub mod error;
+pub mod metadata;
 pub mod routes;
 pub mod scheduler;
 pub mod state;

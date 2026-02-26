@@ -168,7 +168,7 @@ pub async fn create_link(
     validate_name(&req.name)?;
     let destination_url = parse_destination_url(&req.destination_url)?;
     let website = state
-        .db
+        .metadata
         .get_website(&website_id)
         .await
         .map_err(AppError::Internal)?
@@ -207,7 +207,7 @@ pub async fn update_link(
     if let Some(ref destination_url) = req.destination_url {
         let parsed = parse_destination_url(destination_url)?;
         let website = state
-            .db
+            .metadata
             .get_website(&website_id)
             .await
             .map_err(AppError::Internal)?

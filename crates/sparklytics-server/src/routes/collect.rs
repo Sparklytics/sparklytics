@@ -18,7 +18,6 @@ use chrono::Utc;
 use serde_json::json;
 
 use sparklytics_core::{
-    analytics::BotPolicyMode,
     billing::BillingOutcome,
     config::AppMode,
     event::{CollectOrBatch, CollectPayload, Event},
@@ -109,13 +108,12 @@ pub async fn collect(
 
     // --- Validation: all website_ids must be known ---
     // Validate unique IDs only to avoid repeated DB lookups for batches.
-    let unique_website_ids: HashSet<&str> =
-        payloads.iter().map(|p| p.website_id.as_str()).collect();
+    let unique_website_ids: HashSet<String> =
+        payloads.iter().map(|p| p.website_id.clone()).collect();
     let mut website_tenant_ids: HashMap<String, Option<String>> = HashMap::new();
     for website_id in unique_website_ids {
         let website = state
-            .db
-            .get_website(website_id)
+            .get_website_metadata_cached(&website_id)
             .await
             .map_err(AppError::Internal)?;
         let Some(website) = website else {
@@ -124,7 +122,7 @@ pub async fn collect(
                 website_id
             )));
         };
-        website_tenant_ids.insert(website_id.to_string(), website.tenant_id);
+        website_tenant_ids.insert(website_id, website.tenant_id);
     }
 
     // --- Resolve cloud tenant context from website ownership ---
@@ -209,38 +207,19 @@ pub async fn collect(
             policy.clone()
         } else {
             let policy = state
-                .db
-                .get_bot_policy(&website_id)
+                .get_bot_policy_cached(&website_id)
                 .await
                 .map_err(AppError::Internal)?;
-            let mode = policy.mode;
-            let threshold_score = match mode {
-                BotPolicyMode::Strict if policy.threshold_score <= 0 => 60,
-                BotPolicyMode::Balanced | BotPolicyMode::Off if policy.threshold_score <= 0 => 70,
-                _ => policy.threshold_score,
-            };
-            let input = BotPolicyInput {
-                mode,
-                threshold_score,
-            };
-            website_bot_policies.insert(website_id.clone(), input.clone());
-            input
+            website_bot_policies.insert(website_id.clone(), policy.clone());
+            policy
         };
         let override_decision = if let Some(decision) = website_bot_overrides.get(&website_id) {
             decision.clone()
         } else {
             let decision = state
-                .db
-                .classify_override_for_request(&website_id, &client_ip, &user_agent)
+                .classify_override_for_request_cached(&website_id, &client_ip, &user_agent)
                 .await
-                .map_err(AppError::Internal)?
-                .map(|is_bot| {
-                    if is_bot {
-                        BotOverrideDecision::ForceBot
-                    } else {
-                        BotOverrideDecision::ForceHuman
-                    }
-                });
+                .map_err(AppError::Internal)?;
             website_bot_overrides.insert(website_id.clone(), decision.clone());
             decision
         };

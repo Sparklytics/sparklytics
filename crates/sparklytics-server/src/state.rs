@@ -16,9 +16,11 @@ use sparklytics_core::{
     config::Config,
     event::Event,
 };
-use sparklytics_duckdb::DuckDbBackend;
+use sparklytics_duckdb::{website::Website, DuckDbBackend};
 
+use crate::bot_detection::{BotOverrideDecision, BotPolicyInput};
 use crate::error::AppError;
+use crate::metadata::{duckdb::DuckDbMetadataStore, MetadataStore};
 
 const SESSION_ID_PENDING: &str = "__pending__";
 const DEFAULT_INGEST_QUEUE_MAX_EVENTS: usize = 100_000;
@@ -32,6 +34,8 @@ const DEFAULT_SESSION_CACHE_TTL_SECONDS: i64 = 1_800;
 const DEFAULT_RATE_LIMIT_MAX_KEYS: usize = 100_000;
 const DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES: usize = 10_000;
 const DEFAULT_ACQUISITION_CACHE_TTL_SECONDS: u64 = 60;
+const DEFAULT_COLLECT_CACHE_MAX_ENTRIES: usize = 100_000;
+const DEFAULT_COLLECT_CACHE_TTL_SECONDS: u64 = 120;
 const INGEST_WAL_LOG_FILE: &str = "segment.log";
 const INGEST_WAL_CURSOR_FILE: &str = "segment.cursor";
 
@@ -60,6 +64,24 @@ struct CachedTrackingPixel {
     expires_at: Instant,
 }
 
+#[derive(Debug, Clone)]
+struct CachedWebsiteMetadata {
+    website: Option<Website>,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct CachedBotPolicy {
+    value: BotPolicyInput,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct CachedBotOverride {
+    value: Option<BotOverrideDecision>,
+    expires_at: Instant,
+}
+
 /// Shared application state injected into every Axum handler via
 /// [`axum::extract::State`].
 pub struct AppState {
@@ -72,6 +94,9 @@ pub struct AppState {
 
     /// Analytics backend used by all analytics routes and buffer flush.
     pub analytics: Arc<dyn AnalyticsBackend>,
+
+    /// Metadata backend used by website/auth/share metadata routes.
+    pub metadata: Arc<dyn MetadataStore>,
 
     /// Parsed configuration, loaded once at startup.
     pub config: Arc<Config>,
@@ -89,6 +114,11 @@ pub struct AppState {
     tracking_pixel_cache: Arc<Mutex<HashMap<String, CachedTrackingPixel>>>,
     acquisition_cache_max_entries: usize,
     acquisition_cache_ttl: Duration,
+    website_metadata_cache: Arc<Mutex<HashMap<String, CachedWebsiteMetadata>>>,
+    bot_policy_cache: Arc<Mutex<HashMap<String, CachedBotPolicy>>>,
+    bot_override_cache: Arc<Mutex<HashMap<(String, String, String), CachedBotOverride>>>,
+    collect_cache_max_entries: usize,
+    collect_cache_ttl: Duration,
 
     /// Plan-limit gate.
     pub billing_gate: Arc<dyn BillingGate>,
@@ -216,6 +246,14 @@ impl AppState {
             "SPARKLYTICS_ACQUISITION_CACHE_TTL_SECONDS",
             DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
         );
+        let collect_cache_max_entries = Self::env_usize(
+            "SPARKLYTICS_COLLECT_CACHE_MAX_ENTRIES",
+            DEFAULT_COLLECT_CACHE_MAX_ENTRIES,
+        );
+        let collect_cache_ttl_seconds = Self::env_u64(
+            "SPARKLYTICS_COLLECT_CACHE_TTL_SECONDS",
+            DEFAULT_COLLECT_CACHE_TTL_SECONDS,
+        );
         let ingest_wal_log_path = ingest_wal_dir.join(INGEST_WAL_LOG_FILE);
         let ingest_wal_cursor_path = ingest_wal_dir.join(INGEST_WAL_CURSOR_FILE);
 
@@ -270,10 +308,12 @@ impl AppState {
             Arc::clone(&db)
         };
         let analytics: Arc<dyn AnalyticsBackend> = db.clone();
+        let metadata: Arc<dyn MetadataStore> = Arc::new(DuckDbMetadataStore::new(Arc::clone(&db)));
         Self {
             db,
             scheduler_db,
             analytics,
+            metadata,
             config: Arc::new(config),
             buffer: Arc::new(Mutex::new(Vec::new())),
             website_cache: Arc::new(RwLock::new(HashSet::new())),
@@ -283,6 +323,11 @@ impl AppState {
             tracking_pixel_cache: Arc::new(Mutex::new(HashMap::new())),
             acquisition_cache_max_entries,
             acquisition_cache_ttl: Duration::from_secs(acquisition_cache_ttl_seconds),
+            website_metadata_cache: Arc::new(Mutex::new(HashMap::new())),
+            bot_policy_cache: Arc::new(Mutex::new(HashMap::new())),
+            bot_override_cache: Arc::new(Mutex::new(HashMap::new())),
+            collect_cache_max_entries,
+            collect_cache_ttl: Duration::from_secs(collect_cache_ttl_seconds),
             billing_gate: Arc::new(NullBillingGate),
             export_semaphore: Arc::new(Semaphore::new(1)),
             funnel_results_semaphore: Arc::new(Semaphore::new(1)),
@@ -323,6 +368,22 @@ impl AppState {
         // so background jobs operate on the same data file.
         s.scheduler_db = Arc::clone(&s.db);
         s.analytics = analytics;
+        s.billing_gate = billing_gate;
+        s
+    }
+
+    /// Construct state with explicit analytics, metadata and billing backends.
+    pub fn new_with_backends_and_metadata(
+        db: DuckDbBackend,
+        config: Config,
+        analytics: Arc<dyn AnalyticsBackend>,
+        metadata: Arc<dyn MetadataStore>,
+        billing_gate: Arc<dyn BillingGate>,
+    ) -> Self {
+        let mut s = Self::new(db, config);
+        s.scheduler_db = Arc::clone(&s.db);
+        s.analytics = analytics;
+        s.metadata = metadata;
         s.billing_gate = billing_gate;
         s
     }
@@ -748,13 +809,183 @@ impl AppState {
         self.check_rate_limit_with_max(ip, 60).await
     }
 
+    pub async fn get_website_metadata_cached(
+        &self,
+        website_id: &str,
+    ) -> anyhow::Result<Option<Website>> {
+        let now = Instant::now();
+        {
+            let mut cache = self.website_metadata_cache.lock().await;
+            if let Some(entry) = cache.get(website_id) {
+                if entry.expires_at > now {
+                    return Ok(entry.website.clone());
+                }
+                cache.remove(website_id);
+            }
+        }
+
+        let website = self.metadata.get_website(website_id).await?;
+        {
+            let mut cache = self.website_metadata_cache.lock().await;
+            if cache.len() >= self.collect_cache_max_entries {
+                cache.clear();
+            }
+            cache.insert(
+                website_id.to_string(),
+                CachedWebsiteMetadata {
+                    website: website.clone(),
+                    expires_at: now + self.collect_cache_ttl,
+                },
+            );
+        }
+        {
+            let mut cache = self.website_cache.write().await;
+            if website.is_some() {
+                cache.insert(website_id.to_string());
+            } else {
+                cache.remove(website_id);
+            }
+        }
+        Ok(website)
+    }
+
+    pub async fn cache_website_metadata(&self, website: Website) {
+        let now = Instant::now();
+        {
+            let mut cache = self.website_metadata_cache.lock().await;
+            if cache.len() >= self.collect_cache_max_entries {
+                cache.clear();
+            }
+            cache.insert(
+                website.id.clone(),
+                CachedWebsiteMetadata {
+                    website: Some(website.clone()),
+                    expires_at: now + self.collect_cache_ttl,
+                },
+            );
+        }
+        self.website_cache.write().await.insert(website.id);
+    }
+
+    pub async fn invalidate_website_metadata_cache(&self, website_id: &str) {
+        self.website_cache.write().await.remove(website_id);
+        self.website_metadata_cache.lock().await.remove(website_id);
+        self.bot_policy_cache.lock().await.remove(website_id);
+        self.bot_override_cache
+            .lock()
+            .await
+            .retain(|(cached_website_id, _, _), _| cached_website_id != website_id);
+    }
+
+    pub async fn get_bot_policy_cached(&self, website_id: &str) -> anyhow::Result<BotPolicyInput> {
+        let now = Instant::now();
+        {
+            let mut cache = self.bot_policy_cache.lock().await;
+            if let Some(entry) = cache.get(website_id) {
+                if entry.expires_at > now {
+                    return Ok(entry.value.clone());
+                }
+                cache.remove(website_id);
+            }
+        }
+
+        let policy = self.db.get_bot_policy(website_id).await?;
+        let mode = policy.mode;
+        let threshold_score = match mode {
+            sparklytics_core::analytics::BotPolicyMode::Strict if policy.threshold_score <= 0 => 60,
+            sparklytics_core::analytics::BotPolicyMode::Balanced
+            | sparklytics_core::analytics::BotPolicyMode::Off
+                if policy.threshold_score <= 0 =>
+            {
+                70
+            }
+            _ => policy.threshold_score,
+        };
+        let input = BotPolicyInput {
+            mode,
+            threshold_score,
+        };
+        {
+            let mut cache = self.bot_policy_cache.lock().await;
+            if cache.len() >= self.collect_cache_max_entries {
+                cache.clear();
+            }
+            cache.insert(
+                website_id.to_string(),
+                CachedBotPolicy {
+                    value: input.clone(),
+                    expires_at: now + self.collect_cache_ttl,
+                },
+            );
+        }
+        Ok(input)
+    }
+
+    pub async fn classify_override_for_request_cached(
+        &self,
+        website_id: &str,
+        client_ip: &str,
+        user_agent: &str,
+    ) -> anyhow::Result<Option<BotOverrideDecision>> {
+        let now = Instant::now();
+        let key = (
+            website_id.to_string(),
+            client_ip.to_string(),
+            user_agent.to_string(),
+        );
+        {
+            let mut cache = self.bot_override_cache.lock().await;
+            if let Some(entry) = cache.get(&key) {
+                if entry.expires_at > now {
+                    return Ok(entry.value.clone());
+                }
+                cache.remove(&key);
+            }
+        }
+
+        let decision = self
+            .db
+            .classify_override_for_request(website_id, client_ip, user_agent)
+            .await?
+            .map(|is_bot| {
+                if is_bot {
+                    BotOverrideDecision::ForceBot
+                } else {
+                    BotOverrideDecision::ForceHuman
+                }
+            });
+
+        {
+            let mut cache = self.bot_override_cache.lock().await;
+            if cache.len() >= self.collect_cache_max_entries {
+                cache.clear();
+            }
+            cache.insert(
+                key,
+                CachedBotOverride {
+                    value: decision.clone(),
+                    expires_at: now + self.collect_cache_ttl,
+                },
+            );
+        }
+
+        Ok(decision)
+    }
+
     /// Returns the default query behavior for `include_bots`.
     /// When bot policy mode is `off`, queries include bot traffic by default.
     pub async fn default_include_bots(&self, website_id: &str) -> bool {
-        self.db
-            .effective_include_bots_default(website_id)
-            .await
-            .unwrap_or(false)
+        match self.get_bot_policy_cached(website_id).await {
+            Ok(policy) => matches!(policy.mode, sparklytics_core::analytics::BotPolicyMode::Off),
+            Err(err) => {
+                warn!(
+                    website_id,
+                    error = %err,
+                    "failed to resolve bot policy default include_bots"
+                );
+                false
+            }
+        }
     }
 
     /// Check whether `ip` is within the given `max_per_min` rate limit.
@@ -1119,15 +1350,11 @@ impl AppState {
                 return true;
             }
         }
-        match self.db.website_exists(website_id).await {
-            Ok(true) => {
-                let mut cache = self.website_cache.write().await;
-                cache.insert(website_id.to_string());
-                true
-            }
-            Ok(false) => false,
+        match self.get_website_metadata_cached(website_id).await {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
             Err(e) => {
-                error!(website_id, error = %e, "website_exists DB lookup failed");
+                error!(website_id, error = %e, "website metadata lookup failed");
                 false
             }
         }

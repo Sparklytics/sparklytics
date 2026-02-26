@@ -99,7 +99,7 @@ async fn resolve_share(
     }
 
     let row = state
-        .db
+        .metadata
         .get_website_by_share_id(share_id)
         .await
         .map_err(AppError::Internal)?;
@@ -323,7 +323,7 @@ pub async fn enable_sharing(
 
     // Check if sharing is already enabled.
     let existing = state
-        .db
+        .metadata
         .get_share_id(&website_id)
         .await
         .map_err(AppError::Internal)?;
@@ -333,7 +333,7 @@ pub async fn enable_sharing(
         None => {
             let new_id = uuid::Uuid::new_v4().to_string();
             state
-                .db
+                .metadata
                 .set_share_id(&website_id, &new_id)
                 .await
                 .map_err(AppError::Internal)?;
@@ -365,7 +365,7 @@ pub async fn disable_sharing(
     }
 
     let existing = state
-        .db
+        .metadata
         .get_share_id(&website_id)
         .await
         .map_err(AppError::Internal)?;
@@ -377,7 +377,7 @@ pub async fn disable_sharing(
     }
 
     state
-        .db
+        .metadata
         .clear_share_id(&website_id)
         .await
         .map_err(AppError::Internal)?;

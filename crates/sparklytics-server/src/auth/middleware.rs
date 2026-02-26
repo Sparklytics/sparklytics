@@ -39,7 +39,7 @@ async fn require_auth_inner(
 ) -> Response {
     // Check if setup is required in local mode.
     if let sparklytics_core::config::AuthMode::Local = &state.config.auth_mode {
-        match state.db.is_admin_configured().await {
+        match state.metadata.is_admin_configured().await {
             Ok(false) => {
                 return (
                     StatusCode::FORBIDDEN,
@@ -80,7 +80,7 @@ async fn require_auth_inner(
                 }
 
                 let key_hash = hash_api_key(token);
-                match state.db.lookup_api_key(&key_hash).await {
+                match state.metadata.lookup_api_key(&key_hash).await {
                     Ok(Some(key_record)) => {
                         let key_id = key_record.id.clone();
                         request.extensions_mut().insert(AuthContext {
@@ -89,9 +89,9 @@ async fn require_auth_inner(
                         });
                         let resp = next.run(request).await;
                         // Fire-and-forget: update last_used_at.
-                        let db = state.db.clone();
+                        let metadata = state.metadata.clone();
                         tokio::spawn(async move {
-                            let _ = db.touch_api_key(&key_id).await;
+                            let _ = metadata.touch_api_key(&key_id).await;
                         });
                         return resp;
                     }
@@ -129,7 +129,7 @@ async fn require_auth_inner(
 }
 
 async fn validate_cookie_jwt(state: &AppState, token: &str) -> Option<AuthContext> {
-    let jwt_secret = state.db.get_setting("jwt_secret").await.ok()??;
+    let jwt_secret = state.metadata.get_setting("jwt_secret").await.ok()??;
     let _claims = decode_jwt(token, &jwt_secret).ok()?;
 
     Some(AuthContext {

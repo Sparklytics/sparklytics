@@ -34,7 +34,7 @@ pub struct EventFilterQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
-    pub include_bots: Option<bool>,
+    pub include_bots: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,12 +101,27 @@ fn normalize_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError
     }
 }
 
+fn parse_optional_bool(value: Option<&str>, field: &str) -> Result<Option<bool>, AppError> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" => Ok(Some(true)),
+        "false" | "0" => Ok(Some(false)),
+        _ => Err(AppError::BadRequest(format!(
+            "{field} must be one of: true, false, 1, 0"
+        ))),
+    }
+}
+
 fn build_filter(
     query: &EventFilterQuery,
     default_include_bots: bool,
 ) -> Result<AnalyticsFilter, AppError> {
     let (start_date, end_date) =
         parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let include_bots = parse_optional_bool(query.include_bots.as_deref(), "include_bots")?
+        .unwrap_or(default_include_bots);
     Ok(AnalyticsFilter {
         start_date,
         end_date,
@@ -124,7 +139,7 @@ fn build_filter(
         filter_region: query.filter_region.clone(),
         filter_city: query.filter_city.clone(),
         filter_hostname: query.filter_hostname.clone(),
-        include_bots: query.include_bots.unwrap_or(default_include_bots),
+        include_bots,
     })
 }
 
@@ -228,4 +243,36 @@ pub async fn get_event_timeseries(
             "granularity": result.granularity,
         }
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_optional_bool;
+
+    #[test]
+    fn parse_optional_bool_accepts_common_variants() {
+        assert_eq!(
+            parse_optional_bool(Some("true"), "include_bots").unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            parse_optional_bool(Some("false"), "include_bots").unwrap(),
+            Some(false)
+        );
+        assert_eq!(
+            parse_optional_bool(Some("1"), "include_bots").unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            parse_optional_bool(Some("0"), "include_bots").unwrap(),
+            Some(false)
+        );
+        assert_eq!(parse_optional_bool(None, "include_bots").unwrap(), None);
+    }
+
+    #[test]
+    fn parse_optional_bool_rejects_invalid_values() {
+        assert!(parse_optional_bool(Some("yes"), "include_bots").is_err());
+        assert!(parse_optional_bool(Some(""), "include_bots").is_err());
+    }
 }
