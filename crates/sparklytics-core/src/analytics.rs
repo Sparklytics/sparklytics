@@ -25,6 +25,7 @@ pub struct AnalyticsFilter {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -226,6 +227,135 @@ pub struct RealtimeResult {
     pub active_visitors: i64,
     pub recent_events: Vec<RealtimeEvent>,
     pub pagination: RealtimePagination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BotClassification {
+    pub is_bot: bool,
+    pub bot_score: i32,
+    pub bot_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReasonCount {
+    pub code: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotSummary {
+    pub website_id: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub bot_events: i64,
+    pub human_events: i64,
+    pub bot_rate: f64,
+    pub top_reasons: Vec<BotReasonCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BotPolicyMode {
+    Strict,
+    Balanced,
+    Off,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotPolicy {
+    pub website_id: String,
+    pub mode: BotPolicyMode,
+    pub threshold_score: i32,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateBotPolicyRequest {
+    pub mode: BotPolicyMode,
+    pub threshold_score: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BotMatchType {
+    UaContains,
+    IpExact,
+    IpCidr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotListEntry {
+    pub id: String,
+    pub match_type: BotMatchType,
+    pub match_value: String,
+    pub note: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateBotListEntryRequest {
+    pub match_type: BotMatchType,
+    pub match_value: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReportSplit {
+    pub bot_events: i64,
+    pub human_events: i64,
+    pub bot_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReportTimeseriesPoint {
+    pub period_start: String,
+    pub bot_events: i64,
+    pub human_events: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReportTopUserAgent {
+    pub value: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReport {
+    pub split: BotReportSplit,
+    pub timeseries: Vec<BotReportTimeseriesPoint>,
+    pub top_reasons: Vec<BotReasonCount>,
+    pub top_user_agents: Vec<BotReportTopUserAgent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BotRecomputeStatus {
+    Queued,
+    Running,
+    Success,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotRecomputeRun {
+    pub job_id: String,
+    pub website_id: String,
+    pub status: BotRecomputeStatus,
+    pub start_date: String,
+    pub end_date: String,
+    pub created_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotPolicyAuditRecord {
+    pub id: String,
+    pub actor: String,
+    pub action: String,
+    pub payload: serde_json::Value,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1114,6 +1244,7 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         &self,
         website_id: &str,
         tenant_id: Option<&str>,
+        include_bots: bool,
     ) -> anyhow::Result<RealtimeResult>;
 
     async fn export_events(

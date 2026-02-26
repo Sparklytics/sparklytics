@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::OnceLock;
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use axum::{
     extract::{ConnectInfo, FromRequestParts, State},
@@ -18,12 +18,17 @@ use chrono::Utc;
 use serde_json::json;
 
 use sparklytics_core::{
+    analytics::BotPolicyMode,
     billing::BillingOutcome,
     event::{CollectOrBatch, CollectPayload, Event},
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    bot_detection::{classify_event, BotOverrideDecision, BotPolicyInput},
+    error::AppError,
+    state::AppState,
+};
 
 #[derive(Debug)]
 pub struct MaybeConnectInfo(pub Option<SocketAddr>);
@@ -139,6 +144,8 @@ pub async fn collect(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
+    let has_accept_header = headers.get(axum::http::header::ACCEPT).is_some();
+    let has_accept_language_header = headers.get(axum::http::header::ACCEPT_LANGUAGE).is_some();
 
     // --- GeoIP lookup ---
     // Load the GeoIP database from the path configured at startup.
@@ -152,6 +159,8 @@ pub async fn collect(
     let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
     let base_now = Utc::now();
     let server_visitor_id = compute_visitor_id(&client_ip, &user_agent);
+    let mut website_bot_policies: HashMap<String, BotPolicyInput> = HashMap::new();
+    let mut website_bot_overrides: HashMap<String, Option<BotOverrideDecision>> = HashMap::new();
 
     for (idx, p) in payloads.into_iter().enumerate() {
         let website_id = p.website_id.clone();
@@ -163,6 +172,56 @@ pub async fn collect(
             .visitor_id
             .filter(|id| !id.is_empty() && id.len() <= 64)
             .unwrap_or_else(|| server_visitor_id.clone());
+
+        let bot_policy = if let Some(policy) = website_bot_policies.get(&website_id) {
+            policy.clone()
+        } else {
+            let policy = state
+                .db
+                .get_bot_policy(&website_id)
+                .await
+                .map_err(AppError::Internal)?;
+            let mode = policy.mode;
+            let threshold_score = match mode {
+                BotPolicyMode::Strict if policy.threshold_score <= 0 => 60,
+                BotPolicyMode::Balanced | BotPolicyMode::Off if policy.threshold_score <= 0 => 70,
+                _ => policy.threshold_score,
+            };
+            let input = BotPolicyInput {
+                mode,
+                threshold_score,
+            };
+            website_bot_policies.insert(website_id.clone(), input.clone());
+            input
+        };
+        let override_decision = if let Some(decision) = website_bot_overrides.get(&website_id) {
+            decision.clone()
+        } else {
+            let decision = state
+                .db
+                .classify_override_for_request(&website_id, &client_ip, &user_agent)
+                .await
+                .map_err(AppError::Internal)?
+                .map(|is_bot| {
+                    if is_bot {
+                        BotOverrideDecision::ForceBot
+                    } else {
+                        BotOverrideDecision::ForceHuman
+                    }
+                });
+            website_bot_overrides.insert(website_id.clone(), decision.clone());
+            decision
+        };
+        let bot_classification = classify_event(
+            &website_id,
+            &visitor_id,
+            &p.url,
+            &user_agent,
+            has_accept_header,
+            has_accept_language_header,
+            &bot_policy,
+            override_decision,
+        );
 
         // Extract UTM params from the URL query string as fallback.
         let url_utm = extract_utm_from_url(&p.url);
@@ -213,6 +272,11 @@ pub async fn collect(
                 .or_else(|| url_utm.get("utm_content").cloned()),
             link_id: None,
             pixel_id: None,
+            source_ip: Some(client_ip.clone()),
+            user_agent: Some(user_agent.clone()),
+            is_bot: bot_classification.is_bot,
+            bot_score: bot_classification.bot_score,
+            bot_reason: bot_classification.bot_reason,
             // Preserve deterministic ordering for batched events so strict
             // funnel step sequencing (`created_at > prev.matched_at`) works.
             created_at: base_now + chrono::Duration::microseconds(idx as i64),

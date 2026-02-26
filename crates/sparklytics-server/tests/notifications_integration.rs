@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use axum::{body::Body, http::{Request, StatusCode}};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use serde_json::{json, Value};
 use sparklytics_core::config::{AuthMode, Config};
 use sparklytics_duckdb::DuckDbBackend;
@@ -250,7 +253,10 @@ async fn notifications_crud_test_send_and_history() {
         .await
         .expect("test alert failure");
     assert_eq!(failed_test_alert.status(), StatusCode::OK);
-    assert_eq!(json_body(failed_test_alert).await["data"]["status"], "failed");
+    assert_eq!(
+        json_body(failed_test_alert).await["data"]["status"],
+        "failed"
+    );
 
     let update_subscription = app
         .clone()
@@ -262,7 +268,10 @@ async fn notifications_crud_test_send_and_history() {
         .await
         .expect("update subscription");
     assert_eq!(update_subscription.status(), StatusCode::OK);
-    assert_eq!(json_body(update_subscription).await["data"]["is_active"], false);
+    assert_eq!(
+        json_body(update_subscription).await["data"]["is_active"],
+        false
+    );
 
     let history = app
         .clone()
@@ -288,7 +297,9 @@ async fn notifications_crud_test_send_and_history() {
         .oneshot(
             Request::builder()
                 .method("DELETE")
-                .uri(format!("/api/websites/{website_id}/subscriptions/{subscription_id}"))
+                .uri(format!(
+                    "/api/websites/{website_id}/subscriptions/{subscription_id}"
+                ))
                 .body(Body::empty())
                 .expect("delete subscription"),
         )

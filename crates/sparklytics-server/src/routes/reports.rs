@@ -186,6 +186,7 @@ fn build_analytics_context(
             filter_region: config.filter_region.clone(),
             filter_city: config.filter_city.clone(),
             filter_hostname: config.filter_hostname.clone(),
+            include_bots: false,
         },
         comparison,
     ))

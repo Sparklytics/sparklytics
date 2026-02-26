@@ -19,8 +19,8 @@ use sparklytics_core::{
 use crate::{error::AppError, routes::collect, state::AppState};
 
 const TRANSPARENT_GIF: &[u8] = &[
-    71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255, 33, 249, 4, 1, 0, 0,
-    0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59,
+    71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255, 33, 249, 4, 1, 0, 0, 0,
+    0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59,
 ];
 const MAX_PUBLIC_QUERY_PARAMS: usize = 32;
 const MAX_PUBLIC_QUERY_KEY_BYTES: usize = 64;
@@ -41,8 +41,8 @@ fn validate_name(name: &str) -> Result<(), AppError> {
 }
 
 fn parse_default_url(url: &str) -> Result<Url, AppError> {
-    let parsed =
-        Url::parse(url).map_err(|_| AppError::BadRequest("default_url must be valid".to_string()))?;
+    let parsed = Url::parse(url)
+        .map_err(|_| AppError::BadRequest("default_url must be valid".to_string()))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(AppError::BadRequest(
             "default_url must use http:// or https://".to_string(),
@@ -232,10 +232,7 @@ pub async fn track_pixel(
     maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let client_ip = collect::extract_client_ip(
-        &headers,
-        maybe_connect_info.0,
-    );
+    let client_ip = collect::extract_client_ip(&headers, maybe_connect_info.0);
     if !state.check_rate_limit_with_max(&client_ip, 240).await {
         return Err(AppError::RateLimited);
     }
@@ -331,6 +328,11 @@ pub async fn track_pixel(
         utm_content: url_utm.get("utm_content").cloned(),
         link_id: None,
         pixel_id: Some(pixel.id),
+        source_ip: Some(client_ip),
+        user_agent: Some(user_agent),
+        is_bot: false,
+        bot_score: 0,
+        bot_reason: None,
         created_at: Utc::now(),
     };
     state.enqueue_ingest_events(vec![event]).await?;

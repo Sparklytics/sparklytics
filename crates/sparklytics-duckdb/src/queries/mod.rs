@@ -1,4 +1,5 @@
 pub mod attribution;
+pub mod bot_filters;
 pub mod events;
 pub mod funnel_results;
 pub mod funnels;

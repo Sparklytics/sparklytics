@@ -4,8 +4,8 @@ use rand::Rng;
 use sparklytics_core::analytics::{
     AlertConditionType, AlertMetric, AlertRule, CreateAlertRuleRequest,
     CreateReportSubscriptionRequest, NotificationChannel, NotificationDelivery,
-    NotificationDeliveryStatus, NotificationSourceType, ReportSubscription,
-    SubscriptionSchedule, UpdateAlertRuleRequest, UpdateReportSubscriptionRequest,
+    NotificationDeliveryStatus, NotificationSourceType, ReportSubscription, SubscriptionSchedule,
+    UpdateAlertRuleRequest, UpdateReportSubscriptionRequest,
 };
 
 use crate::DuckDbBackend;
@@ -162,14 +162,20 @@ fn map_report_subscription_row(row: &duckdb::Row<'_>) -> Result<ReportSubscripti
         duckdb::Error::FromSqlConversionFailure(
             3,
             duckdb::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
     let channel = channel_from_str(&channel_raw).map_err(|e| {
         duckdb::Error::FromSqlConversionFailure(
             5,
             duckdb::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
     Ok(ReportSubscription {
@@ -195,21 +201,30 @@ fn map_alert_rule_row(row: &duckdb::Row<'_>) -> Result<AlertRule, duckdb::Error>
         duckdb::Error::FromSqlConversionFailure(
             3,
             duckdb::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
     let condition_type = condition_from_str(&condition_raw).map_err(|e| {
         duckdb::Error::FromSqlConversionFailure(
             4,
             duckdb::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
     let channel = channel_from_str(&channel_raw).map_err(|e| {
         duckdb::Error::FromSqlConversionFailure(
             7,
             duckdb::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
     Ok(AlertRule {
@@ -236,14 +251,20 @@ fn map_notification_delivery_row(
         duckdb::Error::FromSqlConversionFailure(
             1,
             duckdb::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
     let status = status_from_str(&status_raw).map_err(|e| {
         duckdb::Error::FromSqlConversionFailure(
             4,
             duckdb::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
     Ok(NotificationDelivery {
@@ -408,7 +429,8 @@ impl DuckDbBackend {
             ],
         )?;
         drop(conn);
-        self.get_report_subscription(website_id, subscription_id).await
+        self.get_report_subscription(website_id, subscription_id)
+            .await
     }
 
     pub async fn delete_report_subscription(
@@ -516,7 +538,11 @@ impl DuckDbBackend {
         Ok(out)
     }
 
-    pub async fn get_alert_rule(&self, website_id: &str, alert_id: &str) -> Result<Option<AlertRule>> {
+    pub async fn get_alert_rule(
+        &self,
+        website_id: &str,
+        alert_id: &str,
+    ) -> Result<Option<AlertRule>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
             r#"
@@ -795,7 +821,10 @@ impl DuckDbBackend {
             "#,
         )?;
         let mut out = Vec::new();
-        for row in stmt.query_map(duckdb::params![website_id, bounded_limit], map_notification_delivery_row)? {
+        for row in stmt.query_map(
+            duckdb::params![website_id, bounded_limit],
+            map_notification_delivery_row,
+        )? {
             out.push(row?);
         }
         Ok(out)
@@ -803,10 +832,9 @@ impl DuckDbBackend {
 
     pub async fn has_notification_delivery(&self, idempotency_key: &str) -> Result<bool> {
         let conn = self.conn.lock().await;
-        let exists: i64 = conn.prepare(
-            "SELECT COUNT(*) FROM notification_deliveries WHERE idempotency_key = ?1",
-        )?
-        .query_row(duckdb::params![idempotency_key], |row| row.get(0))?;
+        let exists: i64 = conn
+            .prepare("SELECT COUNT(*) FROM notification_deliveries WHERE idempotency_key = ?1")?
+            .query_row(duckdb::params![idempotency_key], |row| row.get(0))?;
         Ok(exists > 0)
     }
 

@@ -172,7 +172,10 @@ impl DuckDbBackend {
         Ok(out)
     }
 
-    pub async fn list_campaign_links_with_stats(&self, website_id: &str) -> Result<Vec<CampaignLink>> {
+    pub async fn list_campaign_links_with_stats(
+        &self,
+        website_id: &str,
+    ) -> Result<Vec<CampaignLink>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
             r#"
@@ -528,12 +531,18 @@ impl DuckDbBackend {
             "#,
         )?;
         let pixel = stmt
-            .query_row(duckdb::params![website_id, pixel_id], map_tracking_pixel_row)
+            .query_row(
+                duckdb::params![website_id, pixel_id],
+                map_tracking_pixel_row,
+            )
             .ok();
         Ok(pixel)
     }
 
-    pub async fn get_tracking_pixel_by_key(&self, pixel_key: &str) -> Result<Option<TrackingPixel>> {
+    pub async fn get_tracking_pixel_by_key(
+        &self,
+        pixel_key: &str,
+    ) -> Result<Option<TrackingPixel>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
             r#"
@@ -665,6 +674,11 @@ mod tests {
             utm_content: None,
             link_id,
             pixel_id,
+            source_ip: None,
+            user_agent: None,
+            is_bot: false,
+            bot_score: 0,
+            bot_reason: None,
             created_at: Utc::now(),
         }
     }
@@ -710,7 +724,9 @@ mod tests {
             Some(link.id.clone()),
             None,
         );
-        db.insert_events(&[click, conversion]).await.expect("insert");
+        db.insert_events(&[click, conversion])
+            .await
+            .expect("insert");
 
         let stats = db
             .get_campaign_link_stats("site_test", &link.id)
@@ -765,7 +781,9 @@ mod tests {
             None,
             Some(pixel.id.clone()),
         );
-        db.insert_events(&[view_one, view_two]).await.expect("insert");
+        db.insert_events(&[view_one, view_two])
+            .await
+            .expect("insert");
 
         let stats = db
             .get_tracking_pixel_stats("site_test", &pixel.id)

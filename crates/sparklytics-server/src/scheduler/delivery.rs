@@ -5,9 +5,8 @@ use std::{
 };
 
 use lettre::{
-    message::Mailbox,
-    transport::smtp::authentication::Credentials,
-    AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    message::Mailbox, transport::smtp::authentication::Credentials, AsyncSmtpTransport,
+    AsyncTransport, Message, Tokio1Executor,
 };
 use serde_json::Value;
 use sparklytics_core::analytics::{
@@ -137,7 +136,10 @@ async fn deliver_webhook(target: String, payload: Value) -> Result<(), String> {
         .await
         .map_err(|e| format!("webhook send failed: {e}"))?;
     if !response.status().is_success() {
-        return Err(format!("webhook responded with status {}", response.status()));
+        return Err(format!(
+            "webhook responded with status {}",
+            response.status()
+        ));
     }
     Ok(())
 }

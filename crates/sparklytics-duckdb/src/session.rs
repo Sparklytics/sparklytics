@@ -88,6 +88,29 @@ pub(crate) async fn increment_session_pageviews_inner(
     Ok(())
 }
 
+pub(crate) async fn set_session_bot_classification_inner(
+    db: &DuckDbBackend,
+    session_id: &str,
+    is_bot: bool,
+    bot_score: i32,
+    bot_reason: Option<&str>,
+) -> Result<()> {
+    let conn = db.conn.lock().await;
+    conn.execute(
+        "UPDATE sessions
+         SET is_bot = CASE WHEN ?2 THEN TRUE ELSE is_bot END,
+             bot_score = GREATEST(bot_score, ?3),
+             bot_reason = CASE
+                 WHEN ?4 IS NULL THEN bot_reason
+                 WHEN ?3 >= bot_score THEN ?4
+                 ELSE bot_reason
+             END
+         WHERE session_id = ?1",
+        duckdb::params![session_id, is_bot, bot_score, bot_reason],
+    )?;
+    Ok(())
+}
+
 /// Compute a deterministic session ID.
 ///
 /// `session_id = sha256(visitor_id + website_id + entry_page + first_seen_ms)[0:16]`

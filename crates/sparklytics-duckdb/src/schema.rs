@@ -81,8 +81,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     first_seen      TIMESTAMP NOT NULL,
     last_seen       TIMESTAMP NOT NULL,
     pageview_count  INTEGER NOT NULL DEFAULT 1,    -- Incremented on upsert
-    entry_page      VARCHAR NOT NULL
+    entry_page      VARCHAR NOT NULL,
+    is_bot          BOOLEAN NOT NULL DEFAULT FALSE,
+    bot_score       INTEGER NOT NULL DEFAULT 0,
+    bot_reason      VARCHAR
 );
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT FALSE;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS bot_score INTEGER DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS bot_reason VARCHAR;
 -- Optimised for "active visitors in last N minutes" query (realtime endpoint)
 CREATE INDEX IF NOT EXISTS idx_sessions_website_visitor
     ON sessions(website_id, visitor_id, last_seen DESC);
@@ -95,6 +101,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_website_last_seen
 -- Optimized for retention cohorts (visitor first-seen lookup)
 CREATE INDEX IF NOT EXISTS idx_sessions_website_visitor_first
     ON sessions(website_id, visitor_id, first_seen ASC);
+CREATE INDEX IF NOT EXISTS idx_sessions_bot_time
+    ON sessions(website_id, is_bot, last_seen DESC);
 
 -- ===========================================
 -- EVENTS (main analytics table)
@@ -139,6 +147,11 @@ CREATE TABLE IF NOT EXISTS events (
     utm_content     VARCHAR,
     link_id         VARCHAR,                       -- Sprint 19 campaign link attribution key
     pixel_id        VARCHAR,                       -- Sprint 19 tracking pixel attribution key
+    source_ip       VARCHAR,                       -- Collect request source IP
+    user_agent      VARCHAR,                       -- Raw user-agent from collect request
+    is_bot          BOOLEAN NOT NULL DEFAULT FALSE,
+    bot_score       INTEGER NOT NULL DEFAULT 0,
+    bot_reason      VARCHAR,
 
     -- Timestamp
     created_at      TIMESTAMP NOT NULL
@@ -150,6 +163,11 @@ CREATE TABLE IF NOT EXISTS events (
 );
 ALTER TABLE events ADD COLUMN IF NOT EXISTS link_id VARCHAR;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS pixel_id VARCHAR;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS source_ip VARCHAR;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS user_agent VARCHAR;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT FALSE;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS bot_score INTEGER DEFAULT 0;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS bot_reason VARCHAR;
 
 -- Primary query pattern: website + date range
 CREATE INDEX IF NOT EXISTS idx_events_website_time
@@ -189,6 +207,8 @@ CREATE INDEX IF NOT EXISTS idx_events_link_id_time
     ON events(website_id, event_name, link_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_pixel_id_time
     ON events(website_id, event_name, pixel_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_bot_time
+    ON events(website_id, is_bot, created_at DESC);
 
 -- ===========================================
 -- GOALS (self-hosted conversions)
@@ -280,6 +300,65 @@ CREATE TABLE IF NOT EXISTS notification_deliveries (
 );
 CREATE INDEX IF NOT EXISTS idx_notification_deliveries_source
     ON notification_deliveries(source_type, source_id, delivered_at DESC);
+
+-- ===========================================
+-- BOT CONTROLS (Sprints 21-22)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS bot_policies (
+    website_id        VARCHAR PRIMARY KEY,
+    mode              VARCHAR NOT NULL DEFAULT 'balanced', -- strict|balanced|off
+    threshold_score   INTEGER NOT NULL DEFAULT 70,
+    updated_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bot_allowlist (
+    id                VARCHAR PRIMARY KEY,
+    website_id        VARCHAR NOT NULL,
+    match_type        VARCHAR NOT NULL, -- ua_contains|ip_exact|ip_cidr
+    match_value       VARCHAR NOT NULL,
+    note              VARCHAR,
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bot_allowlist_unique_match UNIQUE (website_id, match_type, match_value)
+);
+CREATE INDEX IF NOT EXISTS idx_bot_allowlist_website_created
+    ON bot_allowlist(website_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS bot_blocklist (
+    id                VARCHAR PRIMARY KEY,
+    website_id        VARCHAR NOT NULL,
+    match_type        VARCHAR NOT NULL, -- ua_contains|ip_exact|ip_cidr
+    match_value       VARCHAR NOT NULL,
+    note              VARCHAR,
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bot_blocklist_unique_match UNIQUE (website_id, match_type, match_value)
+);
+CREATE INDEX IF NOT EXISTS idx_bot_blocklist_website_created
+    ON bot_blocklist(website_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS bot_policy_audit (
+    id                VARCHAR PRIMARY KEY,
+    website_id        VARCHAR NOT NULL,
+    actor             VARCHAR NOT NULL,
+    action            VARCHAR NOT NULL, -- policy_update|allow_add|allow_remove|block_add|block_remove
+    payload           VARCHAR NOT NULL,
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_bot_policy_audit_website_created
+    ON bot_policy_audit(website_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS bot_recompute_runs (
+    id                VARCHAR PRIMARY KEY,
+    website_id        VARCHAR NOT NULL,
+    start_date        TIMESTAMP NOT NULL,
+    end_date          TIMESTAMP NOT NULL,
+    status            VARCHAR NOT NULL, -- queued|running|success|failed
+    started_at        TIMESTAMP,
+    completed_at      TIMESTAMP,
+    error_message     VARCHAR,
+    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_bot_recompute_runs_website_created
+    ON bot_recompute_runs(website_id, created_at DESC, id DESC);
 
 -- ===========================================
 -- ACQUISITION (Sprint 19)

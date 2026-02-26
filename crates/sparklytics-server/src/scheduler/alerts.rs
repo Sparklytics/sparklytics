@@ -80,7 +80,12 @@ pub async fn run_alert_checks(state: &Arc<AppState>) -> anyhow::Result<usize> {
                     AlertConditionType::Drop => z <= -rule.threshold_value,
                     _ => false,
                 };
-                (triggered, Some(baseline_mean), Some(baseline_stddev), Some(z))
+                (
+                    triggered,
+                    Some(baseline_mean),
+                    Some(baseline_stddev),
+                    Some(z),
+                )
             }
         };
 
@@ -202,10 +207,12 @@ mod tests {
             utm_content: None,
             link_id: None,
             pixel_id: None,
-            created_at: day
-                .and_hms_opt(12, 0, 0)
-                .expect("valid noon")
-                .and_utc()
+            source_ip: None,
+            user_agent: None,
+            is_bot: false,
+            bot_score: 0,
+            bot_reason: None,
+            created_at: day.and_hms_opt(12, 0, 0).expect("valid noon").and_utc()
                 + Duration::milliseconds(idx),
         }
     }
@@ -220,7 +227,11 @@ mod tests {
         for idx in 0..count {
             events.push(make_pageview(website_id, day, idx));
         }
-        state.db.insert_events(&events).await.expect("insert events");
+        state
+            .db
+            .insert_events(&events)
+            .await
+            .expect("insert events");
     }
 
     #[tokio::test]

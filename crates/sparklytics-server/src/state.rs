@@ -253,10 +253,8 @@ impl AppState {
         // Default to a dedicated scheduler connection in normal builds to reduce
         // contention with ingest/query traffic. Tests default to shared DB for
         // deterministic visibility unless explicitly overridden.
-        let scheduler_db = if Self::env_bool(
-            "SPARKLYTICS_SCHEDULER_DEDICATED_DUCKDB",
-            !cfg!(test),
-        ) {
+        let scheduler_db = if Self::env_bool("SPARKLYTICS_SCHEDULER_DEDICATED_DUCKDB", !cfg!(test))
+        {
             match DuckDbBackend::open(&db_path, &config.duckdb_memory_limit) {
                 Ok(backend) => Arc::new(backend),
                 Err(err) => {
@@ -643,6 +641,9 @@ impl AppState {
             base_count_already_recorded: bool,
             website_id: String,
             visitor_id: String,
+            is_bot: bool,
+            bot_score: i32,
+            bot_reason: Option<String>,
         }
 
         let mut session_cache: HashMap<(String, String), SessionAccumulator> = HashMap::new();
@@ -658,6 +659,11 @@ impl AppState {
                 if event.created_at > existing.last_seen_at {
                     existing.last_seen_at = event.created_at;
                 }
+                if event.bot_score >= existing.bot_score {
+                    existing.bot_score = event.bot_score;
+                    existing.bot_reason = event.bot_reason.clone();
+                }
+                existing.is_bot = existing.is_bot || event.is_bot;
                 event.session_id = existing.session_id.clone();
                 continue;
             }
@@ -688,6 +694,9 @@ impl AppState {
                     base_count_already_recorded,
                     website_id: event.website_id.clone(),
                     visitor_id: event.visitor_id.clone(),
+                    is_bot: event.is_bot,
+                    bot_score: event.bot_score,
+                    bot_reason: event.bot_reason.clone(),
                 },
             );
             event.session_id = session_id;
@@ -709,6 +718,14 @@ impl AppState {
                     )
                     .await?;
             }
+            self.db
+                .set_session_bot_classification(
+                    &entry.session_id,
+                    entry.is_bot,
+                    entry.bot_score,
+                    entry.bot_reason.as_deref(),
+                )
+                .await?;
 
             self.put_cached_session(
                 entry.website_id,
@@ -725,6 +742,15 @@ impl AppState {
     /// Check whether `ip` is within the 60 req/min rate limit.
     pub async fn check_rate_limit(&self, ip: &str) -> bool {
         self.check_rate_limit_with_max(ip, 60).await
+    }
+
+    /// Returns the default query behavior for `include_bots`.
+    /// When bot policy mode is `off`, queries include bot traffic by default.
+    pub async fn default_include_bots(&self, website_id: &str) -> bool {
+        self.db
+            .effective_include_bots_default(website_id)
+            .await
+            .unwrap_or(false)
     }
 
     /// Check whether `ip` is within the given `max_per_min` rate limit.

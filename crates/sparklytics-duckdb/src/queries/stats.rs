@@ -3,6 +3,7 @@ use chrono::NaiveDate;
 
 use sparklytics_core::analytics::{AnalyticsFilter, ComparisonRange, StatsResult};
 
+use crate::queries::bot_filters::{append_event_bot_filter, append_session_bot_filter};
 use crate::DuckDbBackend;
 
 #[derive(Debug, Clone)]
@@ -23,6 +24,7 @@ pub struct StatsParams {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: bool,
     pub comparison: Option<ComparisonRange>,
 }
 
@@ -49,6 +51,7 @@ impl StatsParams {
             filter_region: filter.filter_region.clone(),
             filter_city: filter.filter_city.clone(),
             filter_hostname: filter.filter_hostname.clone(),
+            include_bots: filter.include_bots,
             comparison: comparison.cloned(),
         }
     }
@@ -140,6 +143,7 @@ fn query_stats_for_ranges(
         Box::new(prev_end_str),
     ];
     let mut param_idx = 6;
+    append_event_bot_filter(&mut filter_sql, params.include_bots, "e.");
 
     if let Some(ref country) = params.filter_country {
         filter_sql.push_str(&format!(" AND e.country = ?{}", param_idx));
@@ -208,6 +212,8 @@ fn query_stats_for_ranges(
         ));
         filter_params.push(Box::new(hostname.clone()));
     }
+    let mut session_filter_sql = String::new();
+    append_session_bot_filter(&mut session_filter_sql, params.include_bots, "s.");
 
     let sql = format!(
         r#"
@@ -253,6 +259,8 @@ fn query_stats_for_ranges(
             FROM session_ids sid
             JOIN sessions s
               ON s.session_id = sid.session_id
+            WHERE 1 = 1
+              {session_filter_sql}
             GROUP BY sid.period_name
         ),
         all_stats AS (

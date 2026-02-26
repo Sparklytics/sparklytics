@@ -273,10 +273,7 @@ pub async fn track_link_redirect(
     maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let client_ip = collect::extract_client_ip(
-        &headers,
-        maybe_connect_info.0,
-    );
+    let client_ip = collect::extract_client_ip(&headers, maybe_connect_info.0);
     if !state.check_rate_limit_with_max(&client_ip, 120).await {
         return Err(AppError::RateLimited);
     }
@@ -368,6 +365,11 @@ pub async fn track_link_redirect(
         utm_content: link.utm_content,
         link_id: Some(link.id),
         pixel_id: None,
+        source_ip: Some(client_ip),
+        user_agent: Some(user_agent),
+        is_bot: false,
+        bot_score: 0,
+        bot_reason: None,
         created_at: Utc::now(),
     };
     state.enqueue_ingest_events(vec![event]).await?;

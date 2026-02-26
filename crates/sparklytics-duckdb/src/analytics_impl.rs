@@ -8,13 +8,13 @@ use sparklytics_core::analytics::{
     AlertConditionType, AlertEvaluationResult, AnalyticsBackend, AnalyticsFilter, AttributionQuery,
     AttributionResponse, CampaignLink, ComparisonRange, CreateCampaignLinkRequest,
     CreateFunnelRequest, CreateGoalRequest, CreateReportRequest, CreateTrackingPixelRequest,
-    EventNamesResult, EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary,
-    Goal, GoalStats, JourneyQuery, JourneyResponse, LinkStatsResponse, MetricRow, MetricsPage,
+    EventNamesResult, EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal,
+    GoalStats, JourneyQuery, JourneyResponse, LinkStatsResponse, MetricRow, MetricsPage,
     PixelStatsResponse, RealtimeEvent, RealtimePagination, RealtimeResult, ReportPayload,
-    ReportType, RetentionQuery, RetentionResponse, RevenueSummary, SavedReport,
-    SavedReportSummary, SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult,
-    TimeseriesResult, TrackingPixel, UpdateCampaignLinkRequest, UpdateFunnelRequest,
-    UpdateGoalRequest, UpdateReportRequest, UpdateTrackingPixelRequest,
+    ReportType, RetentionQuery, RetentionResponse, RevenueSummary, SavedReport, SavedReportSummary,
+    SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult, TimeseriesResult,
+    TrackingPixel, UpdateCampaignLinkRequest, UpdateFunnelRequest, UpdateGoalRequest,
+    UpdateReportRequest, UpdateTrackingPixelRequest,
 };
 use sparklytics_core::event::Event;
 
@@ -135,8 +135,10 @@ impl AnalyticsBackend for DuckDbBackend {
         &self,
         website_id: &str,
         _tenant_id: Option<&str>,
+        include_bots: bool,
     ) -> anyhow::Result<RealtimeResult> {
-        let r = crate::queries::realtime::get_realtime_inner(self, website_id).await?;
+        let r =
+            crate::queries::realtime::get_realtime_inner(self, website_id, include_bots).await?;
         Ok(RealtimeResult {
             active_visitors: r.active_visitors,
             recent_events: r
@@ -360,7 +362,12 @@ impl AnalyticsBackend for DuckDbBackend {
                         AlertConditionType::Drop => z <= -rule.threshold_value,
                         _ => false,
                     };
-                    (triggered, Some(baseline_mean), Some(baseline_stddev), Some(z))
+                    (
+                        triggered,
+                        Some(baseline_mean),
+                        Some(baseline_stddev),
+                        Some(z),
+                    )
                 }
             };
 
@@ -402,13 +409,18 @@ impl AnalyticsBackend for DuckDbBackend {
                 .await?,
             )?,
             ReportType::Metrics => {
-                let metric_type = report
-                    .config
-                    .metric_type
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("metric_type is required for metrics reports"))?;
+                let metric_type = report.config.metric_type.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("metric_type is required for metrics reports")
+                })?;
                 let page = <DuckDbBackend as AnalyticsBackend>::get_metrics(
-                    self, website_id, tenant_id, metric_type, 25, 0, filter, None,
+                    self,
+                    website_id,
+                    tenant_id,
+                    metric_type,
+                    25,
+                    0,
+                    filter,
+                    None,
                 )
                 .await?;
                 json!({

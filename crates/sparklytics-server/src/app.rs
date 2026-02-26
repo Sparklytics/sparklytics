@@ -286,6 +286,46 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::retention::get_retention),
                 )
                 .route(
+                    "/api/websites/{id}/bot-summary",
+                    get(routes::bot::get_bot_summary),
+                )
+                .route(
+                    "/api/websites/{id}/bot/policy",
+                    get(routes::bot::get_bot_policy).put(routes::bot::put_bot_policy),
+                )
+                .route(
+                    "/api/websites/{id}/bot/allowlist",
+                    get(routes::bot::list_bot_allowlist).post(routes::bot::create_bot_allowlist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/allowlist/{entry_id}",
+                    axum::routing::delete(routes::bot::delete_bot_allowlist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/blocklist",
+                    get(routes::bot::list_bot_blocklist).post(routes::bot::create_bot_blocklist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/blocklist/{entry_id}",
+                    axum::routing::delete(routes::bot::delete_bot_blocklist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/report",
+                    get(routes::bot::get_bot_report),
+                )
+                .route(
+                    "/api/websites/{id}/bot/recompute",
+                    post(routes::bot::post_bot_recompute),
+                )
+                .route(
+                    "/api/websites/{id}/bot/recompute/{job_id}",
+                    get(routes::bot::get_bot_recompute),
+                )
+                .route(
+                    "/api/websites/{id}/bot/audit",
+                    get(routes::bot::list_bot_audit),
+                )
+                .route(
                     "/api/websites/{id}/reports",
                     get(routes::reports::list_reports).post(routes::reports::create_report),
                 )
@@ -319,7 +359,8 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 )
                 .route(
                     "/api/websites/{id}/alerts",
-                    get(routes::notifications::list_alerts).post(routes::notifications::create_alert),
+                    get(routes::notifications::list_alerts)
+                        .post(routes::notifications::create_alert),
                 )
                 .route(
                     "/api/websites/{id}/alerts/{alert_id}",
@@ -466,6 +507,46 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::retention::get_retention),
                 )
                 .route(
+                    "/api/websites/{id}/bot-summary",
+                    get(routes::bot::get_bot_summary),
+                )
+                .route(
+                    "/api/websites/{id}/bot/policy",
+                    get(routes::bot::get_bot_policy).put(routes::bot::put_bot_policy),
+                )
+                .route(
+                    "/api/websites/{id}/bot/allowlist",
+                    get(routes::bot::list_bot_allowlist).post(routes::bot::create_bot_allowlist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/allowlist/{entry_id}",
+                    axum::routing::delete(routes::bot::delete_bot_allowlist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/blocklist",
+                    get(routes::bot::list_bot_blocklist).post(routes::bot::create_bot_blocklist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/blocklist/{entry_id}",
+                    axum::routing::delete(routes::bot::delete_bot_blocklist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/report",
+                    get(routes::bot::get_bot_report),
+                )
+                .route(
+                    "/api/websites/{id}/bot/recompute",
+                    post(routes::bot::post_bot_recompute),
+                )
+                .route(
+                    "/api/websites/{id}/bot/recompute/{job_id}",
+                    get(routes::bot::get_bot_recompute),
+                )
+                .route(
+                    "/api/websites/{id}/bot/audit",
+                    get(routes::bot::list_bot_audit),
+                )
+                .route(
                     "/api/websites/{id}/reports",
                     get(routes::reports::list_reports).post(routes::reports::create_report),
                 )
@@ -499,7 +580,8 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 )
                 .route(
                     "/api/websites/{id}/alerts",
-                    get(routes::notifications::list_alerts).post(routes::notifications::create_alert),
+                    get(routes::notifications::list_alerts)
+                        .post(routes::notifications::create_alert),
                 )
                 .route(
                     "/api/websites/{id}/alerts/{alert_id}",

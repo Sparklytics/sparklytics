@@ -7,6 +7,7 @@ use sparklytics_core::analytics::{
     SessionsResponse,
 };
 
+use crate::queries::bot_filters::{append_event_bot_filter, append_session_bot_filter};
 use crate::DuckDbBackend;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,6 +38,7 @@ fn append_event_filters(
     params: &mut Vec<Box<dyn duckdb::types::ToSql>>,
     param_idx: &mut usize,
 ) {
+    append_event_bot_filter(filter_sql, filter.include_bots, "e.");
     if let Some(ref country) = filter.filter_country {
         filter_sql.push_str(&format!(" AND e.country = ?{}", *param_idx));
         params.push(Box::new(country.clone()));
@@ -138,6 +140,8 @@ pub async fn get_sessions_inner(
     ];
     let mut param_idx = 4;
     append_event_filters(filter, &mut filter_sql, &mut params, &mut param_idx);
+    let mut session_filter_sql = String::new();
+    append_session_bot_filter(&mut session_filter_sql, filter.include_bots, "s.");
 
     let mut cursor_clause = String::new();
     if let Some(ref raw_cursor) = query.cursor {
@@ -201,6 +205,7 @@ pub async fn get_sessions_inner(
             JOIN matching_sessions ms ON ms.session_id = s.session_id
             LEFT JOIN session_events se ON se.session_id = s.session_id
             WHERE s.website_id = ?1
+              {session_filter_sql}
             GROUP BY
                 s.session_id,
                 s.visitor_id,

@@ -117,7 +117,9 @@ async fn create_link_and_track_redirect_records_event() {
         .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1 AND event_name = 'link_click'")
         .expect("prepare");
     let count: i64 = stmt
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("count");
     assert_eq!(count, 1);
 
@@ -126,12 +128,15 @@ async fn create_link_and_track_redirect_records_event() {
             "SELECT link_id, utm_source, event_name FROM events WHERE website_id = ?1 AND event_name = 'link_click' LIMIT 1",
         )
         .expect("prepare event");
-    let (stored_link_id, stored_utm_source, stored_event_name): (Option<String>, Option<String>, Option<String>) =
-        event_stmt
-            .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
-            .expect("event row");
+    let (stored_link_id, stored_utm_source, stored_event_name): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = event_stmt
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .expect("event row");
     assert!(stored_link_id.is_some());
     assert_eq!(stored_utm_source.as_deref(), Some("newsletter"));
     assert_eq!(stored_event_name.as_deref(), Some("link_click"));
@@ -221,9 +226,7 @@ async fn pixel_endpoint_returns_gif_and_records_event() {
         .expect("create pixel");
     assert_eq!(create_response.status(), StatusCode::CREATED);
     let created = json_body(create_response).await;
-    let pixel_key = created["data"]["pixel_key"]
-        .as_str()
-        .expect("pixel key");
+    let pixel_key = created["data"]["pixel_key"].as_str().expect("pixel key");
 
     let pixel_response = app
         .clone()
@@ -259,7 +262,9 @@ async fn pixel_endpoint_returns_gif_and_records_event() {
         .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1 AND event_name = 'pixel_view'")
         .expect("prepare");
     let count: i64 = stmt
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("count");
     assert_eq!(count, 1);
 
@@ -319,7 +324,9 @@ async fn inactive_link_returns_not_found_without_recording_event() {
     let count: i64 = conn
         .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1 AND event_name = 'link_click'")
         .expect("prepare")
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("count");
     assert_eq!(count, 0);
 }
@@ -366,7 +373,9 @@ async fn inactive_pixel_returns_not_found_without_recording_event() {
     let count: i64 = conn
         .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1 AND event_name = 'pixel_view'")
         .expect("prepare")
-        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| row.get(0))
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
         .expect("count");
     assert_eq!(count, 0);
 }
@@ -523,25 +532,29 @@ async fn acquisition_management_crud_endpoints_work() {
 
     let delete_link = app
         .clone()
-        .oneshot(Request::builder()
-            .method("DELETE")
-            .uri(format!("/api/websites/site_test/links/{link_id}"))
-            .header("x-forwarded-for", "198.51.100.10")
-            .header("user-agent", "Mozilla/5.0 Chrome/120")
-            .body(Body::empty())
-            .expect("delete link request"))
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/websites/site_test/links/{link_id}"))
+                .header("x-forwarded-for", "198.51.100.10")
+                .header("user-agent", "Mozilla/5.0 Chrome/120")
+                .body(Body::empty())
+                .expect("delete link request"),
+        )
         .await
         .expect("delete link");
     assert_eq!(delete_link.status(), StatusCode::NO_CONTENT);
 
     let delete_pixel = app
-        .oneshot(Request::builder()
-            .method("DELETE")
-            .uri(format!("/api/websites/site_test/pixels/{pixel_id}"))
-            .header("x-forwarded-for", "198.51.100.10")
-            .header("user-agent", "Mozilla/5.0 Chrome/120")
-            .body(Body::empty())
-            .expect("delete pixel request"))
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/websites/site_test/pixels/{pixel_id}"))
+                .header("x-forwarded-for", "198.51.100.10")
+                .header("user-agent", "Mozilla/5.0 Chrome/120")
+                .body(Body::empty())
+                .expect("delete pixel request"),
+        )
         .await
         .expect("delete pixel");
     assert_eq!(delete_pixel.status(), StatusCode::NO_CONTENT);

@@ -4,6 +4,7 @@ use sparklytics_core::analytics::{
     AnalyticsFilter, ComparisonRange, MetricRow, MetricsPage, VALID_METRIC_TYPES,
 };
 
+use crate::queries::bot_filters::append_event_bot_filter;
 use crate::DuckDbBackend;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -66,6 +67,7 @@ pub async fn get_metrics_inner(
     }
 
     let mut extra_filter = String::new();
+    append_event_bot_filter(&mut extra_filter, filter.include_bots, "e.");
     if let Some(ref country) = filter.filter_country {
         extra_filter.push_str(&format!(" AND e.country = ?{}", idx));
         params.push(Box::new(country.clone()));

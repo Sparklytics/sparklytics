@@ -33,6 +33,7 @@ pub struct AttributionRequestQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: Option<bool>,
 }
 
 fn parse_date_range(
@@ -86,6 +87,7 @@ fn parse_model(raw: Option<&str>) -> Result<AttributionModel, AppError> {
 
 fn build_filter(
     query: AttributionRequestQuery,
+    default_include_bots: bool,
 ) -> Result<(AnalyticsFilter, AttributionQuery), AppError> {
     let normalized_timezone = query
         .timezone
@@ -122,6 +124,7 @@ fn build_filter(
         filter_region: query.filter_region,
         filter_city: query.filter_city,
         filter_hostname: query.filter_hostname,
+        include_bots: query.include_bots.unwrap_or(default_include_bots),
     };
 
     let attribution = AttributionQuery {
@@ -141,7 +144,8 @@ pub async fn get_attribution(
         return Err(AppError::NotFound("Website not found".to_string()));
     }
 
-    let (filter, attribution_query) = build_filter(query)?;
+    let default_include_bots = state.default_include_bots(&website_id).await;
+    let (filter, attribution_query) = build_filter(query, default_include_bots)?;
 
     let data = state
         .analytics
@@ -167,7 +171,8 @@ pub async fn get_revenue_summary(
         return Err(AppError::NotFound("Website not found".to_string()));
     }
 
-    let (filter, attribution_query) = build_filter(query)?;
+    let default_include_bots = state.default_include_bots(&website_id).await;
+    let (filter, attribution_query) = build_filter(query, default_include_bots)?;
 
     let data = state
         .analytics

@@ -35,8 +35,7 @@ fn normalize_domain(raw: &str) -> Result<String, AppError> {
         return Ok(domain);
     }
 
-    url::Host::parse(&domain)
-        .map_err(|_| AppError::BadRequest("domain is invalid".to_string()))?;
+    url::Host::parse(&domain).map_err(|_| AppError::BadRequest("domain is invalid".to_string()))?;
     if psl::domain(domain.as_bytes()).is_none() {
         return Err(AppError::BadRequest(
             "domain must be a registrable hostname (not a public suffix)".to_string(),

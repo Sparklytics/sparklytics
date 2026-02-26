@@ -62,7 +62,7 @@ fn parse_dates(start: Option<&str>, end: Option<&str>) -> (NaiveDate, NaiveDate)
     (s, e)
 }
 
-fn share_filter(start_date: NaiveDate, end_date: NaiveDate) -> AnalyticsFilter {
+fn share_filter(start_date: NaiveDate, end_date: NaiveDate, include_bots: bool) -> AnalyticsFilter {
     AnalyticsFilter {
         start_date,
         end_date,
@@ -80,6 +80,7 @@ fn share_filter(start_date: NaiveDate, end_date: NaiveDate) -> AnalyticsFilter {
         filter_region: None,
         filter_city: None,
         filter_hostname: None,
+        include_bots,
     }
 }
 
@@ -123,7 +124,8 @@ pub async fn share_stats(
 ) -> Result<impl IntoResponse, AppError> {
     let website_id = resolve_share(&state, &share_id, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
-    let filter = share_filter(start_date, end_date);
+    let include_bots = state.default_include_bots(&website_id).await;
+    let filter = share_filter(start_date, end_date, include_bots);
 
     let result = state
         .analytics
@@ -144,7 +146,8 @@ pub async fn share_pageviews(
 ) -> Result<impl IntoResponse, AppError> {
     let website_id = resolve_share(&state, &share_id, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
-    let filter = share_filter(start_date, end_date);
+    let include_bots = state.default_include_bots(&website_id).await;
+    let filter = share_filter(start_date, end_date, include_bots);
 
     let result = state
         .analytics
@@ -173,7 +176,8 @@ pub async fn share_overview(
 ) -> Result<impl IntoResponse, AppError> {
     let website_id = resolve_share(&state, &share_id, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
-    let filter = share_filter(start_date, end_date);
+    let include_bots = state.default_include_bots(&website_id).await;
+    let filter = share_filter(start_date, end_date, include_bots);
 
     let stats = state
         .analytics
@@ -277,7 +281,8 @@ pub async fn share_metrics(
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
     let limit = q.limit.unwrap_or(10).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).max(0);
-    let filter = share_filter(start_date, end_date);
+    let include_bots = state.default_include_bots(&website_id).await;
+    let filter = share_filter(start_date, end_date, include_bots);
 
     let page = state
         .analytics

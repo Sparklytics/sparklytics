@@ -6,10 +6,7 @@ use sparklytics_core::analytics::{
     AnalyticsBackend, NotificationDeliveryStatus, NotificationSourceType,
 };
 
-use crate::{
-    routes::reports::execute_report_config_with_backend,
-    state::AppState,
-};
+use crate::{routes::reports::execute_report_config_with_backend, state::AppState};
 
 use super::delivery::deliver_and_record;
 

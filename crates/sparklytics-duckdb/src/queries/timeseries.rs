@@ -7,6 +7,7 @@ use sparklytics_core::analytics::{
     AnalyticsFilter, ComparisonRange, TimeseriesPoint, TimeseriesResult,
 };
 
+use crate::queries::bot_filters::append_event_bot_filter;
 use crate::DuckDbBackend;
 
 /// Auto-granularity: ≤2 days -> hour, 3-60 -> day, >60 -> month.
@@ -158,6 +159,7 @@ fn query_period_buckets(
         ));
         param_idx = 6;
     }
+    append_event_bot_filter(&mut filter_sql, filter.include_bots, "e.");
 
     if let Some(ref country) = filter.filter_country {
         filter_sql.push_str(&format!(" AND e.country = ?{}", param_idx));

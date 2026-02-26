@@ -2,6 +2,7 @@ pub mod acquisition;
 pub mod analytics_impl;
 pub mod auth;
 pub mod backend;
+pub mod bot;
 pub mod notifications;
 pub mod queries;
 pub mod schema;

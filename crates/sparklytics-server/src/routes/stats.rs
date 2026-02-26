@@ -35,6 +35,7 @@ pub struct StatsQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: Option<bool>,
     pub compare_mode: Option<String>,
     pub compare_start_date: Option<String>,
     pub compare_end_date: Option<String>,
@@ -69,6 +70,9 @@ pub async fn get_stats(
         .as_deref()
         .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
         .unwrap_or(today);
+    let include_bots = query
+        .include_bots
+        .unwrap_or(state.default_include_bots(&website_id).await);
 
     let filter = AnalyticsFilter {
         start_date,
@@ -87,6 +91,7 @@ pub async fn get_stats(
         filter_region: query.filter_region,
         filter_city: query.filter_city,
         filter_hostname: query.filter_hostname,
+        include_bots,
     };
 
     let compare = resolve_compare_range(

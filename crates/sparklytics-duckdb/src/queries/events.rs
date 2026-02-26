@@ -8,6 +8,7 @@ use sparklytics_core::analytics::{
     TimeseriesPoint, TimeseriesResult,
 };
 
+use crate::queries::bot_filters::append_event_bot_filter;
 use crate::DuckDbBackend;
 
 use super::timeseries::auto_granularity;
@@ -23,6 +24,7 @@ fn append_dimension_filters(
     params: &mut Vec<Box<dyn duckdb::types::ToSql>>,
     param_idx: &mut usize,
 ) {
+    append_event_bot_filter(filter_sql, filter.include_bots, column_prefix);
     if let Some(ref country) = filter.filter_country {
         filter_sql.push_str(&format!(" AND {column_prefix}country = ?{}", *param_idx));
         params.push(Box::new(country.clone()));

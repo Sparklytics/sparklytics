@@ -16,10 +16,8 @@ use sparklytics_core::analytics::{
 };
 
 use crate::{
-    error::AppError,
-    routes::reports::execute_report_config,
-    scheduler::delivery::deliver_and_record,
-    state::AppState,
+    error::AppError, routes::reports::execute_report_config,
+    scheduler::delivery::deliver_and_record, state::AppState,
 };
 
 fn validate_timezone(timezone: &str) -> Result<(), AppError> {

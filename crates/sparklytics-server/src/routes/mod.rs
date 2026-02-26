@@ -1,4 +1,5 @@
 pub mod attribution;
+pub mod bot;
 pub mod collect;
 pub mod compare;
 pub mod events;
