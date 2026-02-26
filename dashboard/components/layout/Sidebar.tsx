@@ -24,6 +24,7 @@ import {
   DollarSign,
   Link2,
   Image,
+  Bot,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -89,6 +90,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
     { label: 'Snippet', path: `/dashboard/${websiteId}/settings/snippet`, icon: Code },
     { label: 'Sharing', path: `/dashboard/${websiteId}/settings/sharing`, icon: Share2 },
     { label: 'Notifications', path: `/dashboard/${websiteId}/settings/notifications`, icon: Bell },
+    { label: 'Bots', path: `/dashboard/${websiteId}/settings/bots`, icon: Bot },
     { label: 'Danger Zone', path: `/dashboard/${websiteId}/settings/danger`, icon: AlertTriangle },
   ];
   if (showApiKeys) {

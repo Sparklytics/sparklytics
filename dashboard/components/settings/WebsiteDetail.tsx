@@ -7,6 +7,7 @@ import { TrackingSnippet } from '@/components/settings/TrackingSnippet';
 import { SharingToggle } from '@/components/settings/SharingToggle';
 import { ApiKeysSection } from '@/components/settings/ApiKeysSection';
 import { ChangePasswordSection } from '@/components/settings/ChangePasswordSection';
+import { BotsSettingsPage } from '@/components/settings/BotsSettingsPage';
 import { NotificationsSettingsPage } from '@/components/notifications/NotificationsSettingsPage';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useWebsite, useUpdateWebsite, useDeleteWebsite } from '@/hooks/useWebsites';
@@ -160,6 +161,12 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
       {subSubPage === 'notifications' && (
         <section className="bg-surface-1 border border-line rounded-lg p-6">
           <NotificationsSettingsPage websiteId={websiteId} />
+        </section>
+      )}
+
+      {subSubPage === 'bots' && (
+        <section className="bg-surface-1 border border-line rounded-lg p-6">
+          <BotsSettingsPage websiteId={websiteId} />
         </section>
       )}
 
