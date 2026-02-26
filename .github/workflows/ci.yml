@@ -77,7 +77,7 @@ jobs:
           fi
 
   docker:
-    name: Docker — multi-arch build (amd64 + arm64)
+    name: Docker — amd64 build (no push)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

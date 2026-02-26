@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build: compile for the target platform, then copy into distroless.
-FROM rust:slim AS builder
+# Pin builder image for reproducible builds across CI runners.
+FROM rust:slim@sha256:7e6fa79cf81be23fd45d857f75f583d80cfdbb11c91fa06180fd747fda37a61d AS builder
 
 # Build dependencies: C/C++ toolchain + Node for dashboard build + curl for DB-IP.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,24 +37,22 @@ RUN set -eux; \
     npm run build
 
 # Download DB-IP City Lite (free, CC BY 4.0 — no license key required).
-# Falls back to the previous month if this month's file isn't published yet.
+# Use a pinned release and verify SHA-1 before extraction.
 # Attribution: This product includes IP geolocation data by DB-IP.com (https://db-ip.com)
 WORKDIR /tmp
-RUN YEAR=$(date +%Y) && MONTH=$(date +%m) && \
-    PREV_MONTH=$(date -d "-1 month" +%m 2>/dev/null || \
-                 python3 -c "import datetime; d=datetime.date.today().replace(day=1)-datetime.timedelta(days=1); print(d.strftime('%m'))") && \
-    PREV_YEAR=$(date -d "-1 month" +%Y 2>/dev/null || \
-                python3 -c "import datetime; d=datetime.date.today().replace(day=1)-datetime.timedelta(days=1); print(d.strftime('%Y'))") && \
-    BASE="https://download.db-ip.com/free" && \
-    ( curl -fsSL "${BASE}/dbip-city-lite-${YEAR}-${MONTH}.mmdb.gz" -o dbip.mmdb.gz || \
-      curl -fsSL "${BASE}/dbip-city-lite-${PREV_YEAR}-${PREV_MONTH}.mmdb.gz" -o dbip.mmdb.gz ) && \
-    gunzip dbip.mmdb.gz && \
+RUN set -eux; \
+    BASE="https://download.db-ip.com/free"; \
+    DBIP_RELEASE="2026-02"; \
+    DBIP_SHA1="1fe5f099aef83821b24ae512481b849476e87718"; \
+    curl -fsSL "${BASE}/dbip-city-lite-${DBIP_RELEASE}.mmdb.gz" -o dbip.mmdb.gz; \
+    echo "${DBIP_SHA1}  dbip.mmdb.gz" | sha1sum -c -; \
+    gunzip dbip.mmdb.gz; \
     mv dbip.mmdb /dbip-city-lite.mmdb
 
 # ─── Runtime stage ────────────────────────────────────────────
 # distroless/cc-debian12:nonroot ships glibc + /etc/passwd + /etc/ssl/certs.
 # uid 65532 / username "nonroot" — satisfies Docker best practices.
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:7e5b8df2f4d36f5599ef4ab856d7d444922531709becb03f3368c6d797d0a5eb
 
 COPY --from=builder /sparklytics /sparklytics
 COPY --from=builder /app/dashboard/out /dashboard/out
@@ -64,13 +63,12 @@ COPY --from=builder /dbip-city-lite.mmdb /geoip/dbip-city-lite.mmdb
 ENV SPARKLYTICS_DATA_DIR=/data
 ENV SPARKLYTICS_PORT=3000
 ENV SPARKLYTICS_AUTH=local
+# Default for deployments behind a reverse proxy; set true only for direct HTTPS termination.
+ENV SPARKLYTICS_HTTPS=false
 ENV SPARKLYTICS_GEOIP_PATH=/geoip/dbip-city-lite.mmdb
 
 EXPOSE 3000
 VOLUME ["/data"]
-
-# distroless/static:nonroot already sets USER nonroot (uid 65532).
-USER nonroot
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/sparklytics", "health"]

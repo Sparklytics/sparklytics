@@ -61,12 +61,25 @@ export function SessionDetailDrawer({
             Session Detail
           </SheetTitle>
           {detail && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3 sm:grid-cols-4">
-              <MetaChip label="Duration" value={formatDuration(detail.session.duration_seconds)} />
-              <MetaChip label="Pages" value={String(detail.session.pageview_count)} />
-              <MetaChip label="Country" value={detail.session.country ?? '—'} />
-              <MetaChip label="Browser" value={detail.session.browser ?? '—'} />
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3 sm:grid-cols-4">
+                <MetaChip label="Duration" value={formatDuration(detail.session.duration_seconds)} />
+                <MetaChip label="Pages" value={String(detail.session.pageview_count)} />
+                <MetaChip label="Country" value={detail.session.country ?? '—'} />
+                <MetaChip label="Browser" value={detail.session.browser ?? '—'} />
+              </div>
+              <p className="mt-3 text-[11px] text-ink-3">
+                IP Geolocation by{' '}
+                <a
+                  href="https://db-ip.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-ink-2 underline underline-offset-2 hover:text-ink"
+                >
+                  DB-IP
+                </a>
+              </p>
+            </>
           )}
         </SheetHeader>
 

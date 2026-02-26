@@ -1200,7 +1200,6 @@ pub const VALID_METRIC_TYPES: &[&str] = &[
 ];
 
 #[async_trait::async_trait]
-#[allow(clippy::too_many_arguments)]
 pub trait AnalyticsBackend: Send + Sync + 'static {
     async fn insert_events(&self, events: &[Event]) -> anyhow::Result<()>;
 
@@ -1229,6 +1228,7 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         comparison: Option<&ComparisonRange>,
     ) -> anyhow::Result<TimeseriesResult>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn get_metrics(
         &self,
         website_id: &str,

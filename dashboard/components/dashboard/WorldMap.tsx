@@ -291,6 +291,17 @@ export function WorldMap({ data = [], loading }: WorldMapProps) {
           <FlatMap data={data} selectedCountry={selectedCountry} />
         </div>
       )}
+      <p className="mt-3 text-[11px] text-ink-3">
+        IP Geolocation by{' '}
+        <a
+          href="https://db-ip.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-ink-2 underline underline-offset-2 hover:text-ink"
+        >
+          DB-IP
+        </a>
+      </p>
     </div>
   );
 }

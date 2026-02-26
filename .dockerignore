@@ -1,9 +1,12 @@
 .git
 .github
+.gitignore
 target
 **/target
 **/node_modules
 dashboard/.next
 dashboard/out
+.env
+.env.*
 .DS_Store
 *.log

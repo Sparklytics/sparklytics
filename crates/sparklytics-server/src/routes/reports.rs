@@ -16,7 +16,7 @@ use sparklytics_core::analytics::{
 
 use crate::{
     error::AppError,
-    routes::compare::{metadata_json, resolve_compare_range},
+    routes::compare::{compare_metadata, metadata_json, resolve_compare_range_for_mode},
     state::AppState,
 };
 
@@ -39,7 +39,7 @@ fn validate_name(name: &str) -> Result<(), AppError> {
     if name.trim().is_empty() {
         return Err(AppError::BadRequest("name must not be empty".to_string()));
     }
-    if name.len() > 100 {
+    if name.chars().count() > 100 {
         return Err(AppError::BadRequest(
             "name must be 100 characters or fewer".to_string(),
         ));
@@ -155,15 +155,10 @@ fn build_analytics_context(
         .compare_mode
         .clone()
         .unwrap_or(sparklytics_core::analytics::CompareMode::None);
-    let comparison = resolve_compare_range(
+    let comparison = resolve_compare_range_for_mode(
         start_date,
         end_date,
-        Some(match compare_mode {
-            sparklytics_core::analytics::CompareMode::None => "none",
-            sparklytics_core::analytics::CompareMode::PreviousPeriod => "previous_period",
-            sparklytics_core::analytics::CompareMode::PreviousYear => "previous_year",
-            sparklytics_core::analytics::CompareMode::Custom => "custom",
-        }),
+        compare_mode,
         config.compare_start_date.as_deref(),
         config.compare_end_date.as_deref(),
     )?;
@@ -200,19 +195,12 @@ pub(crate) async fn execute_report_config_with_backend(
     let (filter, comparison) = build_analytics_context(config)?;
     match config.report_type {
         ReportType::Stats => {
-            let data = analytics
+            let mut data = analytics
                 .get_stats(website_id, None, &filter, comparison.as_ref())
                 .await
                 .map_err(AppError::Internal)?;
-            if comparison.is_some() {
-                serde_json::to_value(json!({
-                    "data": data,
-                    "compare": metadata_json(comparison.as_ref()),
-                }))
-                .map_err(|e| AppError::Internal(e.into()))
-            } else {
-                serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
-            }
+            data.compare = compare_metadata(comparison.as_ref());
+            serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
         }
         ReportType::Pageviews => {
             let data = analytics

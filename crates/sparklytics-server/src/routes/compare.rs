@@ -46,6 +46,28 @@ pub fn resolve_compare_range(
         .map_err(|err| AppError::BadRequest(err.to_string()))
 }
 
+pub fn resolve_compare_range_for_mode(
+    primary_start: NaiveDate,
+    primary_end: NaiveDate,
+    mode: CompareMode,
+    compare_start_raw: Option<&str>,
+    compare_end_raw: Option<&str>,
+) -> Result<Option<ComparisonRange>, AppError> {
+    if matches!(mode, CompareMode::None) {
+        return Ok(None);
+    }
+
+    let compare_start = compare_start_raw
+        .map(|raw| parse_date(raw, "compare_start_date"))
+        .transpose()?;
+    let compare_end = compare_end_raw
+        .map(|raw| parse_date(raw, "compare_end_date"))
+        .transpose()?;
+
+    resolve_comparison_range(primary_start, primary_end, mode, compare_start, compare_end)
+        .map_err(|err| AppError::BadRequest(err.to_string()))
+}
+
 pub fn compare_metadata(compare: Option<&ComparisonRange>) -> Option<ComparisonMetadata> {
     compare.map(ComparisonRange::to_metadata)
 }

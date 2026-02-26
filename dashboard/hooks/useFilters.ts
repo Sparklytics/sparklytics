@@ -1,17 +1,14 @@
 'use client';
 
 import { create } from 'zustand';
-import type { CompareMode, CompareParams } from '@/lib/api';
+import type { CompareMode, CompareParams, DateRange } from '@/lib/api';
 import { toISODate, daysAgo } from '@/lib/utils';
 
-export type DateRange = {
-  start_date: string;
-  end_date: string;
-};
+export type { DateRange } from '@/lib/api';
 
 // Filters are stored with the "filter_" prefix so they can be spread
 // directly into API call params (e.g. { filter_country: 'PL' }).
-export type Filters = Record<string, string>;
+export type AppliedFilters = Record<string, string>;
 export type CompareState = {
   mode: CompareMode;
   compare_start_date?: string;
@@ -19,6 +16,10 @@ export type CompareState = {
 };
 
 export function toCompareParams(compare: CompareState): CompareParams {
+  if (compare.mode === 'none') {
+    return {};
+  }
+
   if (compare.mode === 'custom') {
     return {
       compare_mode: compare.mode,
@@ -32,7 +33,7 @@ export function toCompareParams(compare: CompareState): CompareParams {
 
 interface FiltersState {
   dateRange: DateRange;
-  filters: Filters;
+  filters: AppliedFilters;
   compare: CompareState;
   setDateRange: (range: DateRange) => void;
   // key: base name without "filter_" prefix (e.g. "country", "page")
@@ -49,7 +50,7 @@ function defaultDateRange(): DateRange {
   };
 }
 
-function readFromUrl(): { dateRange: DateRange; filters: Filters; compare: CompareState } {
+function readFromUrl(): { dateRange: DateRange; filters: AppliedFilters; compare: CompareState } {
   if (typeof window === 'undefined') {
     return { dateRange: defaultDateRange(), filters: {}, compare: { mode: 'none' } };
   }
@@ -58,7 +59,7 @@ function readFromUrl(): { dateRange: DateRange; filters: Filters; compare: Compa
     start_date: params.get('start') ?? toISODate(daysAgo(30)),
     end_date: params.get('end') ?? toISODate(new Date()),
   };
-  const filters: Filters = {};
+  const filters: AppliedFilters = {};
   for (const [key, value] of params.entries()) {
     // Only read params with "filter_" prefix; store them as-is.
     if (key.startsWith('filter_')) {
@@ -76,7 +77,7 @@ function readFromUrl(): { dateRange: DateRange; filters: Filters; compare: Compa
   return { dateRange, filters, compare };
 }
 
-function writeToUrl(dateRange: DateRange, filters: Filters, compare: CompareState): void {
+function writeToUrl(dateRange: DateRange, filters: AppliedFilters, compare: CompareState): void {
   if (typeof window === 'undefined') return;
   const params = new URLSearchParams();
   params.set('start', dateRange.start_date);
