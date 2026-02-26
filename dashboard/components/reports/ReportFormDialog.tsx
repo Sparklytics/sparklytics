@@ -113,6 +113,10 @@ export function ReportFormDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (previewReport.isPending) {
+      setApiError('Please wait for preview to finish before saving.');
+      return;
+    }
     setApiError(null);
     const normalized = normalizeConfig(config);
     const payload = {
@@ -375,6 +379,7 @@ export function ReportFormDialog({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <input
                 type="text"
+                aria-label="Country"
                 value={config.filter_country ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_country: e.target.value || undefined }))}
                 className={inputClass}
@@ -382,6 +387,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="Browser"
                 value={config.filter_browser ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_browser: e.target.value || undefined }))}
                 className={inputClass}
@@ -389,6 +395,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="OS"
                 value={config.filter_os ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_os: e.target.value || undefined }))}
                 className={inputClass}
@@ -396,6 +403,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="Device"
                 value={config.filter_device ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_device: e.target.value || undefined }))}
                 className={inputClass}
@@ -403,6 +411,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="Page contains"
                 value={config.filter_page ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_page: e.target.value || undefined }))}
                 className={inputClass}
@@ -410,6 +419,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="Referrer"
                 value={config.filter_referrer ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_referrer: e.target.value || undefined }))}
                 className={inputClass}
@@ -417,6 +427,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="UTM source"
                 value={config.filter_utm_source ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_utm_source: e.target.value || undefined }))}
                 className={inputClass}
@@ -424,6 +435,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="UTM medium"
                 value={config.filter_utm_medium ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_utm_medium: e.target.value || undefined }))}
                 className={inputClass}
@@ -431,6 +443,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="UTM campaign"
                 value={config.filter_utm_campaign ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_utm_campaign: e.target.value || undefined }))}
                 className={inputClass}
@@ -438,6 +451,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="Region"
                 value={config.filter_region ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_region: e.target.value || undefined }))}
                 className={inputClass}
@@ -445,6 +459,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="City"
                 value={config.filter_city ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_city: e.target.value || undefined }))}
                 className={inputClass}
@@ -452,6 +467,7 @@ export function ReportFormDialog({
               />
               <input
                 type="text"
+                aria-label="Hostname"
                 value={config.filter_hostname ?? ''}
                 onChange={(e) => setConfig((prev) => ({ ...prev, filter_hostname: e.target.value || undefined }))}
                 className={inputClass}

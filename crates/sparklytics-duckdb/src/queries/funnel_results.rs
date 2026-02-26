@@ -6,6 +6,7 @@ use sparklytics_core::analytics::{
     AnalyticsFilter, Funnel, FunnelResults, FunnelStep, FunnelStepResult, MatchOperator, StepType,
 };
 
+use crate::queries::bot_filters::append_event_bot_filter;
 use crate::DuckDbBackend;
 
 use super::funnels::get_funnel_inner;
@@ -16,6 +17,7 @@ fn append_event_filters(
     params: &mut Vec<Box<dyn duckdb::types::ToSql>>,
     param_idx: &mut usize,
 ) {
+    append_event_bot_filter(filter_sql, filter.include_bots, "e.");
     if let Some(ref country) = filter.filter_country {
         filter_sql.push_str(&format!(" AND e.country = ?{}", *param_idx));
         params.push(Box::new(country.clone()));

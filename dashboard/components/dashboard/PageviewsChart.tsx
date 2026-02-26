@@ -9,11 +9,10 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatNumber } from '@/lib/utils';
 import type { PageviewsPoint } from '@/lib/api';
-import { useMemo } from 'react';
 
 interface PageviewsChartProps {
   data?: PageviewsPoint[];
@@ -154,6 +153,7 @@ export function PageviewsChart({ data, compareData, loading }: PageviewsChartPro
             <Line
               type="monotone"
               dataKey="compare_visitors"
+              name="Compare Visitors"
               stroke="var(--spark)"
               strokeDasharray="4 4"
               strokeWidth={1.5}
@@ -165,6 +165,7 @@ export function PageviewsChart({ data, compareData, loading }: PageviewsChartPro
             <Line
               type="monotone"
               dataKey="compare_pageviews"
+              name="Compare Pageviews"
               stroke="var(--neutral)"
               strokeDasharray="4 4"
               strokeWidth={1.5}

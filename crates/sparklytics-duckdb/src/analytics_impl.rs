@@ -1,18 +1,46 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
-use chrono::NaiveDate;
+use chrono::{Duration, NaiveDate, Utc};
+use serde_json::json;
 
 use sparklytics_core::analytics::{
-    AnalyticsBackend, AnalyticsFilter, AttributionQuery, AttributionResponse, ComparisonRange,
-    CreateFunnelRequest, CreateGoalRequest, CreateReportRequest, EventNamesResult,
-    EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal, GoalStats,
-    JourneyQuery, JourneyResponse, MetricRow, MetricsPage, RealtimeEvent, RealtimePagination,
-    RealtimeResult, RetentionQuery, RetentionResponse, RevenueSummary, SavedReport,
-    SavedReportSummary, SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult,
-    TimeseriesResult, UpdateFunnelRequest, UpdateGoalRequest, UpdateReportRequest,
+    AlertConditionType, AlertEvaluationResult, AnalyticsBackend, AnalyticsFilter, AttributionQuery,
+    AttributionResponse, CampaignLink, ComparisonRange, CreateCampaignLinkRequest,
+    CreateFunnelRequest, CreateGoalRequest, CreateReportRequest, CreateTrackingPixelRequest,
+    EventNamesResult, EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal,
+    GoalStats, JourneyQuery, JourneyResponse, LinkStatsResponse, MetricRow, MetricsPage,
+    PixelStatsResponse, RealtimeEvent, RealtimePagination, RealtimeResult, ReportPayload,
+    ReportType, RetentionQuery, RetentionResponse, RevenueSummary, SavedReport, SavedReportSummary,
+    SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult, TimeseriesResult,
+    TrackingPixel, UpdateCampaignLinkRequest, UpdateFunnelRequest, UpdateGoalRequest,
+    UpdateReportRequest, UpdateTrackingPixelRequest,
 };
 use sparklytics_core::event::Event;
 
 use crate::DuckDbBackend;
+
+fn mean(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    Some(values.iter().sum::<f64>() / values.len() as f64)
+}
+
+fn stddev(values: &[f64], mean_value: f64) -> Option<f64> {
+    if values.len() < 2 {
+        return None;
+    }
+    let variance = values
+        .iter()
+        .map(|v| {
+            let diff = *v - mean_value;
+            diff * diff
+        })
+        .sum::<f64>()
+        / values.len() as f64;
+    Some(variance.sqrt())
+}
 
 #[async_trait]
 impl AnalyticsBackend for DuckDbBackend {
@@ -107,8 +135,10 @@ impl AnalyticsBackend for DuckDbBackend {
         &self,
         website_id: &str,
         _tenant_id: Option<&str>,
+        include_bots: bool,
     ) -> anyhow::Result<RealtimeResult> {
-        let r = crate::queries::realtime::get_realtime_inner(self, website_id).await?;
+        let r =
+            crate::queries::realtime::get_realtime_inner(self, website_id, include_bots).await?;
         Ok(RealtimeResult {
             active_visitors: r.active_visitors,
             recent_events: r
@@ -285,6 +315,135 @@ impl AnalyticsBackend for DuckDbBackend {
             .await
     }
 
+    async fn evaluate_alert_rules(
+        &self,
+        _tenant_id: Option<&str>,
+        website_id: &str,
+    ) -> anyhow::Result<Vec<AlertEvaluationResult>> {
+        let rules = self.list_alert_rules(website_id).await?;
+        let active_rules: Vec<_> = rules.into_iter().filter(|rule| rule.is_active).collect();
+        if active_rules.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let today = Utc::now().date_naive();
+        let mut results = Vec::with_capacity(active_rules.len());
+        for rule in active_rules {
+            let baseline_start = today - Duration::days(rule.lookback_days);
+            let series = self
+                .get_daily_alert_metric_series(website_id, &rule.metric, baseline_start, today)
+                .await?;
+            let daily_map: HashMap<NaiveDate, f64> = series.into_iter().collect();
+            let current_value = daily_map.get(&today).copied().unwrap_or(0.0);
+
+            let (triggered, baseline_mean, baseline_stddev, z_score) = match rule.condition_type {
+                AlertConditionType::ThresholdAbove => {
+                    (current_value >= rule.threshold_value, None, None, None)
+                }
+                AlertConditionType::ThresholdBelow => {
+                    (current_value <= rule.threshold_value, None, None, None)
+                }
+                AlertConditionType::Spike | AlertConditionType::Drop => {
+                    let mut baseline = Vec::with_capacity(rule.lookback_days as usize);
+                    for offset in 1..=rule.lookback_days {
+                        let day = today - Duration::days(offset);
+                        baseline.push(daily_map.get(&day).copied().unwrap_or(0.0));
+                    }
+                    let Some(baseline_mean) = mean(&baseline) else {
+                        continue;
+                    };
+                    let baseline_stddev = stddev(&baseline, baseline_mean).unwrap_or(0.0);
+                    if baseline_stddev <= f64::EPSILON {
+                        continue;
+                    }
+                    let z = (current_value - baseline_mean) / baseline_stddev;
+                    let triggered = match rule.condition_type {
+                        AlertConditionType::Spike => z >= rule.threshold_value,
+                        AlertConditionType::Drop => z <= -rule.threshold_value,
+                        _ => false,
+                    };
+                    (
+                        triggered,
+                        Some(baseline_mean),
+                        Some(baseline_stddev),
+                        Some(z),
+                    )
+                }
+            };
+
+            results.push(AlertEvaluationResult {
+                alert_id: rule.id,
+                triggered,
+                metric_value: current_value,
+                baseline_mean,
+                baseline_stddev,
+                z_score,
+            });
+        }
+
+        Ok(results)
+    }
+
+    async fn render_report_payload(
+        &self,
+        tenant_id: Option<&str>,
+        website_id: &str,
+        report_id: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<ReportPayload> {
+        let report = self
+            .get_report(website_id, tenant_id, report_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("report not found"))?;
+        let data = match report.config.report_type {
+            ReportType::Stats => serde_json::to_value(
+                <DuckDbBackend as AnalyticsBackend>::get_stats(
+                    self, website_id, tenant_id, filter, None,
+                )
+                .await?,
+            )?,
+            ReportType::Pageviews => serde_json::to_value(
+                <DuckDbBackend as AnalyticsBackend>::get_timeseries(
+                    self, website_id, tenant_id, filter, None, None,
+                )
+                .await?,
+            )?,
+            ReportType::Metrics => {
+                let metric_type = report.config.metric_type.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("metric_type is required for metrics reports")
+                })?;
+                let page = <DuckDbBackend as AnalyticsBackend>::get_metrics(
+                    self,
+                    website_id,
+                    tenant_id,
+                    metric_type,
+                    25,
+                    0,
+                    filter,
+                    None,
+                )
+                .await?;
+                json!({
+                    "type": metric_type,
+                    "rows": page.rows,
+                    "total": page.total,
+                })
+            }
+            ReportType::Events => serde_json::to_value(
+                <DuckDbBackend as AnalyticsBackend>::get_event_names(
+                    self, website_id, tenant_id, filter,
+                )
+                .await?,
+            )?,
+        };
+        Ok(ReportPayload {
+            website_id: website_id.to_string(),
+            report_id: report.id,
+            generated_at: Utc::now().to_rfc3339(),
+            data,
+        })
+    }
+
     async fn count_goals(&self, website_id: &str, _tenant_id: Option<&str>) -> anyhow::Result<i64> {
         crate::queries::goals::count_goals_inner(self, website_id).await
     }
@@ -375,6 +534,107 @@ impl AnalyticsBackend for DuckDbBackend {
         query: &RetentionQuery,
     ) -> anyhow::Result<RetentionResponse> {
         crate::queries::retention::get_retention_inner(self, website_id, filter, query).await
+    }
+
+    async fn list_campaign_links(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<CampaignLink>> {
+        self.list_campaign_links_with_stats(website_id).await
+    }
+
+    async fn create_campaign_link(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        req: CreateCampaignLinkRequest,
+    ) -> anyhow::Result<CampaignLink> {
+        DuckDbBackend::create_campaign_link(self, website_id, req).await
+    }
+
+    async fn update_campaign_link(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        link_id: &str,
+        req: UpdateCampaignLinkRequest,
+    ) -> anyhow::Result<Option<CampaignLink>> {
+        DuckDbBackend::update_campaign_link(self, website_id, link_id, req).await
+    }
+
+    async fn delete_campaign_link(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        link_id: &str,
+    ) -> anyhow::Result<bool> {
+        DuckDbBackend::delete_campaign_link(self, website_id, link_id).await
+    }
+
+    async fn get_campaign_link_stats(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        link_id: &str,
+    ) -> anyhow::Result<LinkStatsResponse> {
+        DuckDbBackend::get_campaign_link_stats(self, website_id, link_id).await
+    }
+
+    async fn get_campaign_link_by_slug(&self, slug: &str) -> anyhow::Result<Option<CampaignLink>> {
+        DuckDbBackend::get_campaign_link_by_slug(self, slug).await
+    }
+
+    async fn list_tracking_pixels(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<TrackingPixel>> {
+        DuckDbBackend::list_tracking_pixels_with_stats(self, website_id).await
+    }
+
+    async fn create_tracking_pixel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        req: CreateTrackingPixelRequest,
+    ) -> anyhow::Result<TrackingPixel> {
+        DuckDbBackend::create_tracking_pixel(self, website_id, req).await
+    }
+
+    async fn update_tracking_pixel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        pixel_id: &str,
+        req: UpdateTrackingPixelRequest,
+    ) -> anyhow::Result<Option<TrackingPixel>> {
+        DuckDbBackend::update_tracking_pixel(self, website_id, pixel_id, req).await
+    }
+
+    async fn delete_tracking_pixel(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        pixel_id: &str,
+    ) -> anyhow::Result<bool> {
+        DuckDbBackend::delete_tracking_pixel(self, website_id, pixel_id).await
+    }
+
+    async fn get_tracking_pixel_stats(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        pixel_id: &str,
+    ) -> anyhow::Result<PixelStatsResponse> {
+        DuckDbBackend::get_tracking_pixel_stats(self, website_id, pixel_id).await
+    }
+
+    async fn get_tracking_pixel_by_key(
+        &self,
+        pixel_key: &str,
+    ) -> anyhow::Result<Option<TrackingPixel>> {
+        DuckDbBackend::get_tracking_pixel_by_key(self, pixel_key).await
     }
 
     async fn list_reports(

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use tokio::io::AsyncWriteExt;
@@ -11,7 +11,7 @@ use tokio::sync::{Mutex, RwLock, Semaphore};
 use tracing::{error, info, warn};
 
 use sparklytics_core::{
-    analytics::AnalyticsBackend,
+    analytics::{AnalyticsBackend, CampaignLink, TrackingPixel},
     billing::{BillingGate, NullBillingGate},
     config::Config,
     event::Event,
@@ -29,6 +29,9 @@ const DEFAULT_INGEST_RETRY_BASE_MS: u64 = 200;
 const DEFAULT_INGEST_RETRY_MAX_MS: u64 = 5_000;
 const DEFAULT_SESSION_CACHE_MAX_ENTRIES: usize = 50_000;
 const DEFAULT_SESSION_CACHE_TTL_SECONDS: i64 = 1_800;
+const DEFAULT_RATE_LIMIT_MAX_KEYS: usize = 100_000;
+const DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES: usize = 10_000;
+const DEFAULT_ACQUISITION_CACHE_TTL_SECONDS: u64 = 60;
 const INGEST_WAL_LOG_FILE: &str = "segment.log";
 const INGEST_WAL_CURSOR_FILE: &str = "segment.cursor";
 
@@ -45,11 +48,27 @@ struct CachedSession {
     last_seen_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone)]
+struct CachedCampaignLink {
+    value: CampaignLink,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct CachedTrackingPixel {
+    value: TrackingPixel,
+    expires_at: Instant,
+}
+
 /// Shared application state injected into every Axum handler via
 /// [`axum::extract::State`].
 pub struct AppState {
     /// DuckDB backend used for self-hosted metadata operations.
     pub db: Arc<DuckDbBackend>,
+
+    /// Scheduler DuckDB backend for background jobs. Can be dedicated via
+    /// `SPARKLYTICS_SCHEDULER_DEDICATED_DUCKDB=1`, otherwise reuses `db`.
+    pub scheduler_db: Arc<DuckDbBackend>,
 
     /// Analytics backend used by all analytics routes and buffer flush.
     pub analytics: Arc<dyn AnalyticsBackend>,
@@ -65,6 +84,11 @@ pub struct AppState {
 
     /// Per-IP sliding-window rate limiter for POST /api/collect.
     rate_limiter: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+    rate_limiter_max_entries: usize,
+    campaign_link_cache: Arc<Mutex<HashMap<String, CachedCampaignLink>>>,
+    tracking_pixel_cache: Arc<Mutex<HashMap<String, CachedTrackingPixel>>>,
+    acquisition_cache_max_entries: usize,
+    acquisition_cache_ttl: Duration,
 
     /// Plan-limit gate.
     pub billing_gate: Arc<dyn BillingGate>,
@@ -130,6 +154,18 @@ impl AppState {
             .unwrap_or(default)
     }
 
+    fn env_bool(name: &str, default: bool) -> bool {
+        std::env::var(name)
+            .ok()
+            .map(|v| {
+                let trimmed = v.trim();
+                trimmed.eq_ignore_ascii_case("1")
+                    || trimmed.eq_ignore_ascii_case("true")
+                    || trimmed.eq_ignore_ascii_case("yes")
+            })
+            .unwrap_or(default)
+    }
+
     /// Constructor for self-hosted mode.
     pub fn new(db: DuckDbBackend, config: Config) -> Self {
         let ingest_wal_dir = PathBuf::from(&config.data_dir).join("ingest-wal");
@@ -168,6 +204,18 @@ impl AppState {
             "SPARKLYTICS_SESSION_CACHE_TTL_SECONDS",
             DEFAULT_SESSION_CACHE_TTL_SECONDS,
         );
+        let rate_limiter_max_entries = Self::env_usize(
+            "SPARKLYTICS_RATE_LIMIT_MAX_KEYS",
+            DEFAULT_RATE_LIMIT_MAX_KEYS,
+        );
+        let acquisition_cache_max_entries = Self::env_usize(
+            "SPARKLYTICS_ACQUISITION_CACHE_MAX_ENTRIES",
+            DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES,
+        );
+        let acquisition_cache_ttl_seconds = Self::env_u64(
+            "SPARKLYTICS_ACQUISITION_CACHE_TTL_SECONDS",
+            DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
+        );
         let ingest_wal_log_path = ingest_wal_dir.join(INGEST_WAL_LOG_FILE);
         let ingest_wal_cursor_path = ingest_wal_dir.join(INGEST_WAL_CURSOR_FILE);
 
@@ -200,15 +248,41 @@ impl AppState {
             .unwrap_or(0)
             .min(ingest_wal_next_offset);
 
+        let db_path = format!("{}/sparklytics.db", config.data_dir);
         let db = Arc::new(db);
+        // Default to a dedicated scheduler connection in normal builds to reduce
+        // contention with ingest/query traffic. Tests default to shared DB for
+        // deterministic visibility unless explicitly overridden.
+        let scheduler_db = if Self::env_bool("SPARKLYTICS_SCHEDULER_DEDICATED_DUCKDB", !cfg!(test))
+        {
+            match DuckDbBackend::open(&db_path, &config.duckdb_memory_limit) {
+                Ok(backend) => Arc::new(backend),
+                Err(err) => {
+                    warn!(
+                        error = %err,
+                        db_path = %db_path,
+                        "Failed to open dedicated scheduler DB connection; falling back to primary"
+                    );
+                    Arc::clone(&db)
+                }
+            }
+        } else {
+            Arc::clone(&db)
+        };
         let analytics: Arc<dyn AnalyticsBackend> = db.clone();
         Self {
             db,
+            scheduler_db,
             analytics,
             config: Arc::new(config),
             buffer: Arc::new(Mutex::new(Vec::new())),
             website_cache: Arc::new(RwLock::new(HashSet::new())),
             rate_limiter: Arc::new(Mutex::new(HashMap::new())),
+            rate_limiter_max_entries,
+            campaign_link_cache: Arc::new(Mutex::new(HashMap::new())),
+            tracking_pixel_cache: Arc::new(Mutex::new(HashMap::new())),
+            acquisition_cache_max_entries,
+            acquisition_cache_ttl: Duration::from_secs(acquisition_cache_ttl_seconds),
             billing_gate: Arc::new(NullBillingGate),
             export_semaphore: Arc::new(Semaphore::new(1)),
             funnel_results_semaphore: Arc::new(Semaphore::new(1)),
@@ -244,6 +318,10 @@ impl AppState {
         billing_gate: Arc<dyn BillingGate>,
     ) -> Self {
         let mut s = Self::new(db, config);
+        // Custom-backend mode (cloud) may use a non-default DB filename.
+        // Reuse the already-opened primary DB handle for scheduler reads/writes
+        // so background jobs operate on the same data file.
+        s.scheduler_db = Arc::clone(&s.db);
         s.analytics = analytics;
         s.billing_gate = billing_gate;
         s
@@ -567,6 +645,9 @@ impl AppState {
             base_count_already_recorded: bool,
             website_id: String,
             visitor_id: String,
+            is_bot: bool,
+            bot_score: i32,
+            bot_reason: Option<String>,
         }
 
         let mut session_cache: HashMap<(String, String), SessionAccumulator> = HashMap::new();
@@ -582,6 +663,11 @@ impl AppState {
                 if event.created_at > existing.last_seen_at {
                     existing.last_seen_at = event.created_at;
                 }
+                if event.bot_score >= existing.bot_score {
+                    existing.bot_score = event.bot_score;
+                    existing.bot_reason = event.bot_reason.clone();
+                }
+                existing.is_bot = existing.is_bot || event.is_bot;
                 event.session_id = existing.session_id.clone();
                 continue;
             }
@@ -612,6 +698,9 @@ impl AppState {
                     base_count_already_recorded,
                     website_id: event.website_id.clone(),
                     visitor_id: event.visitor_id.clone(),
+                    is_bot: event.is_bot,
+                    bot_score: event.bot_score,
+                    bot_reason: event.bot_reason.clone(),
                 },
             );
             event.session_id = session_id;
@@ -633,6 +722,14 @@ impl AppState {
                     )
                     .await?;
             }
+            self.db
+                .set_session_bot_classification(
+                    &entry.session_id,
+                    entry.is_bot,
+                    entry.bot_score,
+                    entry.bot_reason.as_deref(),
+                )
+                .await?;
 
             self.put_cached_session(
                 entry.website_id,
@@ -651,6 +748,15 @@ impl AppState {
         self.check_rate_limit_with_max(ip, 60).await
     }
 
+    /// Returns the default query behavior for `include_bots`.
+    /// When bot policy mode is `off`, queries include bot traffic by default.
+    pub async fn default_include_bots(&self, website_id: &str) -> bool {
+        self.db
+            .effective_include_bots_default(website_id)
+            .await
+            .unwrap_or(false)
+    }
+
     /// Check whether `ip` is within the given `max_per_min` rate limit.
     pub async fn check_rate_limit_with_max(&self, ip: &str, max_per_min: usize) -> bool {
         let key = format!("{}:{}", max_per_min, ip);
@@ -664,12 +770,92 @@ impl AppState {
                 map.remove(&key);
             }
         }
+        if !map.contains_key(&key) && map.len() >= self.rate_limiter_max_entries {
+            map.retain(|_, window| {
+                while window.front().is_some_and(|t| *t < cutoff) {
+                    window.pop_front();
+                }
+                !window.is_empty()
+            });
+            if !map.contains_key(&key) && map.len() >= self.rate_limiter_max_entries {
+                return false;
+            }
+        }
         let window = map.entry(key).or_default();
         if window.len() >= max_per_min {
             return false;
         }
         window.push_back(Instant::now());
         true
+    }
+
+    pub async fn get_campaign_link_by_slug_cached(
+        &self,
+        slug: &str,
+    ) -> anyhow::Result<Option<CampaignLink>> {
+        let now = Instant::now();
+        {
+            let mut cache = self.campaign_link_cache.lock().await;
+            if let Some(entry) = cache.get(slug) {
+                if entry.expires_at > now {
+                    return Ok(Some(entry.value.clone()));
+                }
+                cache.remove(slug);
+            }
+        }
+
+        let link = self.analytics.get_campaign_link_by_slug(slug).await?;
+        if let Some(link_value) = link.as_ref() {
+            let mut cache = self.campaign_link_cache.lock().await;
+            if cache.len() >= self.acquisition_cache_max_entries {
+                cache.clear();
+            }
+            cache.insert(
+                slug.to_string(),
+                CachedCampaignLink {
+                    value: link_value.clone(),
+                    expires_at: now + self.acquisition_cache_ttl,
+                },
+            );
+        }
+        Ok(link)
+    }
+
+    pub async fn get_tracking_pixel_by_key_cached(
+        &self,
+        pixel_key: &str,
+    ) -> anyhow::Result<Option<TrackingPixel>> {
+        let now = Instant::now();
+        {
+            let mut cache = self.tracking_pixel_cache.lock().await;
+            if let Some(entry) = cache.get(pixel_key) {
+                if entry.expires_at > now {
+                    return Ok(Some(entry.value.clone()));
+                }
+                cache.remove(pixel_key);
+            }
+        }
+
+        let pixel = self.analytics.get_tracking_pixel_by_key(pixel_key).await?;
+        if let Some(pixel_value) = pixel.as_ref() {
+            let mut cache = self.tracking_pixel_cache.lock().await;
+            if cache.len() >= self.acquisition_cache_max_entries {
+                cache.clear();
+            }
+            cache.insert(
+                pixel_key.to_string(),
+                CachedTrackingPixel {
+                    value: pixel_value.clone(),
+                    expires_at: now + self.acquisition_cache_ttl,
+                },
+            );
+        }
+        Ok(pixel)
+    }
+
+    pub async fn invalidate_acquisition_cache(&self) {
+        self.campaign_link_cache.lock().await.clear();
+        self.tracking_pixel_cache.lock().await.clear();
     }
 
     /// Background loop: rotate the daily salt at midnight UTC.

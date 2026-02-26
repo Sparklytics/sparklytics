@@ -16,7 +16,7 @@ use sparklytics_core::analytics::{
 
 use crate::{
     error::AppError,
-    routes::compare::{metadata_json, resolve_compare_range},
+    routes::compare::{compare_metadata, metadata_json, resolve_compare_range_for_mode},
     state::AppState,
 };
 
@@ -39,7 +39,7 @@ fn validate_name(name: &str) -> Result<(), AppError> {
     if name.trim().is_empty() {
         return Err(AppError::BadRequest("name must not be empty".to_string()));
     }
-    if name.len() > 100 {
+    if name.chars().count() > 100 {
         return Err(AppError::BadRequest(
             "name must be 100 characters or fewer".to_string(),
         ));
@@ -122,6 +122,7 @@ fn parse_absolute_range(
 
 fn build_analytics_context(
     config: &ReportConfig,
+    include_bots: bool,
 ) -> Result<
     (
         AnalyticsFilter,
@@ -155,15 +156,10 @@ fn build_analytics_context(
         .compare_mode
         .clone()
         .unwrap_or(sparklytics_core::analytics::CompareMode::None);
-    let comparison = resolve_compare_range(
+    let comparison = resolve_compare_range_for_mode(
         start_date,
         end_date,
-        Some(match compare_mode {
-            sparklytics_core::analytics::CompareMode::None => "none",
-            sparklytics_core::analytics::CompareMode::PreviousPeriod => "previous_period",
-            sparklytics_core::analytics::CompareMode::PreviousYear => "previous_year",
-            sparklytics_core::analytics::CompareMode::Custom => "custom",
-        }),
+        compare_mode,
         config.compare_start_date.as_deref(),
         config.compare_end_date.as_deref(),
     )?;
@@ -186,37 +182,30 @@ fn build_analytics_context(
             filter_region: config.filter_region.clone(),
             filter_city: config.filter_city.clone(),
             filter_hostname: config.filter_hostname.clone(),
+            include_bots,
         },
         comparison,
     ))
 }
 
-async fn execute_report_config(
-    state: &AppState,
+pub(crate) async fn execute_report_config_with_backend(
+    analytics: &dyn sparklytics_core::analytics::AnalyticsBackend,
     website_id: &str,
     config: &ReportConfig,
+    include_bots: bool,
 ) -> Result<Value, AppError> {
-    let (filter, comparison) = build_analytics_context(config)?;
+    let (filter, comparison) = build_analytics_context(config, include_bots)?;
     match config.report_type {
         ReportType::Stats => {
-            let data = state
-                .analytics
+            let mut data = analytics
                 .get_stats(website_id, None, &filter, comparison.as_ref())
                 .await
                 .map_err(AppError::Internal)?;
-            if comparison.is_some() {
-                serde_json::to_value(json!({
-                    "data": data,
-                    "compare": metadata_json(comparison.as_ref()),
-                }))
-                .map_err(|e| AppError::Internal(e.into()))
-            } else {
-                serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
-            }
+            data.compare = compare_metadata(comparison.as_ref());
+            serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
         }
         ReportType::Pageviews => {
-            let data = state
-                .analytics
+            let data = analytics
                 .get_timeseries(website_id, None, &filter, None, comparison.as_ref())
                 .await
                 .map_err(AppError::Internal)?;
@@ -238,8 +227,7 @@ async fn execute_report_config(
             let metric_type = config.metric_type.as_deref().ok_or_else(|| {
                 AppError::BadRequest("metric_type is required for metrics reports".to_string())
             })?;
-            let page = state
-                .analytics
+            let page = analytics
                 .get_metrics(
                     website_id,
                     None,
@@ -260,14 +248,23 @@ async fn execute_report_config(
             .map_err(|e| AppError::Internal(e.into()))
         }
         ReportType::Events => {
-            let data = state
-                .analytics
+            let data = analytics
                 .get_event_names(website_id, None, &filter)
                 .await
                 .map_err(AppError::Internal)?;
             serde_json::to_value(data).map_err(|e| AppError::Internal(e.into()))
         }
     }
+}
+
+pub(crate) async fn execute_report_config(
+    state: &AppState,
+    website_id: &str,
+    config: &ReportConfig,
+) -> Result<Value, AppError> {
+    let include_bots = state.default_include_bots(website_id).await;
+    execute_report_config_with_backend(state.analytics.as_ref(), website_id, config, include_bots)
+        .await
 }
 
 pub async fn list_reports(
@@ -313,7 +310,7 @@ pub async fn create_report(
     }
     validate_name(&req.name)?;
     // Validate config semantics before persisting.
-    build_analytics_context(&req.config)?;
+    build_analytics_context(&req.config, false)?;
 
     let count = state
         .analytics
@@ -389,7 +386,7 @@ pub async fn update_report(
         }
     }
     if let Some(ref config) = req.config {
-        build_analytics_context(config)?;
+        build_analytics_context(config, false)?;
     }
 
     let report = match state
@@ -551,7 +548,8 @@ mod tests {
         let mut cfg = default_config();
         cfg.report_type = ReportType::Metrics;
         cfg.metric_type = None;
-        let err = build_analytics_context(&cfg).expect_err("missing metric type should fail");
+        let err =
+            build_analytics_context(&cfg, false).expect_err("missing metric type should fail");
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
@@ -560,7 +558,8 @@ mod tests {
         let mut cfg = default_config();
         cfg.report_type = ReportType::Metrics;
         cfg.metric_type = Some("bogus".to_string());
-        let err = build_analytics_context(&cfg).expect_err("unknown metric type should fail");
+        let err =
+            build_analytics_context(&cfg, false).expect_err("unknown metric type should fail");
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 

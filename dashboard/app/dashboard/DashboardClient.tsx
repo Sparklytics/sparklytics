@@ -18,6 +18,8 @@ import { FunnelsPage } from '@/components/funnels/FunnelsPage';
 import { JourneyPage } from '@/components/journey/JourneyPage';
 import { RetentionPage } from '@/components/retention/RetentionPage';
 import { ReportsPage } from '@/components/reports/ReportsPage';
+import { LinksPage } from '@/components/acquisition/LinksPage';
+import { PixelsPage } from '@/components/acquisition/PixelsPage';
 import { useStats } from '@/hooks/useStats';
 import { usePageviews } from '@/hooks/usePageviews';
 import { useMetrics } from '@/hooks/useMetrics';
@@ -76,7 +78,7 @@ export function DashboardClient() {
   const analyticsEnabled = subPage !== 'settings' && subPage !== 'realtime'
     && subPage !== 'sessions' && subPage !== 'goals' && subPage !== 'funnels'
     && subPage !== 'journey' && subPage !== 'retention' && subPage !== 'reports'
-    && subPage !== 'attribution';
+    && subPage !== 'attribution' && subPage !== 'acquisition';
 
   // Auth redirect guard
   useEffect(() => {
@@ -193,6 +195,18 @@ export function DashboardClient() {
     );
   }
 
+  if (subPage === 'acquisition') {
+    return (
+      <AppShell websiteId={websiteId}>
+        {subSubPage === 'pixels' ? (
+          <PixelsPage websiteId={websiteId} />
+        ) : (
+          <LinksPage websiteId={websiteId} />
+        )}
+      </AppShell>
+    );
+  }
+
   const stats = statsData?.data;
   const series = pageviewsData?.data?.series ?? [];
   const compareSeries = pageviewsData?.data?.compare_series ?? [];
@@ -271,6 +285,17 @@ export function DashboardClient() {
                   totalVisitors={stats?.visitors}
                 />
               </div>
+              <p className="text-[11px] text-ink-3">
+                IP Geolocation by{' '}
+                <a
+                  href="https://db-ip.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-ink-2 underline underline-offset-2 hover:text-ink"
+                >
+                  DB-IP
+                </a>
+              </p>
             </div>
           )}
 

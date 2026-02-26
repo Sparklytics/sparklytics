@@ -23,6 +23,7 @@ fn base_filter(start: NaiveDate, end: NaiveDate) -> AnalyticsFilter {
         filter_region: None,
         filter_city: None,
         filter_hostname: None,
+        include_bots: false,
     }
 }
 

@@ -36,6 +36,7 @@ pub struct GoalStatsQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: Option<bool>,
 }
 
 fn unprocessable(code: &str, message: &str, field: Option<&str>) -> (StatusCode, Json<Value>) {
@@ -347,6 +348,9 @@ pub async fn get_goal_stats(
 
     let (start_date, end_date) =
         parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let include_bots = query
+        .include_bots
+        .unwrap_or(state.default_include_bots(&website_id).await);
     let filter = AnalyticsFilter {
         start_date,
         end_date,
@@ -364,6 +368,7 @@ pub async fn get_goal_stats(
         filter_region: query.filter_region,
         filter_city: query.filter_city,
         filter_hostname: query.filter_hostname,
+        include_bots,
     };
 
     let stats = state

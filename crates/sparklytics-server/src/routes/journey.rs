@@ -38,6 +38,7 @@ pub struct JourneyQueryParams {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: Option<bool>,
 }
 
 fn parse_date_range(
@@ -159,6 +160,9 @@ pub async fn get_journey(
 
     let (start_date, end_date) =
         parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let include_bots = query
+        .include_bots
+        .unwrap_or(state.default_include_bots(&website_id).await);
 
     let filter = AnalyticsFilter {
         start_date,
@@ -189,6 +193,7 @@ pub async fn get_journey(
         filter_region: normalize_optional_filter("filter_region", query.filter_region, 128)?,
         filter_city: normalize_optional_filter("filter_city", query.filter_city, 128)?,
         filter_hostname: normalize_optional_filter("filter_hostname", query.filter_hostname, 255)?,
+        include_bots,
     };
 
     let journey_query = JourneyQuery {

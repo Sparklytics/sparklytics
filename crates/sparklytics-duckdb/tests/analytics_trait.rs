@@ -26,6 +26,7 @@ fn base_filter(start_date: NaiveDate, end_date: NaiveDate) -> AnalyticsFilter {
         filter_region: None,
         filter_city: None,
         filter_hostname: None,
+        include_bots: false,
     }
 }
 
@@ -57,6 +58,13 @@ fn sample_event(website_id: &str, session_id: String) -> Event {
         utm_campaign: Some("launch".to_string()),
         utm_term: None,
         utm_content: None,
+        link_id: None,
+        pixel_id: None,
+        source_ip: None,
+        user_agent: None,
+        is_bot: false,
+        bot_score: 0,
+        bot_reason: None,
         created_at: Utc::now(),
     }
 }
@@ -96,6 +104,13 @@ fn sample_custom_event(
         utm_campaign: None,
         utm_term: None,
         utm_content: None,
+        link_id: None,
+        pixel_id: None,
+        source_ip: None,
+        user_agent: None,
+        is_bot: false,
+        bot_score: 0,
+        bot_reason: None,
         created_at,
     }
 }
@@ -191,7 +206,7 @@ async fn test_realtime_includes_pagination() {
         .expect("insert");
 
     let realtime = backend
-        .get_realtime("site_1", None)
+        .get_realtime("site_1", None, false)
         .await
         .expect("realtime");
     assert_eq!(realtime.pagination.limit, 100);

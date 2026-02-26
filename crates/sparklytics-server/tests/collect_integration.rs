@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -7,6 +8,8 @@ use serde_json::{json, Value};
 use tokio::time::{sleep, Duration, Instant};
 use tower::ServiceExt;
 
+use async_trait::async_trait;
+use sparklytics_core::billing::{BillingGate, BillingOutcome};
 use sparklytics_core::config::{AppMode, AuthMode, Config};
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
@@ -43,6 +46,51 @@ async fn setup() -> (Arc<AppState>, axum::Router) {
     let state = Arc::new(AppState::new(db, config));
     let app = build_app(Arc::clone(&state));
     (state, app)
+}
+
+struct MockBillingGate {
+    outcome: BillingOutcome,
+    seen_tenants: Arc<StdMutex<Vec<String>>>,
+}
+
+#[async_trait]
+impl BillingGate for MockBillingGate {
+    async fn check(&self, tenant_id: &str) -> BillingOutcome {
+        let mut seen = self.seen_tenants.lock().expect("lock seen tenants");
+        seen.push(tenant_id.to_string());
+        self.outcome.clone()
+    }
+}
+
+async fn setup_cloud(
+    website_tenant_id: Option<&str>,
+    billing_outcome: BillingOutcome,
+) -> (Arc<AppState>, axum::Router, Arc<StdMutex<Vec<String>>>) {
+    let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
+    db.seed_website("site_test", "example.com")
+        .await
+        .expect("seed website");
+    if let Some(tenant_id) = website_tenant_id {
+        let conn = db.conn_for_test().await;
+        conn.execute(
+            "UPDATE websites SET tenant_id = ?1 WHERE id = ?2",
+            sparklytics_duckdb::duckdb::params![tenant_id, "site_test"],
+        )
+        .expect("assign tenant to website");
+    }
+    let mut config = test_config();
+    config.mode = AppMode::Cloud;
+
+    let seen_tenants = Arc::new(StdMutex::new(Vec::new()));
+    let billing_gate = Arc::new(MockBillingGate {
+        outcome: billing_outcome,
+        seen_tenants: Arc::clone(&seen_tenants),
+    });
+    let mut state = AppState::new(db, config);
+    state.billing_gate = billing_gate;
+    let state = Arc::new(state);
+    let app = build_app(Arc::clone(&state));
+    (state, app, seen_tenants)
 }
 
 /// Helper: send a POST /api/collect with the given JSON body and optional headers.
@@ -695,5 +743,138 @@ async fn test_tenant_id_null_in_self_hosted() {
     assert!(
         tenant_id.is_none(),
         "tenant_id must be NULL in self-hosted mode"
+    );
+}
+
+// ============================================================
+// BDD: cloud collect resolves tenant from website and checks billing gate
+// ============================================================
+#[tokio::test]
+async fn test_cloud_collect_assigns_tenant_and_checks_billing() {
+    let (state, app, seen_tenants) = setup_cloud(Some("org_acme"), BillingOutcome::Allowed).await;
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/cloud"
+    });
+
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    let seen = seen_tenants.lock().expect("lock seen tenants").clone();
+    assert_eq!(seen, vec!["org_acme".to_string()]);
+
+    state.flush_buffer().await;
+    let conn = state.db.conn_for_test().await;
+    let mut stmt = conn
+        .prepare("SELECT tenant_id FROM events WHERE website_id = ?1")
+        .expect("prepare query");
+    let tenant_id: Option<String> = stmt
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
+        .expect("query tenant_id");
+    assert_eq!(tenant_id.as_deref(), Some("org_acme"));
+}
+
+// ============================================================
+// BDD: cloud collect rejects websites without tenant context
+// ============================================================
+#[tokio::test]
+async fn test_cloud_collect_rejects_missing_website_tenant() {
+    let (_state, app, seen_tenants) = setup_cloud(None, BillingOutcome::Allowed).await;
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/cloud"
+    });
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let json = json_body(response).await;
+    assert_eq!(json["error"]["code"], "organization_context_required");
+    assert!(
+        seen_tenants.lock().expect("lock seen tenants").is_empty(),
+        "billing gate must not run when tenant context is missing"
+    );
+}
+
+// ============================================================
+// BDD: cloud collect enforces billing plan limit
+// ============================================================
+#[tokio::test]
+async fn test_cloud_collect_plan_limit_exceeded() {
+    let (_state, app, seen_tenants) =
+        setup_cloud(Some("org_acme"), BillingOutcome::LimitExceeded).await;
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/cloud"
+    });
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    let json = json_body(response).await;
+    assert_eq!(json["error"]["code"], "plan_limit_exceeded");
+    let seen = seen_tenants.lock().expect("lock seen tenants").clone();
+    assert_eq!(seen, vec!["org_acme".to_string()]);
+}
+
+// ============================================================
+// BDD: cloud collect rejects mixed-tenant batches
+// ============================================================
+#[tokio::test]
+async fn test_cloud_collect_rejects_mixed_tenant_batch() {
+    let (state, app, seen_tenants) = setup_cloud(Some("org_acme"), BillingOutcome::Allowed).await;
+    state
+        .db
+        .seed_website("site_other", "other.example.com")
+        .await
+        .expect("seed second website");
+    {
+        let conn = state.db.conn_for_test().await;
+        conn.execute(
+            "UPDATE websites SET tenant_id = ?1 WHERE id = ?2",
+            sparklytics_duckdb::duckdb::params!["org_other", "site_other"],
+        )
+        .expect("set second tenant");
+    }
+
+    let body = json!([
+        {
+            "website_id": "site_test",
+            "type": "pageview",
+            "url": "/a"
+        },
+        {
+            "website_id": "site_other",
+            "type": "pageview",
+            "url": "/b"
+        }
+    ]);
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let json = json_body(response).await;
+    assert_eq!(json["error"]["code"], "validation_error");
+    assert_eq!(
+        json["error"]["message"],
+        "batch must contain events for a single tenant"
+    );
+    assert!(
+        seen_tenants.lock().expect("lock seen tenants").is_empty(),
+        "billing gate must not run for invalid mixed-tenant batches"
     );
 }

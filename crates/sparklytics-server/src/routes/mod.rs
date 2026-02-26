@@ -1,4 +1,5 @@
 pub mod attribution;
+pub mod bot;
 pub mod collect;
 pub mod compare;
 pub mod events;
@@ -7,8 +8,11 @@ pub mod funnels;
 pub mod goals;
 pub mod health;
 pub mod journey;
+pub mod links;
 pub mod metrics;
+pub mod notifications;
 pub mod pageviews;
+pub mod pixels;
 pub mod realtime;
 pub mod reports;
 pub mod retention;

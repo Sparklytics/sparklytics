@@ -14,6 +14,7 @@ import {
   Key,
   Shield,
   AlertTriangle,
+  Bell,
   Users,
   Target,
   Filter,
@@ -21,6 +22,9 @@ import {
   RefreshCw,
   LineChart,
   DollarSign,
+  Link2,
+  Image,
+  Bot,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -76,11 +80,17 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
     { label: 'Attribution', path: `/dashboard/${websiteId}/attribution`, icon: DollarSign },
     { label: 'Reports', path: `/dashboard/${websiteId}/reports`, icon: LineChart },
   ];
+  const acquisitionItems = [
+    { label: 'Campaign Links', path: `/dashboard/${websiteId}/acquisition/links`, icon: Link2 },
+    { label: 'Tracking Pixels', path: `/dashboard/${websiteId}/acquisition/pixels`, icon: Image },
+  ];
 
   const configItems: { label: string; path: string; icon: any }[] = [
     { label: 'General', path: `/dashboard/${websiteId}/settings/general`, icon: Settings },
     { label: 'Snippet', path: `/dashboard/${websiteId}/settings/snippet`, icon: Code },
     { label: 'Sharing', path: `/dashboard/${websiteId}/settings/sharing`, icon: Share2 },
+    { label: 'Notifications', path: `/dashboard/${websiteId}/settings/notifications`, icon: Bell },
+    { label: 'Bots', path: `/dashboard/${websiteId}/settings/bots`, icon: Bot },
     { label: 'Danger Zone', path: `/dashboard/${websiteId}/settings/danger`, icon: AlertTriangle },
   ];
   if (showApiKeys) {
@@ -181,6 +191,11 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
             <SectionLabel label="Explore" />
             <div className="space-y-px">
               {exploreItems.map((item) => <NavItem key={item.label} {...item} />)}
+            </div>
+
+            <SectionLabel label="Acquisition" />
+            <div className="space-y-px">
+              {acquisitionItems.map((item) => <NavItem key={item.label} {...item} />)}
             </div>
 
             <div className="mt-3 pt-3 border-t border-line/50">

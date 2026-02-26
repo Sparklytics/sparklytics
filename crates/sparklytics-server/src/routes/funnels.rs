@@ -265,6 +265,7 @@ pub struct FunnelResultsQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: Option<bool>,
 }
 
 pub async fn list_funnels(
@@ -504,6 +505,9 @@ pub async fn get_funnel_results(
     let filter_region = normalize_optional_filter("filter_region", query.filter_region, 128)?;
     let filter_city = normalize_optional_filter("filter_city", query.filter_city, 128)?;
     let filter_hostname = normalize_optional_filter("filter_hostname", query.filter_hostname, 255)?;
+    let include_bots = query
+        .include_bots
+        .unwrap_or(state.default_include_bots(&website_id).await);
 
     let filter = AnalyticsFilter {
         start_date,
@@ -522,6 +526,7 @@ pub async fn get_funnel_results(
         filter_region,
         filter_city,
         filter_hostname,
+        include_bots,
     };
 
     let _permit = tokio::time::timeout(

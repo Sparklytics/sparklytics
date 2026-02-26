@@ -72,5 +72,12 @@ pub struct Event {
     pub utm_campaign: Option<String>,
     pub utm_term: Option<String>,
     pub utm_content: Option<String>,
+    pub link_id: Option<String>,
+    pub pixel_id: Option<String>,
+    pub source_ip: Option<String>,
+    pub user_agent: Option<String>,
+    pub is_bot: bool,
+    pub bot_score: i32,
+    pub bot_reason: Option<String>,
     pub created_at: DateTime<Utc>,
 }

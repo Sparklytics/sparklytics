@@ -178,6 +178,95 @@ export const api = {
       `/api/websites/${websiteId}/revenue/summary?${toQuery(params)}`
     ),
 
+  // Campaign Links + Tracking Pixels (Sprint 19)
+  listCampaignLinks: (websiteId: string) =>
+    request<{ data: CampaignLink[] }>(`/api/websites/${websiteId}/links`),
+  createCampaignLink: (websiteId: string, body: CreateCampaignLinkPayload) =>
+    request<{ data: CampaignLink }>(`/api/websites/${websiteId}/links`, { method: 'POST', body }),
+  updateCampaignLink: (websiteId: string, linkId: string, body: UpdateCampaignLinkPayload) =>
+    request<{ data: CampaignLink }>(`/api/websites/${websiteId}/links/${linkId}`, { method: 'PUT', body }),
+  deleteCampaignLink: (websiteId: string, linkId: string) =>
+    request<void>(`/api/websites/${websiteId}/links/${linkId}`, { method: 'DELETE' }),
+  getCampaignLinkStats: (websiteId: string, linkId: string) =>
+    request<{ data: LinkStatsResponse }>(`/api/websites/${websiteId}/links/${linkId}/stats`),
+  listTrackingPixels: (websiteId: string) =>
+    request<{ data: TrackingPixel[] }>(`/api/websites/${websiteId}/pixels`),
+  createTrackingPixel: (websiteId: string, body: CreateTrackingPixelPayload) =>
+    request<{ data: TrackingPixel }>(`/api/websites/${websiteId}/pixels`, { method: 'POST', body }),
+  updateTrackingPixel: (websiteId: string, pixelId: string, body: UpdateTrackingPixelPayload) =>
+    request<{ data: TrackingPixel }>(`/api/websites/${websiteId}/pixels/${pixelId}`, { method: 'PUT', body }),
+  deleteTrackingPixel: (websiteId: string, pixelId: string) =>
+    request<void>(`/api/websites/${websiteId}/pixels/${pixelId}`, { method: 'DELETE' }),
+  getTrackingPixelStats: (websiteId: string, pixelId: string) =>
+    request<{ data: PixelStatsResponse }>(`/api/websites/${websiteId}/pixels/${pixelId}/stats`),
+
+  // Scheduled Reports + Alerts (Sprint 20)
+  listReportSubscriptions: (websiteId: string) =>
+    request<{ data: ReportSubscription[] }>(`/api/websites/${websiteId}/subscriptions`),
+  createReportSubscription: (websiteId: string, body: CreateReportSubscriptionPayload) =>
+    request<{ data: ReportSubscription }>(`/api/websites/${websiteId}/subscriptions`, { method: 'POST', body }),
+  updateReportSubscription: (
+    websiteId: string,
+    subscriptionId: string,
+    body: UpdateReportSubscriptionPayload,
+  ) => request<{ data: ReportSubscription }>(`/api/websites/${websiteId}/subscriptions/${subscriptionId}`, {
+    method: 'PUT',
+    body,
+  }),
+  deleteReportSubscription: (websiteId: string, subscriptionId: string) =>
+    request<void>(`/api/websites/${websiteId}/subscriptions/${subscriptionId}`, { method: 'DELETE' }),
+  testReportSubscription: (websiteId: string, subscriptionId: string) =>
+    request<{ data: NotificationDelivery | null }>(
+      `/api/websites/${websiteId}/subscriptions/${subscriptionId}/test`,
+      { method: 'POST' }
+    ),
+  listAlertRules: (websiteId: string) =>
+    request<{ data: AlertRule[] }>(`/api/websites/${websiteId}/alerts`),
+  createAlertRule: (websiteId: string, body: CreateAlertRulePayload) =>
+    request<{ data: AlertRule }>(`/api/websites/${websiteId}/alerts`, { method: 'POST', body }),
+  updateAlertRule: (websiteId: string, alertId: string, body: UpdateAlertRulePayload) =>
+    request<{ data: AlertRule }>(`/api/websites/${websiteId}/alerts/${alertId}`, { method: 'PUT', body }),
+  deleteAlertRule: (websiteId: string, alertId: string) =>
+    request<void>(`/api/websites/${websiteId}/alerts/${alertId}`, { method: 'DELETE' }),
+  testAlertRule: (websiteId: string, alertId: string) =>
+    request<{ data: NotificationDelivery | null }>(`/api/websites/${websiteId}/alerts/${alertId}/test`, {
+      method: 'POST',
+    }),
+  getNotificationHistory: (websiteId: string, limit = 50) =>
+    request<{ data: NotificationDelivery[] }>(
+      `/api/websites/${websiteId}/notifications/history?${toQuery({ limit })}`
+    ),
+
+  // Bot Controls + Visibility (Sprint 22)
+  getBotSummary: (websiteId: string, params: BotDateRangeParams = {}) =>
+    request<{ data: BotSummary }>(
+      `/api/websites/${websiteId}/bot-summary?${toQuery(params)}`
+    ),
+  getBotPolicy: (websiteId: string) =>
+    request<{ data: BotPolicy }>(`/api/websites/${websiteId}/bot/policy`),
+  updateBotPolicy: (websiteId: string, body: UpdateBotPolicyPayload) =>
+    request<{ data: BotPolicy }>(`/api/websites/${websiteId}/bot/policy`, { method: 'PUT', body }),
+  listBotAllowlist: (websiteId: string, params: BotListParams = {}) =>
+    request<BotListResponse>(`/api/websites/${websiteId}/bot/allowlist?${toQuery(params)}`),
+  createBotAllowlist: (websiteId: string, body: CreateBotListEntryPayload) =>
+    request<{ data: BotListEntry }>(`/api/websites/${websiteId}/bot/allowlist`, { method: 'POST', body }),
+  deleteBotAllowlist: (websiteId: string, entryId: string) =>
+    request<void>(`/api/websites/${websiteId}/bot/allowlist/${entryId}`, { method: 'DELETE' }),
+  listBotBlocklist: (websiteId: string, params: BotListParams = {}) =>
+    request<BotListResponse>(`/api/websites/${websiteId}/bot/blocklist?${toQuery(params)}`),
+  createBotBlocklist: (websiteId: string, body: CreateBotListEntryPayload) =>
+    request<{ data: BotListEntry }>(`/api/websites/${websiteId}/bot/blocklist`, { method: 'POST', body }),
+  deleteBotBlocklist: (websiteId: string, entryId: string) =>
+    request<void>(`/api/websites/${websiteId}/bot/blocklist/${entryId}`, { method: 'DELETE' }),
+  getBotReport: (websiteId: string, params: BotReportParams = {}) =>
+    request<{ data: BotReport }>(`/api/websites/${websiteId}/bot/report?${toQuery(params)}`),
+  startBotRecompute: (websiteId: string, body: BotRecomputePayload = {}) =>
+    request<BotRecomputeStartResponse>(`/api/websites/${websiteId}/bot/recompute`, { method: 'POST', body }),
+  getBotRecompute: (websiteId: string, jobId: string) =>
+    request<{ data: BotRecomputeRun }>(`/api/websites/${websiteId}/bot/recompute/${jobId}`),
+  listBotAudit: (websiteId: string, params: BotListParams = {}) =>
+    request<BotAuditResponse>(`/api/websites/${websiteId}/bot/audit?${toQuery(params)}`),
+
   // Funnel Analysis (Sprint 13)
   listFunnels: (websiteId: string) =>
     request<{ data: FunnelSummary[] }>(`/api/websites/${websiteId}/funnels`),
@@ -506,6 +595,296 @@ export interface RevenueSummary {
   model: AttributionModel;
   conversions: number;
   revenue: number;
+}
+
+// --- Acquisition types (Sprint 19) ---
+
+export interface CampaignLink {
+  id: string;
+  website_id: string;
+  name: string;
+  slug: string;
+  destination_url: string;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_term: string | null;
+  utm_content: string | null;
+  is_active: boolean;
+  created_at: string;
+  clicks?: number;
+  unique_visitors?: number;
+  conversions?: number;
+  revenue?: number;
+  tracking_url: string;
+}
+
+export interface CreateCampaignLinkPayload {
+  name: string;
+  destination_url: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+}
+
+export interface UpdateCampaignLinkPayload {
+  name?: string;
+  destination_url?: string;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_term?: string | null;
+  utm_content?: string | null;
+  is_active?: boolean;
+}
+
+export interface LinkStatsResponse {
+  link_id: string;
+  clicks: number;
+  unique_visitors: number;
+  conversions: number;
+  revenue: number;
+}
+
+export interface TrackingPixel {
+  id: string;
+  website_id: string;
+  name: string;
+  pixel_key: string;
+  default_url: string | null;
+  is_active: boolean;
+  created_at: string;
+  views?: number;
+  unique_visitors?: number;
+  pixel_url: string;
+  snippet: string;
+}
+
+export interface CreateTrackingPixelPayload {
+  name: string;
+  default_url?: string;
+}
+
+export interface UpdateTrackingPixelPayload {
+  name?: string;
+  default_url?: string | null;
+  is_active?: boolean;
+}
+
+export interface PixelStatsResponse {
+  pixel_id: string;
+  views: number;
+  unique_visitors: number;
+}
+
+// --- Notifications types (Sprint 20) ---
+
+export type SubscriptionSchedule = 'daily' | 'weekly' | 'monthly';
+export type NotificationChannel = 'email' | 'webhook';
+export type AlertMetric = 'pageviews' | 'visitors' | 'conversions' | 'conversion_rate';
+export type AlertConditionType = 'spike' | 'drop' | 'threshold_above' | 'threshold_below';
+export type NotificationSourceType = 'subscription' | 'alert';
+export type NotificationDeliveryStatus = 'sent' | 'failed';
+
+export interface ReportSubscription {
+  id: string;
+  website_id: string;
+  report_id: string;
+  schedule: SubscriptionSchedule;
+  timezone: string;
+  channel: NotificationChannel;
+  target: string;
+  is_active: boolean;
+  last_run_at: string | null;
+  next_run_at: string;
+  created_at: string;
+}
+
+export interface CreateReportSubscriptionPayload {
+  report_id: string;
+  schedule: SubscriptionSchedule;
+  timezone?: string;
+  channel: NotificationChannel;
+  target: string;
+}
+
+export interface UpdateReportSubscriptionPayload {
+  report_id?: string;
+  schedule?: SubscriptionSchedule;
+  timezone?: string | null;
+  channel?: NotificationChannel;
+  target?: string | null;
+  is_active?: boolean;
+}
+
+export interface AlertRule {
+  id: string;
+  website_id: string;
+  name: string;
+  metric: AlertMetric;
+  condition_type: AlertConditionType;
+  threshold_value: number;
+  lookback_days: number;
+  channel: NotificationChannel;
+  target: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface CreateAlertRulePayload {
+  name: string;
+  metric: AlertMetric;
+  condition_type: AlertConditionType;
+  threshold_value: number;
+  lookback_days?: number;
+  channel: NotificationChannel;
+  target: string;
+}
+
+export interface UpdateAlertRulePayload {
+  name?: string;
+  metric?: AlertMetric;
+  condition_type?: AlertConditionType;
+  threshold_value?: number;
+  lookback_days?: number;
+  channel?: NotificationChannel;
+  target?: string | null;
+  is_active?: boolean;
+}
+
+export interface NotificationDelivery {
+  id: string;
+  source_type: NotificationSourceType;
+  source_id: string;
+  idempotency_key: string;
+  status: NotificationDeliveryStatus;
+  error_message: string | null;
+  delivered_at: string;
+}
+
+// --- Bot Controls + Visibility types (Sprint 22) ---
+
+export type BotPolicyMode = 'strict' | 'balanced' | 'off';
+export type BotMatchType = 'ua_contains' | 'ip_exact' | 'ip_cidr';
+export type BotRecomputeStatus = 'queued' | 'running' | 'success' | 'failed';
+export type BotReportGranularity = 'hour' | 'day';
+
+export interface BotDateRangeParams {
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface BotListParams {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface BotReportParams extends BotDateRangeParams {
+  granularity?: BotReportGranularity;
+}
+
+export interface BotPolicy {
+  website_id: string;
+  mode: BotPolicyMode;
+  threshold_score: number;
+  updated_at: string;
+}
+
+export interface UpdateBotPolicyPayload {
+  mode: BotPolicyMode;
+  threshold_score: number;
+}
+
+export interface BotReasonCount {
+  code: string;
+  count: number;
+}
+
+export interface BotSummary {
+  website_id: string;
+  start_date: string;
+  end_date: string;
+  bot_events: number;
+  human_events: number;
+  bot_rate: number;
+  top_reasons: BotReasonCount[];
+}
+
+export interface BotListEntry {
+  id: string;
+  match_type: BotMatchType;
+  match_value: string;
+  note: string | null;
+  created_at: string;
+}
+
+export interface BotListResponse {
+  data: BotListEntry[];
+  next_cursor: string | null;
+}
+
+export interface CreateBotListEntryPayload {
+  match_type: BotMatchType;
+  match_value: string;
+  note?: string;
+}
+
+export interface BotReportSplit {
+  bot_events: number;
+  human_events: number;
+  bot_rate: number;
+}
+
+export interface BotReportTimeseriesPoint {
+  period_start: string;
+  bot_events: number;
+  human_events: number;
+}
+
+export interface BotReportTopUserAgent {
+  value: string;
+  count: number;
+}
+
+export interface BotReport {
+  split: BotReportSplit;
+  timeseries: BotReportTimeseriesPoint[];
+  top_reasons: BotReasonCount[];
+  top_user_agents: BotReportTopUserAgent[];
+}
+
+export type BotRecomputePayload = BotDateRangeParams;
+
+export interface BotRecomputeStartResponse {
+  job_id: string;
+  status: BotRecomputeStatus;
+}
+
+export interface BotRecomputeRun {
+  job_id: string;
+  website_id: string;
+  status: BotRecomputeStatus;
+  start_date: string;
+  end_date: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface BotPolicyAuditRecord {
+  id: string;
+  actor: string;
+  action: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface BotAuditResponse {
+  data: BotPolicyAuditRecord[];
+  next_cursor: string | null;
 }
 
 export interface AttributionParams {

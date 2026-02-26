@@ -25,6 +25,7 @@ pub struct AnalyticsFilter {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -226,6 +227,135 @@ pub struct RealtimeResult {
     pub active_visitors: i64,
     pub recent_events: Vec<RealtimeEvent>,
     pub pagination: RealtimePagination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BotClassification {
+    pub is_bot: bool,
+    pub bot_score: i32,
+    pub bot_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReasonCount {
+    pub code: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotSummary {
+    pub website_id: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub bot_events: i64,
+    pub human_events: i64,
+    pub bot_rate: f64,
+    pub top_reasons: Vec<BotReasonCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BotPolicyMode {
+    Strict,
+    Balanced,
+    Off,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotPolicy {
+    pub website_id: String,
+    pub mode: BotPolicyMode,
+    pub threshold_score: i32,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateBotPolicyRequest {
+    pub mode: BotPolicyMode,
+    pub threshold_score: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BotMatchType {
+    UaContains,
+    IpExact,
+    IpCidr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotListEntry {
+    pub id: String,
+    pub match_type: BotMatchType,
+    pub match_value: String,
+    pub note: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateBotListEntryRequest {
+    pub match_type: BotMatchType,
+    pub match_value: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReportSplit {
+    pub bot_events: i64,
+    pub human_events: i64,
+    pub bot_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReportTimeseriesPoint {
+    pub period_start: String,
+    pub bot_events: i64,
+    pub human_events: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReportTopUserAgent {
+    pub value: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotReport {
+    pub split: BotReportSplit,
+    pub timeseries: Vec<BotReportTimeseriesPoint>,
+    pub top_reasons: Vec<BotReasonCount>,
+    pub top_user_agents: Vec<BotReportTopUserAgent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BotRecomputeStatus {
+    Queued,
+    Running,
+    Success,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotRecomputeRun {
+    pub job_id: String,
+    pub website_id: String,
+    pub status: BotRecomputeStatus,
+    pub start_date: String,
+    pub end_date: String,
+    pub created_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotPolicyAuditRecord {
+    pub id: String,
+    pub actor: String,
+    pub action: String,
+    pub payload: serde_json::Value,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -633,6 +763,254 @@ pub struct RetentionResponse {
     pub summary: RetentionSummary,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CampaignLink {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub slug: String,
+    pub destination_url: String,
+    pub utm_source: Option<String>,
+    pub utm_medium: Option<String>,
+    pub utm_campaign: Option<String>,
+    pub utm_term: Option<String>,
+    pub utm_content: Option<String>,
+    pub is_active: bool,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clicks: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unique_visitors: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversions: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revenue: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateCampaignLinkRequest {
+    pub name: String,
+    pub destination_url: String,
+    pub utm_source: Option<String>,
+    pub utm_medium: Option<String>,
+    pub utm_campaign: Option<String>,
+    pub utm_term: Option<String>,
+    pub utm_content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateCampaignLinkRequest {
+    pub name: Option<String>,
+    pub destination_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_source: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_medium: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_campaign: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_term: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub utm_content: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkStatsResponse {
+    pub link_id: String,
+    pub clicks: i64,
+    pub unique_visitors: i64,
+    pub conversions: i64,
+    pub revenue: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackingPixel {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub pixel_key: String,
+    pub default_url: Option<String>,
+    pub is_active: bool,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub views: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unique_visitors: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTrackingPixelRequest {
+    pub name: String,
+    pub default_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateTrackingPixelRequest {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub default_url: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PixelStatsResponse {
+    pub pixel_id: String,
+    pub views: i64,
+    pub unique_visitors: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubscriptionSchedule {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationChannel {
+    Email,
+    Webhook,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertMetric {
+    Pageviews,
+    Visitors,
+    Conversions,
+    ConversionRate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertConditionType {
+    Spike,
+    Drop,
+    ThresholdAbove,
+    ThresholdBelow,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationSourceType {
+    Subscription,
+    Alert,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationDeliveryStatus {
+    Sent,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportSubscription {
+    pub id: String,
+    pub website_id: String,
+    pub report_id: String,
+    pub schedule: SubscriptionSchedule,
+    pub timezone: String,
+    pub channel: NotificationChannel,
+    pub target: String,
+    pub is_active: bool,
+    pub last_run_at: Option<String>,
+    pub next_run_at: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateReportSubscriptionRequest {
+    pub report_id: String,
+    pub schedule: SubscriptionSchedule,
+    pub timezone: Option<String>,
+    pub channel: NotificationChannel,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateReportSubscriptionRequest {
+    pub report_id: Option<String>,
+    pub schedule: Option<SubscriptionSchedule>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub timezone: Option<Option<String>>,
+    pub channel: Option<NotificationChannel>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub target: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertRule {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub metric: AlertMetric,
+    pub condition_type: AlertConditionType,
+    pub threshold_value: f64,
+    pub lookback_days: i64,
+    pub channel: NotificationChannel,
+    pub target: String,
+    pub is_active: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAlertRuleRequest {
+    pub name: String,
+    pub metric: AlertMetric,
+    pub condition_type: AlertConditionType,
+    pub threshold_value: f64,
+    pub lookback_days: Option<i64>,
+    pub channel: NotificationChannel,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateAlertRuleRequest {
+    pub name: Option<String>,
+    pub metric: Option<AlertMetric>,
+    pub condition_type: Option<AlertConditionType>,
+    pub threshold_value: Option<f64>,
+    pub lookback_days: Option<i64>,
+    pub channel: Option<NotificationChannel>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub target: Option<Option<String>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertEvaluationResult {
+    pub alert_id: String,
+    pub triggered: bool,
+    pub metric_value: f64,
+    pub baseline_mean: Option<f64>,
+    pub baseline_stddev: Option<f64>,
+    pub z_score: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationDelivery {
+    pub id: String,
+    pub source_type: NotificationSourceType,
+    pub source_id: String,
+    pub idempotency_key: String,
+    pub status: NotificationDeliveryStatus,
+    pub error_message: Option<String>,
+    pub delivered_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportPayload {
+    pub website_id: String,
+    pub report_id: String,
+    pub generated_at: String,
+    pub data: serde_json::Value,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportType {
@@ -822,7 +1200,6 @@ pub const VALID_METRIC_TYPES: &[&str] = &[
 ];
 
 #[async_trait::async_trait]
-#[allow(clippy::too_many_arguments)]
 pub trait AnalyticsBackend: Send + Sync + 'static {
     async fn insert_events(&self, events: &[Event]) -> anyhow::Result<()>;
 
@@ -851,6 +1228,7 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         comparison: Option<&ComparisonRange>,
     ) -> anyhow::Result<TimeseriesResult>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn get_metrics(
         &self,
         website_id: &str,
@@ -866,6 +1244,7 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         &self,
         website_id: &str,
         tenant_id: Option<&str>,
+        include_bots: bool,
     ) -> anyhow::Result<RealtimeResult>;
 
     async fn export_events(
@@ -967,6 +1346,20 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         query: &AttributionQuery,
     ) -> anyhow::Result<RevenueSummary>;
 
+    async fn evaluate_alert_rules(
+        &self,
+        tenant_id: Option<&str>,
+        website_id: &str,
+    ) -> anyhow::Result<Vec<AlertEvaluationResult>>;
+
+    async fn render_report_payload(
+        &self,
+        tenant_id: Option<&str>,
+        website_id: &str,
+        report_id: &str,
+        filter: &AnalyticsFilter,
+    ) -> anyhow::Result<ReportPayload>;
+
     async fn count_goals(&self, website_id: &str, tenant_id: Option<&str>) -> anyhow::Result<i64>;
 
     async fn goal_name_exists(
@@ -1035,6 +1428,83 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         filter: &AnalyticsFilter,
         query: &RetentionQuery,
     ) -> anyhow::Result<RetentionResponse>;
+
+    async fn list_campaign_links(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<CampaignLink>>;
+
+    async fn create_campaign_link(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        req: CreateCampaignLinkRequest,
+    ) -> anyhow::Result<CampaignLink>;
+
+    async fn update_campaign_link(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        link_id: &str,
+        req: UpdateCampaignLinkRequest,
+    ) -> anyhow::Result<Option<CampaignLink>>;
+
+    async fn delete_campaign_link(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        link_id: &str,
+    ) -> anyhow::Result<bool>;
+
+    async fn get_campaign_link_stats(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        link_id: &str,
+    ) -> anyhow::Result<LinkStatsResponse>;
+
+    async fn get_campaign_link_by_slug(&self, slug: &str) -> anyhow::Result<Option<CampaignLink>>;
+
+    async fn list_tracking_pixels(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<TrackingPixel>>;
+
+    async fn create_tracking_pixel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        req: CreateTrackingPixelRequest,
+    ) -> anyhow::Result<TrackingPixel>;
+
+    async fn update_tracking_pixel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        pixel_id: &str,
+        req: UpdateTrackingPixelRequest,
+    ) -> anyhow::Result<Option<TrackingPixel>>;
+
+    async fn delete_tracking_pixel(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        pixel_id: &str,
+    ) -> anyhow::Result<bool>;
+
+    async fn get_tracking_pixel_stats(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        pixel_id: &str,
+    ) -> anyhow::Result<PixelStatsResponse>;
+
+    async fn get_tracking_pixel_by_key(
+        &self,
+        pixel_key: &str,
+    ) -> anyhow::Result<Option<TrackingPixel>>;
 
     async fn list_reports(
         &self,

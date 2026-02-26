@@ -36,6 +36,7 @@ pub struct RetentionParams {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: Option<bool>,
 }
 
 fn parse_date_range(
@@ -173,6 +174,9 @@ pub async fn get_retention(
 
     let (start_date, end_date) =
         parse_date_range(params.start_date.as_deref(), params.end_date.as_deref())?;
+    let include_bots = params
+        .include_bots
+        .unwrap_or(state.default_include_bots(&website_id).await);
 
     let filter = AnalyticsFilter {
         start_date,
@@ -203,6 +207,7 @@ pub async fn get_retention(
         filter_region: normalize_optional_filter("filter_region", params.filter_region, 128)?,
         filter_city: normalize_optional_filter("filter_city", params.filter_city, 128)?,
         filter_hostname: normalize_optional_filter("filter_hostname", params.filter_hostname, 255)?,
+        include_bots,
     };
 
     let retention_query = RetentionQuery {

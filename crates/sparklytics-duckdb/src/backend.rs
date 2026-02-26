@@ -30,6 +30,7 @@ pub(crate) fn rand_hex(n: usize) -> String {
 /// (default `"1GB"`). See CLAUDE.md critical fact #12.
 ///
 /// `tenant_id` is always `NULL` in self-hosted mode (critical fact #2).
+#[derive(Clone)]
 pub struct DuckDbBackend {
     pub(crate) conn: Arc<Mutex<Connection>>,
 }
@@ -162,6 +163,7 @@ impl DuckDbBackend {
                     browser, browser_version, os, os_version, device_type,
                     screen, language,
                     utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+                    link_id, pixel_id, source_ip, user_agent, is_bot, bot_score, bot_reason,
                     created_at
                 ) VALUES (
                     ?1,  ?2,  ?3,  ?4,  ?5,
@@ -171,7 +173,8 @@ impl DuckDbBackend {
                     ?15, ?16, ?17, ?18, ?19,
                     ?20, ?21,
                     ?22, ?23, ?24, ?25, ?26,
-                    ?27
+                    ?27, ?28, ?29, ?30, ?31, ?32, ?33,
+                    ?34
                 )"#,
         )?;
 
@@ -203,6 +206,13 @@ impl DuckDbBackend {
                 event.utm_campaign,
                 event.utm_term,
                 event.utm_content,
+                event.link_id,
+                event.pixel_id,
+                event.source_ip,
+                event.user_agent,
+                event.is_bot,
+                event.bot_score,
+                event.bot_reason,
                 event.created_at.to_rfc3339(),
             ])?;
         }
@@ -268,6 +278,20 @@ impl DuckDbBackend {
             session_id,
             additional_pageviews,
             now,
+        )
+        .await
+    }
+
+    /// Update bot classification flags for a session using the strongest score seen.
+    pub async fn set_session_bot_classification(
+        &self,
+        session_id: &str,
+        is_bot: bool,
+        bot_score: i32,
+        bot_reason: Option<&str>,
+    ) -> Result<()> {
+        crate::session::set_session_bot_classification_inner(
+            self, session_id, is_bot, bot_score, bot_reason,
         )
         .await
     }

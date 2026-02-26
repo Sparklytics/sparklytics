@@ -196,12 +196,16 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             "/api/share/{share_id}/metrics",
             get(routes::share::share_metrics),
         );
+    let acquisition_public_router = Router::new()
+        .route("/l/{slug}", get(routes::links::track_link_redirect))
+        .route("/p/{pixel_key}", get(routes::pixels::track_pixel));
 
     // Always-public routes.
     let mut app = Router::new()
         .route("/health", get(routes::health::health))
         .merge(collect_router)
-        .merge(share_router);
+        .merge(share_router)
+        .merge(acquisition_public_router);
 
     match auth_mode {
         AuthMode::None => {
@@ -282,6 +286,46 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::retention::get_retention),
                 )
                 .route(
+                    "/api/websites/{id}/bot-summary",
+                    get(routes::bot::get_bot_summary),
+                )
+                .route(
+                    "/api/websites/{id}/bot/policy",
+                    get(routes::bot::get_bot_policy).put(routes::bot::put_bot_policy),
+                )
+                .route(
+                    "/api/websites/{id}/bot/allowlist",
+                    get(routes::bot::list_bot_allowlist).post(routes::bot::create_bot_allowlist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/allowlist/{entry_id}",
+                    axum::routing::delete(routes::bot::delete_bot_allowlist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/blocklist",
+                    get(routes::bot::list_bot_blocklist).post(routes::bot::create_bot_blocklist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/blocklist/{entry_id}",
+                    axum::routing::delete(routes::bot::delete_bot_blocklist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/report",
+                    get(routes::bot::get_bot_report),
+                )
+                .route(
+                    "/api/websites/{id}/bot/recompute",
+                    post(routes::bot::post_bot_recompute),
+                )
+                .route(
+                    "/api/websites/{id}/bot/recompute/{job_id}",
+                    get(routes::bot::get_bot_recompute),
+                )
+                .route(
+                    "/api/websites/{id}/bot/audit",
+                    get(routes::bot::list_bot_audit),
+                )
+                .route(
                     "/api/websites/{id}/reports",
                     get(routes::reports::list_reports).post(routes::reports::create_report),
                 )
@@ -298,6 +342,62 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/reports/{report_id}/run",
                     post(routes::reports::run_report),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions",
+                    get(routes::notifications::list_subscriptions)
+                        .post(routes::notifications::create_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions/{subscription_id}",
+                    put(routes::notifications::update_subscription)
+                        .delete(routes::notifications::delete_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions/{subscription_id}/test",
+                    post(routes::notifications::test_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/alerts",
+                    get(routes::notifications::list_alerts)
+                        .post(routes::notifications::create_alert),
+                )
+                .route(
+                    "/api/websites/{id}/alerts/{alert_id}",
+                    put(routes::notifications::update_alert)
+                        .delete(routes::notifications::delete_alert),
+                )
+                .route(
+                    "/api/websites/{id}/alerts/{alert_id}/test",
+                    post(routes::notifications::test_alert),
+                )
+                .route(
+                    "/api/websites/{id}/notifications/history",
+                    get(routes::notifications::notification_history),
+                )
+                .route(
+                    "/api/websites/{id}/links",
+                    get(routes::links::list_links).post(routes::links::create_link),
+                )
+                .route(
+                    "/api/websites/{id}/links/{link_id}",
+                    put(routes::links::update_link).delete(routes::links::delete_link),
+                )
+                .route(
+                    "/api/websites/{id}/links/{link_id}/stats",
+                    get(routes::links::get_link_stats),
+                )
+                .route(
+                    "/api/websites/{id}/pixels",
+                    get(routes::pixels::list_pixels).post(routes::pixels::create_pixel),
+                )
+                .route(
+                    "/api/websites/{id}/pixels/{pixel_id}",
+                    put(routes::pixels::update_pixel).delete(routes::pixels::delete_pixel),
+                )
+                .route(
+                    "/api/websites/{id}/pixels/{pixel_id}/stats",
+                    get(routes::pixels::get_pixel_stats),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",
@@ -407,6 +507,46 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::retention::get_retention),
                 )
                 .route(
+                    "/api/websites/{id}/bot-summary",
+                    get(routes::bot::get_bot_summary),
+                )
+                .route(
+                    "/api/websites/{id}/bot/policy",
+                    get(routes::bot::get_bot_policy).put(routes::bot::put_bot_policy),
+                )
+                .route(
+                    "/api/websites/{id}/bot/allowlist",
+                    get(routes::bot::list_bot_allowlist).post(routes::bot::create_bot_allowlist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/allowlist/{entry_id}",
+                    axum::routing::delete(routes::bot::delete_bot_allowlist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/blocklist",
+                    get(routes::bot::list_bot_blocklist).post(routes::bot::create_bot_blocklist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/blocklist/{entry_id}",
+                    axum::routing::delete(routes::bot::delete_bot_blocklist),
+                )
+                .route(
+                    "/api/websites/{id}/bot/report",
+                    get(routes::bot::get_bot_report),
+                )
+                .route(
+                    "/api/websites/{id}/bot/recompute",
+                    post(routes::bot::post_bot_recompute),
+                )
+                .route(
+                    "/api/websites/{id}/bot/recompute/{job_id}",
+                    get(routes::bot::get_bot_recompute),
+                )
+                .route(
+                    "/api/websites/{id}/bot/audit",
+                    get(routes::bot::list_bot_audit),
+                )
+                .route(
                     "/api/websites/{id}/reports",
                     get(routes::reports::list_reports).post(routes::reports::create_report),
                 )
@@ -423,6 +563,62 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/reports/{report_id}/run",
                     post(routes::reports::run_report),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions",
+                    get(routes::notifications::list_subscriptions)
+                        .post(routes::notifications::create_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions/{subscription_id}",
+                    put(routes::notifications::update_subscription)
+                        .delete(routes::notifications::delete_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/subscriptions/{subscription_id}/test",
+                    post(routes::notifications::test_subscription),
+                )
+                .route(
+                    "/api/websites/{id}/alerts",
+                    get(routes::notifications::list_alerts)
+                        .post(routes::notifications::create_alert),
+                )
+                .route(
+                    "/api/websites/{id}/alerts/{alert_id}",
+                    put(routes::notifications::update_alert)
+                        .delete(routes::notifications::delete_alert),
+                )
+                .route(
+                    "/api/websites/{id}/alerts/{alert_id}/test",
+                    post(routes::notifications::test_alert),
+                )
+                .route(
+                    "/api/websites/{id}/notifications/history",
+                    get(routes::notifications::notification_history),
+                )
+                .route(
+                    "/api/websites/{id}/links",
+                    get(routes::links::list_links).post(routes::links::create_link),
+                )
+                .route(
+                    "/api/websites/{id}/links/{link_id}",
+                    put(routes::links::update_link).delete(routes::links::delete_link),
+                )
+                .route(
+                    "/api/websites/{id}/links/{link_id}/stats",
+                    get(routes::links::get_link_stats),
+                )
+                .route(
+                    "/api/websites/{id}/pixels",
+                    get(routes::pixels::list_pixels).post(routes::pixels::create_pixel),
+                )
+                .route(
+                    "/api/websites/{id}/pixels/{pixel_id}",
+                    put(routes::pixels::update_pixel).delete(routes::pixels::delete_pixel),
+                )
+                .route(
+                    "/api/websites/{id}/pixels/{pixel_id}/stats",
+                    get(routes::pixels::get_pixel_stats),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",

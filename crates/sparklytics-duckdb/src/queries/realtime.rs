@@ -28,33 +28,47 @@ pub struct RealtimeResult {
     pub pagination: RealtimePagination,
 }
 
-pub async fn get_realtime_inner(db: &DuckDbBackend, website_id: &str) -> Result<RealtimeResult> {
+pub async fn get_realtime_inner(
+    db: &DuckDbBackend,
+    website_id: &str,
+    include_bots: bool,
+) -> Result<RealtimeResult> {
     let conn = db.conn.lock().await;
     let now = Utc::now();
     let cutoff = now - chrono::Duration::minutes(30);
     let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S%.f").to_string();
+    let session_bot_filter = if include_bots {
+        ""
+    } else {
+        " AND is_bot = FALSE"
+    };
+    let event_bot_filter = if include_bots {
+        ""
+    } else {
+        " AND is_bot = FALSE"
+    };
 
     let active_visitors: i64 = conn
-        .prepare(
+        .prepare(&format!(
             "SELECT COUNT(DISTINCT visitor_id) FROM sessions \
-             WHERE website_id = ?1 AND last_seen > ?2",
-        )?
+             WHERE website_id = ?1 AND last_seen > ?2{session_bot_filter}",
+        ))?
         .query_row(duckdb::params![website_id, cutoff_str], |row| row.get(0))?;
 
     let total_in_window: i64 = conn
-        .prepare(
+        .prepare(&format!(
             "SELECT COUNT(*) FROM events \
-             WHERE website_id = ?1 AND created_at > ?2",
-        )?
+             WHERE website_id = ?1 AND created_at > ?2{event_bot_filter}",
+        ))?
         .query_row(duckdb::params![website_id, cutoff_str], |row| row.get(0))?;
 
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT url, referrer_domain, country, browser, device_type, event_type, CAST(created_at AS VARCHAR) \
          FROM events \
-         WHERE website_id = ?1 AND created_at > ?2 \
+         WHERE website_id = ?1 AND created_at > ?2{event_bot_filter} \
          ORDER BY created_at DESC \
          LIMIT 100",
-    )?;
+    ))?;
 
     let rows = stmt.query_map(duckdb::params![website_id, cutoff_str], |row| {
         Ok(RealtimeEvent {
@@ -84,7 +98,11 @@ pub async fn get_realtime_inner(db: &DuckDbBackend, website_id: &str) -> Result<
 }
 
 impl DuckDbBackend {
-    pub async fn get_realtime(&self, website_id: &str) -> Result<RealtimeResult> {
-        get_realtime_inner(self, website_id).await
+    pub async fn get_realtime(
+        &self,
+        website_id: &str,
+        include_bots: bool,
+    ) -> Result<RealtimeResult> {
+        get_realtime_inner(self, website_id, include_bots).await
     }
 }

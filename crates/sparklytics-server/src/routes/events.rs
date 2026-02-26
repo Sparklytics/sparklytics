@@ -34,6 +34,7 @@ pub struct EventFilterQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,7 +101,10 @@ fn normalize_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError
     }
 }
 
-fn build_filter(query: &EventFilterQuery) -> Result<AnalyticsFilter, AppError> {
+fn build_filter(
+    query: &EventFilterQuery,
+    default_include_bots: bool,
+) -> Result<AnalyticsFilter, AppError> {
     let (start_date, end_date) =
         parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
     Ok(AnalyticsFilter {
@@ -120,6 +124,7 @@ fn build_filter(query: &EventFilterQuery) -> Result<AnalyticsFilter, AppError> {
         filter_region: query.filter_region.clone(),
         filter_city: query.filter_city.clone(),
         filter_hostname: query.filter_hostname.clone(),
+        include_bots: query.include_bots.unwrap_or(default_include_bots),
     })
 }
 
@@ -154,7 +159,8 @@ pub async fn get_event_names(
         return Err(AppError::NotFound("Website not found".to_string()));
     }
 
-    let filter = build_filter(&query.filter)?;
+    let default_include_bots = state.default_include_bots(&website_id).await;
+    let filter = build_filter(&query.filter, default_include_bots)?;
 
     let result = state
         .analytics
@@ -177,7 +183,8 @@ pub async fn get_event_properties(
     }
     let event_name = require_event_name(query.event_name)?;
 
-    let filter = build_filter(&query.filter)?;
+    let default_include_bots = state.default_include_bots(&website_id).await;
+    let filter = build_filter(&query.filter, default_include_bots)?;
 
     let result = state
         .analytics
@@ -200,7 +207,8 @@ pub async fn get_event_timeseries(
     }
     let event_name = require_event_name(query.event_name)?;
 
-    let filter = build_filter(&query.filter)?;
+    let default_include_bots = state.default_include_bots(&website_id).await;
+    let filter = build_filter(&query.filter, default_include_bots)?;
 
     let result = state
         .analytics

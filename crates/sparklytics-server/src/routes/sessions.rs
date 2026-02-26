@@ -35,6 +35,7 @@ pub struct SessionsQuery {
     pub filter_region: Option<String>,
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
+    pub include_bots: Option<bool>,
 }
 
 fn parse_date_range(
@@ -74,6 +75,9 @@ pub async fn list_sessions(
 
     let (start_date, end_date) =
         parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let include_bots = query
+        .include_bots
+        .unwrap_or(state.default_include_bots(&website_id).await);
     let filter = AnalyticsFilter {
         start_date,
         end_date,
@@ -91,6 +95,7 @@ pub async fn list_sessions(
         filter_region: query.filter_region,
         filter_city: query.filter_city,
         filter_hostname: query.filter_hostname,
+        include_bots,
     };
 
     let backend_query = BackendSessionsQuery {

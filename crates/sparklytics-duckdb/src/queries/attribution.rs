@@ -7,6 +7,7 @@ use sparklytics_core::analytics::{
     AttributionTotals, GoalType, GoalValueMode, MatchOperator, RevenueSummary,
 };
 
+use crate::queries::bot_filters::append_event_bot_filter;
 use crate::DuckDbBackend;
 
 #[derive(Debug, Clone)]
@@ -62,6 +63,7 @@ fn append_event_filters(
     params: &mut Vec<Box<dyn duckdb::types::ToSql>>,
     param_idx: &mut usize,
 ) {
+    append_event_bot_filter(filter_sql, filter.include_bots, "e.");
     if let Some(ref country) = filter.filter_country {
         filter_sql.push_str(&format!(" AND e.country = ?{}", *param_idx));
         params.push(Box::new(country.clone()));
@@ -156,7 +158,7 @@ fn is_goal_match(goal: &GoalDefinition, row: &EventRow) -> bool {
             row.event_type == "pageview" && path_with_query(&row.url) == goal.match_value
         }
         (GoalType::PageView, MatchOperator::Contains) => {
-            row.event_type == "pageview" && row.url.contains(&goal.match_value)
+            row.event_type == "pageview" && path_with_query(&row.url).contains(&goal.match_value)
         }
         (GoalType::Event, MatchOperator::Equals) => {
             row.event_type == "event"
@@ -221,7 +223,7 @@ fn channel_for_event(row: &EventRow) -> String {
 fn parse_revenue(goal: &GoalDefinition, event_data: Option<&str>) -> f64 {
     match goal.value_mode {
         GoalValueMode::None => 0.0,
-        GoalValueMode::Fixed => goal.fixed_value.unwrap_or(0.0),
+        GoalValueMode::Fixed => goal.fixed_value.filter(|v| v.is_finite()).unwrap_or(0.0),
         GoalValueMode::EventProperty => {
             let Some(key) = goal.value_property_key.as_deref() else {
                 return 0.0;
@@ -236,10 +238,12 @@ fn parse_revenue(goal: &GoalDefinition, event_data: Option<&str>) -> f64 {
                 return 0.0;
             };
             if let Some(number) = value.as_f64() {
-                return number;
+                return if number.is_finite() { number } else { 0.0 };
             }
             if let Some(text) = value.as_str() {
-                return text.parse::<f64>().unwrap_or(0.0);
+                if let Ok(parsed) = text.parse::<f64>() {
+                    return if parsed.is_finite() { parsed } else { 0.0 };
+                }
             }
             0.0
         }
@@ -277,7 +281,11 @@ fn fetch_goal(
     });
 
     let (goal_type, match_value, match_operator, value_mode, fixed_value, value_property_key) =
-        row.map_err(|_| anyhow!("Goal not found"))?;
+        match row {
+            Ok(row) => row,
+            Err(duckdb::Error::QueryReturnedNoRows) => return Err(anyhow!("Goal not found")),
+            Err(err) => return Err(anyhow!(err)),
+        };
 
     Ok(GoalDefinition {
         goal_type: goal_type_from_str(&goal_type)?,
@@ -397,8 +405,7 @@ pub async fn get_attribution_inner(
             e.event_data,
             e.utm_source,
             e.utm_medium,
-            e.referrer_domain,
-            CAST(e.created_at AS VARCHAR)
+            e.referrer_domain
         FROM events e
         WHERE e.website_id = ?1
           AND e.created_at >= ?2

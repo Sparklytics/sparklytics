@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use axum::{
-    extract::State,
+    extract::{ConnectInfo, FromRequestParts, State},
     http::{HeaderMap, HeaderValue},
     response::{IntoResponse, Response},
     Json,
@@ -16,12 +18,40 @@ use chrono::Utc;
 use serde_json::json;
 
 use sparklytics_core::{
+    analytics::BotPolicyMode,
     billing::BillingOutcome,
+    config::AppMode,
     event::{CollectOrBatch, CollectPayload, Event},
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    bot_detection::{classify_event, BotOverrideDecision, BotPolicyInput},
+    error::AppError,
+    state::AppState,
+};
+
+#[derive(Debug)]
+pub struct MaybeConnectInfo(pub Option<SocketAddr>);
+
+impl<S> FromRequestParts<S> for MaybeConnectInfo
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(Self(
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|info| info.0),
+        ))
+    }
+}
 
 /// `POST /api/collect` — ingest a single event or a batch of up to 50 events.
 ///
@@ -49,6 +79,7 @@ use crate::{error::AppError, state::AppState};
 #[tracing::instrument(skip(state, headers, payload))]
 pub async fn collect(
     State(state): State<Arc<AppState>>,
+    maybe_connect_info: MaybeConnectInfo,
     headers: HeaderMap,
     Json(payload): Json<CollectOrBatch>,
 ) -> Result<Response, AppError> {
@@ -76,32 +107,62 @@ pub async fn collect(
         }
     }
 
-    let cloud_tenant_id: Option<String> = None;
+    // --- Validation: all website_ids must be known ---
+    // Validate unique IDs only to avoid repeated DB lookups for batches.
+    let unique_website_ids: HashSet<&str> =
+        payloads.iter().map(|p| p.website_id.as_str()).collect();
+    let mut website_tenant_ids: HashMap<String, Option<String>> = HashMap::new();
+    for website_id in unique_website_ids {
+        let website = state
+            .db
+            .get_website(website_id)
+            .await
+            .map_err(AppError::Internal)?;
+        let Some(website) = website else {
+            return Err(AppError::NotFound(format!(
+                "Unknown website_id: {}",
+                website_id
+            )));
+        };
+        website_tenant_ids.insert(website_id.to_string(), website.tenant_id);
+    }
+
+    // --- Resolve cloud tenant context from website ownership ---
+    let cloud_batch_tenant_id = if state.config.mode == AppMode::Cloud {
+        let mut resolved_tenant_id: Option<&str> = None;
+        for tenant_id in website_tenant_ids.values() {
+            let Some(tenant_id) = tenant_id.as_deref() else {
+                return Err(AppError::OrganizationContextRequired);
+            };
+            match resolved_tenant_id {
+                Some(existing) if existing != tenant_id => {
+                    return Err(AppError::BadRequest(
+                        "batch must contain events for a single tenant".to_string(),
+                    ));
+                }
+                None => resolved_tenant_id = Some(tenant_id),
+                _ => {}
+            }
+        }
+        Some(
+            resolved_tenant_id
+                .ok_or(AppError::OrganizationContextRequired)?
+                .to_string(),
+        )
+    } else {
+        None
+    };
 
     // --- BillingGate check (cloud mode) ---
-    if let Some(ref tenant_id) = cloud_tenant_id {
+    if let Some(ref tenant_id) = cloud_batch_tenant_id {
         let outcome = state.billing_gate.check(tenant_id).await;
         if outcome == BillingOutcome::LimitExceeded {
             return Err(AppError::PlanLimitExceeded);
         }
     }
 
-    // --- Validation: all website_ids must be known ---
-    // Validate unique IDs only to avoid repeated cache/DB lookups for batches.
-    let unique_website_ids: HashSet<&str> =
-        payloads.iter().map(|p| p.website_id.as_str()).collect();
-    for website_id in unique_website_ids {
-        if !state.is_valid_website(website_id).await {
-            return Err(AppError::NotFound(format!(
-                "Unknown website_id: {}",
-                website_id
-            )));
-        }
-    }
-
-    // --- Extract client IP (X-Forwarded-For or a placeholder) ---
-    // The real remote-addr fallback is wired in Sprint 1 via ConnectInfo middleware.
-    let client_ip = extract_client_ip(&headers);
+    // --- Extract client IP ---
+    let client_ip = extract_client_ip(&headers, maybe_connect_info.0);
 
     // --- Rate limiting: 60 req/min per IP ---
     // SPARKLYTICS_RATE_LIMIT_DISABLE bypasses this for load testing only.
@@ -115,6 +176,8 @@ pub async fn collect(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
+    let has_accept_header = headers.get(axum::http::header::ACCEPT).is_some();
+    let has_accept_language_header = headers.get(axum::http::header::ACCEPT_LANGUAGE).is_some();
 
     // --- GeoIP lookup ---
     // Load the GeoIP database from the path configured at startup.
@@ -128,6 +191,8 @@ pub async fn collect(
     let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
     let base_now = Utc::now();
     let server_visitor_id = compute_visitor_id(&client_ip, &user_agent);
+    let mut website_bot_policies: HashMap<String, BotPolicyInput> = HashMap::new();
+    let mut website_bot_overrides: HashMap<String, Option<BotOverrideDecision>> = HashMap::new();
 
     for (idx, p) in payloads.into_iter().enumerate() {
         let website_id = p.website_id.clone();
@@ -139,6 +204,56 @@ pub async fn collect(
             .visitor_id
             .filter(|id| !id.is_empty() && id.len() <= 64)
             .unwrap_or_else(|| server_visitor_id.clone());
+
+        let bot_policy = if let Some(policy) = website_bot_policies.get(&website_id) {
+            policy.clone()
+        } else {
+            let policy = state
+                .db
+                .get_bot_policy(&website_id)
+                .await
+                .map_err(AppError::Internal)?;
+            let mode = policy.mode;
+            let threshold_score = match mode {
+                BotPolicyMode::Strict if policy.threshold_score <= 0 => 60,
+                BotPolicyMode::Balanced | BotPolicyMode::Off if policy.threshold_score <= 0 => 70,
+                _ => policy.threshold_score,
+            };
+            let input = BotPolicyInput {
+                mode,
+                threshold_score,
+            };
+            website_bot_policies.insert(website_id.clone(), input.clone());
+            input
+        };
+        let override_decision = if let Some(decision) = website_bot_overrides.get(&website_id) {
+            decision.clone()
+        } else {
+            let decision = state
+                .db
+                .classify_override_for_request(&website_id, &client_ip, &user_agent)
+                .await
+                .map_err(AppError::Internal)?
+                .map(|is_bot| {
+                    if is_bot {
+                        BotOverrideDecision::ForceBot
+                    } else {
+                        BotOverrideDecision::ForceHuman
+                    }
+                });
+            website_bot_overrides.insert(website_id.clone(), decision.clone());
+            decision
+        };
+        let bot_classification = classify_event(
+            &website_id,
+            &visitor_id,
+            &p.url,
+            &user_agent,
+            has_accept_header,
+            has_accept_language_header,
+            &bot_policy,
+            override_decision,
+        );
 
         // Extract UTM params from the URL query string as fallback.
         let url_utm = extract_utm_from_url(&p.url);
@@ -155,8 +270,7 @@ pub async fn collect(
         events.push(Event {
             id: uuid::Uuid::new_v4().to_string(),
             website_id,
-            // tenant_id is always NULL in self-hosted mode (CLAUDE.md critical fact #2).
-            tenant_id: None,
+            tenant_id: website_tenant_ids.get(&p.website_id).cloned().flatten(),
             // Session is resolved in the ingest worker right before persistence.
             session_id: AppState::pending_session_marker().to_string(),
             visitor_id,
@@ -187,6 +301,13 @@ pub async fn collect(
             utm_content: p
                 .utm_content
                 .or_else(|| url_utm.get("utm_content").cloned()),
+            link_id: None,
+            pixel_id: None,
+            source_ip: Some(client_ip.clone()),
+            user_agent: Some(user_agent.clone()),
+            is_bot: bot_classification.is_bot,
+            bot_score: bot_classification.bot_score,
+            bot_reason: bot_classification.bot_reason,
             // Preserve deterministic ordering for batched events so strict
             // funnel step sequencing (`created_at > prev.matched_at`) works.
             created_at: base_now + chrono::Duration::microseconds(idx as i64),
@@ -221,25 +342,55 @@ pub async fn collect(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Extract the real client IP from `X-Forwarded-For` (first entry).
+/// Extract client IP.
 ///
-/// Falls back to `"unknown"` when the header is absent. Sprint 1 will wire
-/// in `ConnectInfo<SocketAddr>` as a proper TCP-addr fallback once the
-/// Tower `into_make_service_with_connect_info` plumbing is added.
-fn extract_client_ip(headers: &HeaderMap) -> String {
+/// Prefer the direct socket address when available. `X-Forwarded-For` is only
+/// used as fallback when socket metadata is unavailable.
+pub(crate) fn extract_client_ip(headers: &HeaderMap, remote_addr: Option<SocketAddr>) -> String {
+    let forwarded_ip = parse_forwarded_ip(headers);
+    if let Some(addr) = remote_addr {
+        let remote_ip = addr.ip();
+        if trusted_proxy_cidrs()
+            .iter()
+            .any(|cidr| cidr.contains(&remote_ip))
+        {
+            return forwarded_ip.unwrap_or(remote_ip).to_string();
+        }
+        return remote_ip.to_string();
+    }
+
+    forwarded_ip
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn parse_forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
     headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.split(',').next())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
+        .and_then(|s| s.trim().parse::<IpAddr>().ok())
+}
+
+fn trusted_proxy_cidrs() -> &'static Vec<ipnet::IpNet> {
+    static TRUSTED: OnceLock<Vec<ipnet::IpNet>> = OnceLock::new();
+    TRUSTED.get_or_init(|| {
+        std::env::var("SPARKLYTICS_TRUSTED_PROXIES")
+            .ok()
+            .map(|raw| {
+                raw.split(',')
+                    .filter_map(|entry| entry.trim().parse::<ipnet::IpNet>().ok())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    })
 }
 
 /// GeoIP result from a MaxMind lookup.
-struct GeoInfo {
-    country: Option<String>,
-    region: Option<String>,
-    city: Option<String>,
+pub(crate) struct GeoInfo {
+    pub country: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
 }
 
 /// Attempt a GeoIP lookup for `ip` using the MaxMind database at `path`.
@@ -247,16 +398,20 @@ struct GeoInfo {
 /// Returns `None` if the database file is missing or the IP cannot be parsed.
 /// This is the Sprint 0 non-fatal behaviour: events are stored with NULL geo
 /// fields rather than panicking.
-fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
+pub(crate) fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
     use std::net::IpAddr;
     use std::str::FromStr;
 
-    if !std::path::Path::new(path).exists() {
-        // Database absent — non-fatal. Warning already logged at startup.
-        return None;
-    }
-
-    let reader = maxminddb::Reader::open_readfile(path).ok()?;
+    type GeoReader = maxminddb::Reader<Vec<u8>>;
+    static GEOIP_READER: OnceLock<Option<GeoReader>> = OnceLock::new();
+    let reader = GEOIP_READER.get_or_init(|| {
+        if !std::path::Path::new(path).exists() {
+            return None;
+        }
+        let bytes = std::fs::read(path).ok()?;
+        maxminddb::Reader::from_source(bytes).ok()
+    });
+    let reader = reader.as_ref()?;
     let ip_addr = IpAddr::from_str(ip).ok()?;
 
     let lookup = reader.lookup(ip_addr).ok()?;
@@ -284,7 +439,7 @@ fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
 /// Returns a map of utm_source / utm_medium / utm_campaign / utm_term /
 /// utm_content → value. Used as a fallback when the caller does not supply
 /// explicit top-level utm_* fields in the payload.
-fn extract_utm_from_url(url: &str) -> HashMap<String, String> {
+pub(crate) fn extract_utm_from_url(url: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     let query = match url.find('?') {
         Some(pos) => &url[pos + 1..],
@@ -309,18 +464,18 @@ fn extract_utm_from_url(url: &str) -> HashMap<String, String> {
 }
 
 /// Parsed User-Agent fields.
-struct UaInfo {
-    browser: String,
-    browser_version: Option<String>,
-    os: String,
-    os_version: Option<String>,
-    device_type: String,
+pub(crate) struct UaInfo {
+    pub browser: String,
+    pub browser_version: Option<String>,
+    pub os: String,
+    pub os_version: Option<String>,
+    pub device_type: String,
 }
 
 /// Parse a `User-Agent` string via the `woothee` crate.
 ///
 /// Returns `None` if the UA string is empty or `woothee` cannot classify it.
-fn parse_user_agent(user_agent: &str) -> Option<UaInfo> {
+pub(crate) fn parse_user_agent(user_agent: &str) -> Option<UaInfo> {
     if user_agent.is_empty() {
         return None;
     }
