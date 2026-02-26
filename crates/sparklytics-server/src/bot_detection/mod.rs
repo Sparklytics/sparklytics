@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -92,22 +92,38 @@ fn evaluate_behavior(website_id: &str, visitor_id: &str, url: &str) -> (bool, bo
     let mut map = shard
         .lock()
         .expect("bot detection activity shard mutex poisoned");
-    let queue = map.entry(key).or_default();
-    while let Some(front) = queue.front() {
-        if now.duration_since(front.at) > BEHAVIOR_WINDOW {
-            queue.pop_front();
-        } else {
-            break;
+    match map.entry(key) {
+        Entry::Occupied(mut occupied) => {
+            let queue = occupied.get_mut();
+            while let Some(front) = queue.front() {
+                if now.duration_since(front.at) > BEHAVIOR_WINDOW {
+                    queue.pop_front();
+                } else {
+                    break;
+                }
+            }
+
+            if queue.is_empty() {
+                occupied.remove_entry();
+                return (false, false);
+            }
+
+            queue.push_back(ActivitySample { at: now, path });
+            if queue.len() > 512 {
+                queue.pop_front();
+            }
+
+            let burst_rate = queue.len() >= BURST_EVENT_THRESHOLD;
+            let path_sweep = has_path_sweep(queue);
+            (burst_rate, path_sweep)
+        }
+        Entry::Vacant(vacant) => {
+            let mut queue = VecDeque::new();
+            queue.push_back(ActivitySample { at: now, path });
+            vacant.insert(queue);
+            (false, false)
         }
     }
-    queue.push_back(ActivitySample { at: now, path });
-    if queue.len() > 512 {
-        queue.pop_front();
-    }
-
-    let burst_rate = queue.len() >= BURST_EVENT_THRESHOLD;
-    let path_sweep = has_path_sweep(queue);
-    (burst_rate, path_sweep)
 }
 
 fn ua_signature_score(user_agent: &str) -> Option<i32> {

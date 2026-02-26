@@ -61,17 +61,17 @@ pub async fn run_due_subscriptions(state: &Arc<AppState>) -> anyhow::Result<usiz
                         Some("report not found"),
                     )
                     .await?;
-                state
-                    .scheduler_db
-                    .mark_report_subscription_ran(
-                        &subscription.id,
-                        now,
-                        &subscription.schedule,
-                        &subscription.timezone,
-                    )
-                    .await?;
-                runs += 1;
             }
+            state
+                .scheduler_db
+                .mark_report_subscription_ran(
+                    &subscription.id,
+                    now,
+                    &subscription.schedule,
+                    &subscription.timezone,
+                )
+                .await?;
+            runs += 1;
             continue;
         };
 
@@ -99,17 +99,17 @@ pub async fn run_due_subscriptions(state: &Arc<AppState>) -> anyhow::Result<usiz
                             Some(&err.to_string()),
                         )
                         .await?;
-                    state
-                        .scheduler_db
-                        .mark_report_subscription_ran(
-                            &subscription.id,
-                            now,
-                            &subscription.schedule,
-                            &subscription.timezone,
-                        )
-                        .await?;
-                    runs += 1;
                 }
+                state
+                    .scheduler_db
+                    .mark_report_subscription_ran(
+                        &subscription.id,
+                        now,
+                        &subscription.schedule,
+                        &subscription.timezone,
+                    )
+                    .await?;
+                runs += 1;
                 continue;
             }
         };
@@ -159,7 +159,7 @@ mod tests {
     use sparklytics_core::{
         analytics::{
             CreateReportSubscriptionRequest, NotificationChannel, NotificationDeliveryStatus,
-            SubscriptionSchedule,
+            NotificationSourceType, SubscriptionSchedule,
         },
         config::{AppMode, AuthMode, Config},
     };
@@ -251,5 +251,80 @@ mod tests {
             history[0].status,
             NotificationDeliveryStatus::Failed
         ));
+    }
+
+    #[tokio::test]
+    async fn duplicate_idempotency_still_advances_subscription_schedule() {
+        let data_dir = unique_data_dir();
+        std::fs::create_dir_all(&data_dir).expect("create temp dir");
+        let db_path = format!("{data_dir}/sparklytics.db");
+        let db = DuckDbBackend::open(&db_path, "1GB").expect("open db");
+        let state = Arc::new(AppState::new(db, test_config(data_dir)));
+
+        let website_id = "site_sched_dupe";
+        let subscription = state
+            .db
+            .create_report_subscription(
+                website_id,
+                CreateReportSubscriptionRequest {
+                    report_id: "report_missing".to_string(),
+                    schedule: SubscriptionSchedule::Daily,
+                    timezone: Some("UTC".to_string()),
+                    channel: NotificationChannel::Email,
+                    target: "ops@example.com".to_string(),
+                },
+            )
+            .await
+            .expect("create subscription");
+        let due_at = Utc::now() - Duration::minutes(1);
+        state
+            .db
+            .set_report_subscription_next_run_at(&subscription.id, due_at)
+            .await
+            .expect("set due");
+
+        let due = state
+            .db
+            .list_due_report_subscriptions(Utc::now(), 10)
+            .await
+            .expect("list due");
+        let due_sub = due.first().expect("expected due subscription");
+        let idempotency_key = format!(
+            "sub:{}:{}",
+            due_sub.id,
+            super::idempotency_bucket(&due_sub.next_run_at)
+        );
+        state
+            .db
+            .create_notification_delivery(
+                NotificationSourceType::Subscription,
+                &subscription.id,
+                &idempotency_key,
+                NotificationDeliveryStatus::Failed,
+                Some("report not found"),
+            )
+            .await
+            .expect("seed duplicate delivery");
+
+        let runs = run_due_subscriptions(&state).await.expect("scheduler run");
+        assert_eq!(runs, 1, "subscription should still advance");
+
+        let updated = state
+            .db
+            .get_report_subscription(website_id, &subscription.id)
+            .await
+            .expect("fetch subscription")
+            .expect("subscription exists");
+        assert_ne!(
+            updated.next_run_at, due_sub.next_run_at,
+            "next_run_at should be advanced even when delivery idempotency key exists"
+        );
+
+        let history = state
+            .db
+            .list_notification_deliveries_for_website(website_id, 50)
+            .await
+            .expect("history");
+        assert_eq!(history.len(), 1, "duplicate should not create another row");
     }
 }
