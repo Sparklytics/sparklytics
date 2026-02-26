@@ -20,6 +20,7 @@ use serde_json::json;
 use sparklytics_core::{
     analytics::BotPolicyMode,
     billing::BillingOutcome,
+    config::AppMode,
     event::{CollectOrBatch, CollectPayload, Event},
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
@@ -106,26 +107,57 @@ pub async fn collect(
         }
     }
 
-    let cloud_tenant_id: Option<String> = None;
-
-    // --- BillingGate check (cloud mode) ---
-    if let Some(ref tenant_id) = cloud_tenant_id {
-        let outcome = state.billing_gate.check(tenant_id).await;
-        if outcome == BillingOutcome::LimitExceeded {
-            return Err(AppError::PlanLimitExceeded);
-        }
-    }
-
     // --- Validation: all website_ids must be known ---
-    // Validate unique IDs only to avoid repeated cache/DB lookups for batches.
+    // Validate unique IDs only to avoid repeated DB lookups for batches.
     let unique_website_ids: HashSet<&str> =
         payloads.iter().map(|p| p.website_id.as_str()).collect();
+    let mut website_tenant_ids: HashMap<String, Option<String>> = HashMap::new();
     for website_id in unique_website_ids {
-        if !state.is_valid_website(website_id).await {
+        let website = state
+            .db
+            .get_website(website_id)
+            .await
+            .map_err(AppError::Internal)?;
+        let Some(website) = website else {
             return Err(AppError::NotFound(format!(
                 "Unknown website_id: {}",
                 website_id
             )));
+        };
+        website_tenant_ids.insert(website_id.to_string(), website.tenant_id);
+    }
+
+    // --- Resolve cloud tenant context from website ownership ---
+    let cloud_batch_tenant_id = if state.config.mode == AppMode::Cloud {
+        let mut resolved_tenant_id: Option<&str> = None;
+        for tenant_id in website_tenant_ids.values() {
+            let Some(tenant_id) = tenant_id.as_deref() else {
+                return Err(AppError::OrganizationContextRequired);
+            };
+            match resolved_tenant_id {
+                Some(existing) if existing != tenant_id => {
+                    return Err(AppError::BadRequest(
+                        "batch must contain events for a single tenant".to_string(),
+                    ));
+                }
+                None => resolved_tenant_id = Some(tenant_id),
+                _ => {}
+            }
+        }
+        Some(
+            resolved_tenant_id
+                .ok_or(AppError::OrganizationContextRequired)?
+                .to_string(),
+        )
+    } else {
+        None
+    };
+
+    // --- BillingGate check (cloud mode) ---
+    if let Some(ref tenant_id) = cloud_batch_tenant_id {
+        let outcome = state.billing_gate.check(tenant_id).await;
+        if outcome == BillingOutcome::LimitExceeded {
+            return Err(AppError::PlanLimitExceeded);
         }
     }
 
@@ -238,8 +270,7 @@ pub async fn collect(
         events.push(Event {
             id: uuid::Uuid::new_v4().to_string(),
             website_id,
-            // tenant_id is always NULL in self-hosted mode (CLAUDE.md critical fact #2).
-            tenant_id: None,
+            tenant_id: website_tenant_ids.get(&p.website_id).cloned().flatten(),
             // Session is resolved in the ingest worker right before persistence.
             session_id: AppState::pending_session_marker().to_string(),
             visitor_id,
