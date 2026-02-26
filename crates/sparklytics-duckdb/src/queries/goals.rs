@@ -3,7 +3,8 @@ use chrono::Duration;
 use rand::Rng;
 
 use sparklytics_core::analytics::{
-    AnalyticsFilter, CreateGoalRequest, Goal, GoalStats, GoalType, MatchOperator, UpdateGoalRequest,
+    AnalyticsFilter, CreateGoalRequest, Goal, GoalStats, GoalType, GoalValueMode, MatchOperator,
+    UpdateGoalRequest,
 };
 
 use crate::DuckDbBackend;
@@ -52,6 +53,23 @@ fn match_op_from_str(raw: &str) -> Result<MatchOperator> {
         "equals" => Ok(MatchOperator::Equals),
         "contains" => Ok(MatchOperator::Contains),
         _ => Err(anyhow!("invalid match_operator")),
+    }
+}
+
+fn value_mode_to_str(mode: &GoalValueMode) -> &'static str {
+    match mode {
+        GoalValueMode::None => "none",
+        GoalValueMode::Fixed => "fixed",
+        GoalValueMode::EventProperty => "event_property",
+    }
+}
+
+fn value_mode_from_str(raw: &str) -> Result<GoalValueMode> {
+    match raw {
+        "none" => Ok(GoalValueMode::None),
+        "fixed" => Ok(GoalValueMode::Fixed),
+        "event_property" => Ok(GoalValueMode::EventProperty),
+        _ => Err(anyhow!("invalid value_mode")),
     }
 }
 
@@ -134,6 +152,7 @@ fn append_event_filters(
 fn map_goal_row(row: &duckdb::Row<'_>) -> Result<Goal, duckdb::Error> {
     let goal_type_raw: String = row.get(3)?;
     let match_op_raw: String = row.get(5)?;
+    let value_mode_raw: String = row.get(6)?;
     Ok(Goal {
         id: row.get(0)?,
         website_id: row.get(1)?,
@@ -142,8 +161,13 @@ fn map_goal_row(row: &duckdb::Row<'_>) -> Result<Goal, duckdb::Error> {
         match_value: row.get(4)?,
         match_operator: match_op_from_str(&match_op_raw)
             .map_err(|_| duckdb::Error::InvalidQuery)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        value_mode: value_mode_from_str(&value_mode_raw)
+            .map_err(|_| duckdb::Error::InvalidQuery)?,
+        fixed_value: row.get(7)?,
+        value_property_key: row.get(8)?,
+        currency: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
     })
 }
 
@@ -247,6 +271,10 @@ pub async fn list_goals_inner(db: &DuckDbBackend, website_id: &str) -> Result<Ve
             goal_type,
             match_value,
             match_operator,
+            value_mode,
+            fixed_value,
+            value_property_key,
+            currency,
             CAST(created_at AS VARCHAR),
             CAST(updated_at AS VARCHAR)
         FROM goals
@@ -313,6 +341,12 @@ pub async fn create_goal_inner(
 
     let id = generate_goal_id();
     let match_operator = req.match_operator.unwrap_or_default();
+    let value_mode = req.value_mode.unwrap_or_default();
+    let (fixed_value, value_property_key) = match value_mode {
+        GoalValueMode::None => (None, None),
+        GoalValueMode::Fixed => (req.fixed_value, None),
+        GoalValueMode::EventProperty => (None, req.value_property_key),
+    };
 
     conn.execute(
         r#"
@@ -323,9 +357,13 @@ pub async fn create_goal_inner(
             goal_type,
             match_value,
             match_operator,
+            value_mode,
+            fixed_value,
+            value_property_key,
+            currency,
             created_at,
             updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         "#,
         duckdb::params![
             id,
@@ -334,6 +372,10 @@ pub async fn create_goal_inner(
             goal_type_to_str(&req.goal_type),
             req.match_value,
             match_op_to_str(&match_operator),
+            value_mode_to_str(&value_mode),
+            fixed_value,
+            value_property_key,
+            req.currency.unwrap_or_else(|| "USD".to_string()),
         ],
     )?;
 
@@ -346,6 +388,10 @@ pub async fn create_goal_inner(
             goal_type,
             match_value,
             match_operator,
+            value_mode,
+            fixed_value,
+            value_property_key,
+            currency,
             CAST(created_at AS VARCHAR),
             CAST(updated_at AS VARCHAR)
         FROM goals
@@ -372,6 +418,10 @@ pub async fn update_goal_inner(
             goal_type,
             match_value,
             match_operator,
+            value_mode,
+            fixed_value,
+            value_property_key,
+            currency,
             CAST(created_at AS VARCHAR),
             CAST(updated_at AS VARCHAR)
         FROM goals
@@ -387,6 +437,15 @@ pub async fn update_goal_inner(
     let next_name = req.name.unwrap_or(existing.name);
     let next_match_value = req.match_value.unwrap_or(existing.match_value);
     let next_match_operator = req.match_operator.unwrap_or(existing.match_operator);
+    let next_value_mode = req.value_mode.unwrap_or(existing.value_mode);
+    let (next_fixed_value, next_value_property_key) = match next_value_mode {
+        GoalValueMode::None => (None, None),
+        GoalValueMode::Fixed => (req.fixed_value.or(existing.fixed_value), None),
+        GoalValueMode::EventProperty => {
+            (None, req.value_property_key.or(existing.value_property_key))
+        }
+    };
+    let next_currency = req.currency.unwrap_or(existing.currency);
 
     if next_name != original_name {
         let duplicate_name_count: i64 = conn
@@ -406,13 +465,21 @@ pub async fn update_goal_inner(
             name = ?1,
             match_value = ?2,
             match_operator = ?3,
+            value_mode = ?4,
+            fixed_value = ?5,
+            value_property_key = ?6,
+            currency = ?7,
             updated_at = CURRENT_TIMESTAMP
-        WHERE website_id = ?4 AND id = ?5
+        WHERE website_id = ?8 AND id = ?9
         "#,
         duckdb::params![
             next_name,
             next_match_value,
             match_op_to_str(&next_match_operator),
+            value_mode_to_str(&next_value_mode),
+            next_fixed_value,
+            next_value_property_key,
+            next_currency,
             website_id,
             goal_id
         ],
@@ -427,6 +494,10 @@ pub async fn update_goal_inner(
             goal_type,
             match_value,
             match_operator,
+            value_mode,
+            fixed_value,
+            value_property_key,
+            currency,
             CAST(created_at AS VARCHAR),
             CAST(updated_at AS VARCHAR)
         FROM goals
@@ -463,6 +534,10 @@ pub async fn get_goal_stats_inner(
             goal_type,
             match_value,
             match_operator,
+            value_mode,
+            fixed_value,
+            value_property_key,
+            currency,
             CAST(created_at AS VARCHAR),
             CAST(updated_at AS VARCHAR)
         FROM goals

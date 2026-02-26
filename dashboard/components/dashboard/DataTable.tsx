@@ -52,7 +52,7 @@ type SortKey = 'visitors' | 'pageviews' | 'bounce_rate' | 'avg_duration_seconds'
 
 export function DataTable({ title, filterKey, data = [], loading, showPageviews = false, totalVisitors }: DataTableProps) {
   const [sortBy, setSortBy] = useState<SortKey>('visitors');
-  const { setFilter } = useFilters();
+  const { setFilter, compare } = useFilters();
 
   const maxValue = Math.max(...data.map((r) => r.visitors), 1);
 
@@ -83,6 +83,9 @@ export function DataTable({ title, filterKey, data = [], loading, showPageviews 
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-[13px] font-medium text-ink">{title}</h3>
         <div className="flex items-center gap-3 text-[11px] text-ink-3">
+          {compare.mode !== 'none' && (
+            <span className="font-mono tabular-nums text-[10px] text-ink-4">Curr / Prev / Δ</span>
+          )}
           {(['visitors', ...(showPageviews ? ['pageviews'] : []), 'bounce_rate', 'avg_duration_seconds'] as SortKey[]).map((key) => {
             const label = key === 'visitors' ? 'Visitors'
               : key === 'pageviews' ? 'Pageviews'
@@ -115,6 +118,15 @@ export function DataTable({ title, filterKey, data = [], loading, showPageviews 
             const sharePct = totalVisitors && totalVisitors > 0
               ? Math.round((row.visitors / totalVisitors) * 100)
               : null;
+            const compareEnabled = compare.mode !== 'none';
+            const currentNumeric = sortBy === 'pageviews' ? (row.pageviews ?? 0) : row.visitors;
+            const previousNumeric = sortBy === 'pageviews'
+              ? (row.prev_pageviews ?? 0)
+              : (row.prev_visitors ?? 0);
+            const deltaPct = previousNumeric > 0
+              ? ((currentNumeric - previousNumeric) / previousNumeric) * 100
+              : 0;
+            const showCompareColumns = compareEnabled && (sortBy === 'visitors' || sortBy === 'pageviews');
             return (
               <div
                 key={row.value}
@@ -134,13 +146,24 @@ export function DataTable({ title, filterKey, data = [], loading, showPageviews 
                   <span className="text-[12px] text-ink truncate">{formatRowLabel(filterKey, row.value)}</span>
                 </div>
                 <div className="relative flex items-center gap-2 font-mono tabular-nums text-[12px] text-ink-3">
-                  {sortBy === 'pageviews' && row.pageviews !== undefined
+                  <span className={cn(showCompareColumns && 'w-14 text-right')}>
+                    {sortBy === 'pageviews' && row.pageviews !== undefined
                     ? formatNumber(row.pageviews)
                     : sortBy === 'bounce_rate'
                     ? `${(row.bounce_rate ?? 0).toFixed(1)}%`
                     : sortBy === 'avg_duration_seconds'
                     ? (row.avg_duration_seconds > 0 ? formatDuration(row.avg_duration_seconds) : '—')
                     : formatNumber(row.visitors)}
+                  </span>
+                  {showCompareColumns && (
+                    <span className="text-[10px] text-ink-4 w-14 text-right">{formatNumber(previousNumeric)}</span>
+                  )}
+                  {showCompareColumns && (
+                    <span className={cn('text-[10px] w-12 text-right', deltaPct >= 0 ? 'text-spark' : 'text-red-400')}>
+                      {deltaPct >= 0 ? '+' : ''}
+                      {deltaPct.toFixed(1)}%
+                    </span>
+                  )}
                   {sortBy === 'visitors' && sharePct !== null && (
                     <span className="text-[10px] text-ink-4 w-7 text-right">{sharePct}%</span>
                   )}

@@ -1,4 +1,6 @@
+pub mod attribution;
 pub mod collect;
+pub mod compare;
 pub mod events;
 pub mod export;
 pub mod funnels;
@@ -8,6 +10,7 @@ pub mod journey;
 pub mod metrics;
 pub mod pageviews;
 pub mod realtime;
+pub mod reports;
 pub mod retention;
 pub mod sessions;
 pub mod share;

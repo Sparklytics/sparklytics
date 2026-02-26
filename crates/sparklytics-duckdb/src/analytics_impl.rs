@@ -2,11 +2,13 @@ use async_trait::async_trait;
 use chrono::NaiveDate;
 
 use sparklytics_core::analytics::{
-    AnalyticsBackend, AnalyticsFilter, CreateFunnelRequest, CreateGoalRequest, EventNamesResult,
+    AnalyticsBackend, AnalyticsFilter, AttributionQuery, AttributionResponse, ComparisonRange,
+    CreateFunnelRequest, CreateGoalRequest, CreateReportRequest, EventNamesResult,
     EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal, GoalStats,
     JourneyQuery, JourneyResponse, MetricRow, MetricsPage, RealtimeEvent, RealtimePagination,
-    RealtimeResult, RetentionQuery, RetentionResponse, SessionDetailResponse, SessionsQuery,
-    SessionsResponse, StatsResult, TimeseriesResult, UpdateFunnelRequest, UpdateGoalRequest,
+    RealtimeResult, RetentionQuery, RetentionResponse, RevenueSummary, SavedReport,
+    SavedReportSummary, SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult,
+    TimeseriesResult, UpdateFunnelRequest, UpdateGoalRequest, UpdateReportRequest,
 };
 use sparklytics_core::event::Event;
 
@@ -35,8 +37,10 @@ impl AnalyticsBackend for DuckDbBackend {
         website_id: &str,
         _tenant_id: Option<&str>,
         filter: &AnalyticsFilter,
+        comparison: Option<&ComparisonRange>,
     ) -> anyhow::Result<StatsResult> {
-        let params = crate::queries::stats::StatsParams::from_filter(website_id, filter);
+        let params =
+            crate::queries::stats::StatsParams::from_filter(website_id, filter, comparison);
         crate::queries::stats::get_stats_inner(self, &params).await
     }
 
@@ -46,9 +50,16 @@ impl AnalyticsBackend for DuckDbBackend {
         _tenant_id: Option<&str>,
         filter: &AnalyticsFilter,
         granularity: Option<&str>,
+        comparison: Option<&ComparisonRange>,
     ) -> anyhow::Result<TimeseriesResult> {
-        crate::queries::timeseries::get_timeseries_inner(self, website_id, filter, granularity)
-            .await
+        crate::queries::timeseries::get_timeseries_inner(
+            self,
+            website_id,
+            filter,
+            granularity,
+            comparison,
+        )
+        .await
     }
 
     async fn get_metrics(
@@ -59,6 +70,7 @@ impl AnalyticsBackend for DuckDbBackend {
         limit: i64,
         offset: i64,
         filter: &AnalyticsFilter,
+        comparison: Option<&ComparisonRange>,
     ) -> anyhow::Result<MetricsPage> {
         let (result, pagination) = crate::queries::metrics::get_metrics_inner(
             self,
@@ -67,6 +79,7 @@ impl AnalyticsBackend for DuckDbBackend {
             limit,
             offset,
             filter,
+            comparison,
         )
         .await?;
         Ok(MetricsPage {
@@ -77,11 +90,16 @@ impl AnalyticsBackend for DuckDbBackend {
                     value: r.value,
                     visitors: r.visitors,
                     pageviews: r.pageviews,
+                    prev_visitors: r.prev_visitors,
+                    prev_pageviews: r.prev_pageviews,
+                    delta_visitors_abs: r.delta_visitors_abs,
+                    delta_visitors_pct: r.delta_visitors_pct,
                     bounce_rate: r.bounce_rate,
                     avg_duration_seconds: r.avg_duration_seconds,
                 })
                 .collect(),
             total: pagination.total,
+            compare: result.compare,
         })
     }
 
@@ -246,6 +264,27 @@ impl AnalyticsBackend for DuckDbBackend {
         crate::queries::goals::get_goal_stats_inner(self, website_id, goal_id, filter).await
     }
 
+    async fn get_attribution(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &AttributionQuery,
+    ) -> anyhow::Result<AttributionResponse> {
+        crate::queries::attribution::get_attribution_inner(self, website_id, filter, query).await
+    }
+
+    async fn get_revenue_summary(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &AttributionQuery,
+    ) -> anyhow::Result<RevenueSummary> {
+        crate::queries::attribution::get_revenue_summary_inner(self, website_id, filter, query)
+            .await
+    }
+
     async fn count_goals(&self, website_id: &str, _tenant_id: Option<&str>) -> anyhow::Result<i64> {
         crate::queries::goals::count_goals_inner(self, website_id).await
     }
@@ -336,5 +375,78 @@ impl AnalyticsBackend for DuckDbBackend {
         query: &RetentionQuery,
     ) -> anyhow::Result<RetentionResponse> {
         crate::queries::retention::get_retention_inner(self, website_id, filter, query).await
+    }
+
+    async fn list_reports(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<SavedReportSummary>> {
+        crate::queries::reports::list_reports_inner(self, website_id).await
+    }
+
+    async fn get_report(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<Option<SavedReport>> {
+        crate::queries::reports::get_report_inner(self, website_id, report_id).await
+    }
+
+    async fn create_report(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        req: CreateReportRequest,
+    ) -> anyhow::Result<SavedReport> {
+        crate::queries::reports::create_report_inner(self, website_id, req).await
+    }
+
+    async fn update_report(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        report_id: &str,
+        req: UpdateReportRequest,
+    ) -> anyhow::Result<Option<SavedReport>> {
+        crate::queries::reports::update_report_inner(self, website_id, report_id, req).await
+    }
+
+    async fn delete_report(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<bool> {
+        crate::queries::reports::delete_report_inner(self, website_id, report_id).await
+    }
+
+    async fn count_reports(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+    ) -> anyhow::Result<i64> {
+        crate::queries::reports::count_reports_inner(self, website_id).await
+    }
+
+    async fn report_name_exists(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        name: &str,
+        exclude_report_id: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        crate::queries::reports::report_name_exists_inner(self, website_id, name, exclude_report_id)
+            .await
+    }
+
+    async fn touch_report_last_run(
+        &self,
+        website_id: &str,
+        _tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<()> {
+        crate::queries::reports::touch_report_last_run_inner(self, website_id, report_id).await
     }
 }

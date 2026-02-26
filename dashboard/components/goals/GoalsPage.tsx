@@ -20,7 +20,7 @@ export function GoalsPage({ websiteId }: GoalsPageProps) {
         <div>
           <h2 className="text-lg font-semibold text-ink">Goals</h2>
           <p className="text-xs text-ink-3 mt-0.5">
-            Track conversions by page views or custom events.
+            Track conversions by page views or custom events with optional value mapping.
           </p>
         </div>
         <Button

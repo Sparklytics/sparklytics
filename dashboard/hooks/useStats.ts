@@ -2,13 +2,14 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { useFilters } from './useFilters';
+import { toCompareParams, useFilters } from './useFilters';
 
 export function useStats(websiteId: string, enabled = true) {
-  const { dateRange, filters } = useFilters();
+  const { dateRange, filters, compare } = useFilters();
+  const compareParams = toCompareParams(compare);
   return useQuery({
-    queryKey: ['stats', websiteId, dateRange, filters],
-    queryFn: () => api.getStats(websiteId, { ...dateRange, ...filters }),
+    queryKey: ['stats', websiteId, dateRange, filters, compare],
+    queryFn: () => api.getStats(websiteId, { ...dateRange, ...filters, ...compareParams }),
     staleTime: 60 * 1000,
     refetchInterval: 60 * 1000,
     enabled: !!websiteId && enabled,

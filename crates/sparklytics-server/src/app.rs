@@ -248,6 +248,14 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::goals::get_goal_stats),
                 )
                 .route(
+                    "/api/websites/{id}/attribution",
+                    get(routes::attribution::get_attribution),
+                )
+                .route(
+                    "/api/websites/{id}/revenue/summary",
+                    get(routes::attribution::get_revenue_summary),
+                )
+                .route(
                     "/api/websites/{id}/funnels",
                     get(routes::funnels::list_funnels),
                 )
@@ -272,6 +280,24 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/retention",
                     get(routes::retention::get_retention),
+                )
+                .route(
+                    "/api/websites/{id}/reports",
+                    get(routes::reports::list_reports).post(routes::reports::create_report),
+                )
+                .route(
+                    "/api/websites/{id}/reports/preview",
+                    post(routes::reports::preview_report),
+                )
+                .route(
+                    "/api/websites/{id}/reports/{report_id}",
+                    get(routes::reports::get_report)
+                        .put(routes::reports::update_report)
+                        .delete(routes::reports::delete_report),
+                )
+                .route(
+                    "/api/websites/{id}/reports/{report_id}/run",
+                    post(routes::reports::run_report),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",
@@ -347,6 +373,14 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::goals::get_goal_stats),
                 )
                 .route(
+                    "/api/websites/{id}/attribution",
+                    get(routes::attribution::get_attribution),
+                )
+                .route(
+                    "/api/websites/{id}/revenue/summary",
+                    get(routes::attribution::get_revenue_summary),
+                )
+                .route(
                     "/api/websites/{id}/funnels",
                     get(routes::funnels::list_funnels),
                 )
@@ -371,6 +405,24 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route(
                     "/api/websites/{id}/retention",
                     get(routes::retention::get_retention),
+                )
+                .route(
+                    "/api/websites/{id}/reports",
+                    get(routes::reports::list_reports).post(routes::reports::create_report),
+                )
+                .route(
+                    "/api/websites/{id}/reports/preview",
+                    post(routes::reports::preview_report),
+                )
+                .route(
+                    "/api/websites/{id}/reports/{report_id}",
+                    get(routes::reports::get_report)
+                        .put(routes::reports::update_report)
+                        .delete(routes::reports::delete_report),
+                )
+                .route(
+                    "/api/websites/{id}/reports/{report_id}/run",
+                    post(routes::reports::run_report),
                 )
                 .route(
                     "/api/websites/{id}/pageviews",

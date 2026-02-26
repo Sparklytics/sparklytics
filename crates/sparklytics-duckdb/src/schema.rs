@@ -192,11 +192,37 @@ CREATE TABLE IF NOT EXISTS goals (
     goal_type       VARCHAR NOT NULL,              -- 'page_view' | 'event'
     match_value     VARCHAR NOT NULL,
     match_operator  VARCHAR NOT NULL DEFAULT 'equals',
+    value_mode      VARCHAR NOT NULL DEFAULT 'none', -- none|fixed|event_property
+    fixed_value     DOUBLE,
+    value_property_key VARCHAR,
+    currency        VARCHAR NOT NULL DEFAULT 'USD',
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS value_mode VARCHAR DEFAULT 'none';
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS fixed_value DOUBLE;
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS value_property_key VARCHAR;
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS currency VARCHAR DEFAULT 'USD';
 CREATE INDEX IF NOT EXISTS idx_goals_website_id
     ON goals(website_id);
+
+-- ===========================================
+-- SAVED REPORTS (Insights Builder)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS saved_reports (
+    id              VARCHAR PRIMARY KEY,
+    website_id      VARCHAR NOT NULL,
+    name            VARCHAR NOT NULL,
+    description     VARCHAR,
+    config_json     VARCHAR NOT NULL,
+    last_run_at     TIMESTAMP,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_saved_reports_website
+    ON saved_reports(website_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_reports_name_website
+    ON saved_reports(website_id, name);
 
 -- ===========================================
 -- FUNNELS (self-hosted conversion paths)

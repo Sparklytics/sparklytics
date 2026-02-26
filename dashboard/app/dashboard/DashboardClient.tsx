@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { AppShell } from '@/components/layout/AppShell';
 import { StatsRow } from '@/components/dashboard/StatsRow';
 import { PageviewsChart } from '@/components/dashboard/PageviewsChart';
@@ -16,6 +17,7 @@ import { GoalsPage } from '@/components/goals/GoalsPage';
 import { FunnelsPage } from '@/components/funnels/FunnelsPage';
 import { JourneyPage } from '@/components/journey/JourneyPage';
 import { RetentionPage } from '@/components/retention/RetentionPage';
+import { ReportsPage } from '@/components/reports/ReportsPage';
 import { useStats } from '@/hooks/useStats';
 import { usePageviews } from '@/hooks/usePageviews';
 import { useMetrics } from '@/hooks/useMetrics';
@@ -23,6 +25,21 @@ import { useRealtime } from '@/hooks/useRealtime';
 import { useAuth } from '@/hooks/useAuth';
 import { useWebsites } from '@/hooks/useWebsites';
 import { cn } from '@/lib/utils';
+
+const AttributionPage = dynamic(
+  async () => {
+    const mod = await import('@/components/attribution/AttributionPage');
+    return mod.AttributionPage;
+  },
+  {
+    ssr: false,
+    loading: () => (
+      <div className="border border-line rounded-lg bg-surface-1 px-4 py-6">
+        <p className="text-sm text-ink-2">Loading attribution…</p>
+      </div>
+    ),
+  }
+);
 
 
 
@@ -58,7 +75,8 @@ export function DashboardClient() {
   const { data: websitesData } = useWebsites();
   const analyticsEnabled = subPage !== 'settings' && subPage !== 'realtime'
     && subPage !== 'sessions' && subPage !== 'goals' && subPage !== 'funnels'
-    && subPage !== 'journey' && subPage !== 'retention';
+    && subPage !== 'journey' && subPage !== 'retention' && subPage !== 'reports'
+    && subPage !== 'attribution';
 
   // Auth redirect guard
   useEffect(() => {
@@ -159,8 +177,25 @@ export function DashboardClient() {
     );
   }
 
+  if (subPage === 'reports') {
+    return (
+      <AppShell websiteId={websiteId}>
+        <ReportsPage websiteId={websiteId} />
+      </AppShell>
+    );
+  }
+
+  if (subPage === 'attribution') {
+    return (
+      <AppShell websiteId={websiteId}>
+        <AttributionPage websiteId={websiteId} />
+      </AppShell>
+    );
+  }
+
   const stats = statsData?.data;
   const series = pageviewsData?.data?.series ?? [];
+  const compareSeries = pageviewsData?.data?.compare_series ?? [];
   const isEmpty = !statsLoading && stats && stats.pageviews === 0;
 
   return (
@@ -172,7 +207,7 @@ export function DashboardClient() {
           {(!subPage || subPage === 'overview') && (
             <>
               <StatsRow stats={stats} series={series} loading={statsLoading || pvLoading} />
-              <PageviewsChart data={series} loading={pvLoading} />
+              <PageviewsChart data={series} compareData={compareSeries} loading={pvLoading} />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <DataTable
                   title="Top Pages"

@@ -1,13 +1,10 @@
 # syntax=docker/dockerfile:1
-# Multi-stage build: compile a static musl binary, then copy into distroless.
-FROM --platform=$BUILDPLATFORM rust:slim AS builder
+# Multi-stage build: compile for the target platform, then copy into distroless.
+FROM rust:slim AS builder
 
-ARG TARGETARCH
-
-# Build dependencies: musl cross-compiler + Node for dashboard build + curl for DB-IP.
+# Build dependencies: C/C++ toolchain + Node for dashboard build + curl for DB-IP.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    musl-tools \
-    gcc-aarch64-linux-gnu \
+    build-essential \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -20,21 +17,23 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 WORKDIR /app
 COPY . .
 
-# Build for the target architecture.
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-      rustup target add aarch64-unknown-linux-musl && \
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc \
-      cargo build --release --target aarch64-unknown-linux-musl && \
-      cp target/aarch64-unknown-linux-musl/release/sparklytics /sparklytics; \
-    else \
-      rustup target add x86_64-unknown-linux-musl && \
-      cargo build --release --target x86_64-unknown-linux-musl && \
-      cp target/x86_64-unknown-linux-musl/release/sparklytics /sparklytics; \
-    fi
+# Build for the native target platform selected by Buildx.
+RUN cargo build --release --locked && cp target/release/sparklytics /sparklytics
 
 # Build the Next.js dashboard (static export → dashboard/out/).
 WORKDIR /app/dashboard
-RUN npm ci && npm run build
+RUN set -eux; \
+    npm config set registry https://registry.npmjs.org/; \
+    npm config set fetch-retries 5; \
+    npm config set fetch-retry-mintimeout 20000; \
+    npm config set fetch-retry-maxtimeout 120000; \
+    for attempt in 1 2 3; do \
+      timeout 10m npm ci --no-audit && break; \
+      if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+      echo "npm ci failed on attempt ${attempt}; retrying..."; \
+      sleep 15; \
+    done; \
+    npm run build
 
 # Download DB-IP City Lite (free, CC BY 4.0 — no license key required).
 # Falls back to the previous month if this month's file isn't published yet.
@@ -52,9 +51,9 @@ RUN YEAR=$(date +%Y) && MONTH=$(date +%m) && \
     mv dbip.mmdb /dbip-city-lite.mmdb
 
 # ─── Runtime stage ────────────────────────────────────────────
-# distroless/static:nonroot ships /etc/passwd + /etc/ssl/certs.
+# distroless/cc-debian12:nonroot ships glibc + /etc/passwd + /etc/ssl/certs.
 # uid 65532 / username "nonroot" — satisfies Docker best practices.
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/cc-debian12:nonroot
 
 COPY --from=builder /sparklytics /sparklytics
 COPY --from=builder /app/dashboard/out /dashboard/out

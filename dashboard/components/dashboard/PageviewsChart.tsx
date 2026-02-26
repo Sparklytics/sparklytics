@@ -13,14 +13,18 @@ import { useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatNumber } from '@/lib/utils';
 import type { PageviewsPoint } from '@/lib/api';
+import { useMemo } from 'react';
 
 interface PageviewsChartProps {
   data?: PageviewsPoint[];
+  compareData?: PageviewsPoint[];
   loading: boolean;
 }
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
+  const rows = payload.filter((point: any) => typeof point.value === 'number');
+  if (!rows.length) return null;
 
   let dateStr = label;
   try {
@@ -36,7 +40,7 @@ function CustomTooltip({ active, payload, label }: any) {
     <div className="bg-surface-1 border border-line rounded p-3 text-xs min-w-[150px]">
       <div className="text-ink font-medium mb-3">{dateStr}</div>
       <div className="flex flex-col gap-2">
-        {payload.map((p: any) => (
+        {rows.map((p: any) => (
           <div key={p.name} className="flex justify-between items-center tabular-nums">
             <div className="flex items-center gap-1.5 text-ink-3 capitalize">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: p.color }} />
@@ -50,8 +54,25 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
-export function PageviewsChart({ data, loading }: PageviewsChartProps) {
+export function PageviewsChart({ data, compareData, loading }: PageviewsChartProps) {
   const [metric, setMetric] = useState<'both' | 'visitors' | 'pageviews'>('both');
+  const merged = useMemo(() => {
+    const rows = (data ?? []).map((point) => ({
+      ...point,
+      compare_visitors: null as number | null,
+      compare_pageviews: null as number | null,
+    }));
+    if (!compareData?.length) {
+      return rows;
+    }
+    for (let i = 0; i < rows.length; i += 1) {
+      const compare = compareData[i];
+      if (!compare) break;
+      rows[i].compare_visitors = compare.visitors;
+      rows[i].compare_pageviews = compare.pageviews;
+    }
+    return rows;
+  }, [data, compareData]);
 
   if (loading) {
     return (
@@ -90,7 +111,7 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
       </div>
 
       <ResponsiveContainer width="100%" height={240}>
-        <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+        <LineChart data={merged} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
           <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="date"
@@ -125,6 +146,28 @@ export function PageviewsChart({ data, loading }: PageviewsChartProps) {
               dataKey="pageviews"
               stroke="var(--neutral)"
               strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+            />
+          )}
+          {compareData?.length && (metric === 'both' || metric === 'visitors') && (
+            <Line
+              type="monotone"
+              dataKey="compare_visitors"
+              stroke="var(--spark)"
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+          )}
+          {compareData?.length && (metric === 'both' || metric === 'pageviews') && (
+            <Line
+              type="monotone"
+              dataKey="compare_pageviews"
+              stroke="var(--neutral)"
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
               dot={false}
               isAnimationActive={false}
             />

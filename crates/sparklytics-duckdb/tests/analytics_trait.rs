@@ -112,7 +112,7 @@ async fn test_analytics_backend_dyn_dispatch() {
     let filter = base_filter(today - chrono::Duration::days(1), today);
 
     let stats = backend
-        .get_stats("site_1", None, &filter)
+        .get_stats("site_1", None, &filter, None)
         .await
         .expect("stats");
     assert_eq!(stats.timezone, "UTC");
@@ -140,15 +140,15 @@ async fn test_analytics_filter_all_dimensions_accepted() {
     filter.filter_utm_campaign = Some("launch".to_string());
 
     backend
-        .get_stats("site_1", None, &filter)
+        .get_stats("site_1", None, &filter, None)
         .await
         .expect("stats");
     backend
-        .get_timeseries("site_1", None, &filter, None)
+        .get_timeseries("site_1", None, &filter, None, None)
         .await
         .expect("timeseries");
     backend
-        .get_metrics("site_1", None, "page", 10, 0, &filter)
+        .get_metrics("site_1", None, "page", 10, 0, &filter, None)
         .await
         .expect("metrics");
 }
@@ -168,7 +168,7 @@ async fn test_timeseries_all_filters_accepted() {
     filter.filter_os = Some("macOS".to_string());
 
     backend
-        .get_timeseries("site_1", None, &filter, None)
+        .get_timeseries("site_1", None, &filter, None, None)
         .await
         .expect("timeseries");
 }
@@ -219,7 +219,7 @@ async fn test_stats_result_includes_timezone() {
     let filter = base_filter(today - chrono::Duration::days(1), today);
 
     let stats = backend
-        .get_stats("site_1", None, &filter)
+        .get_stats("site_1", None, &filter, None)
         .await
         .expect("stats");
     assert_eq!(stats.timezone, "Europe/Warsaw");

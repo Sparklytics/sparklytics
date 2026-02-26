@@ -127,7 +127,7 @@ pub async fn share_stats(
 
     let result = state
         .analytics
-        .get_stats(&website_id, None, &filter)
+        .get_stats(&website_id, None, &filter, None)
         .await
         .map_err(AppError::Internal)?;
 
@@ -148,7 +148,7 @@ pub async fn share_pageviews(
 
     let result = state
         .analytics
-        .get_timeseries(&website_id, None, &filter, None)
+        .get_timeseries(&website_id, None, &filter, None, None)
         .await
         .map_err(AppError::Internal)?;
 
@@ -177,44 +177,44 @@ pub async fn share_overview(
 
     let stats = state
         .analytics
-        .get_stats(&website_id, None, &filter)
+        .get_stats(&website_id, None, &filter, None)
         .await
         .map_err(AppError::Internal)?;
 
     let timeseries = state
         .analytics
-        .get_timeseries(&website_id, None, &filter, None)
+        .get_timeseries(&website_id, None, &filter, None, None)
         .await
         .map_err(AppError::Internal)?;
 
     let page = state
         .analytics
-        .get_metrics(&website_id, None, "page", 10, 0, &filter)
+        .get_metrics(&website_id, None, "page", 10, 0, &filter, None)
         .await
         .map_err(AppError::Internal)?;
     let referrer = state
         .analytics
-        .get_metrics(&website_id, None, "referrer", 10, 0, &filter)
+        .get_metrics(&website_id, None, "referrer", 10, 0, &filter, None)
         .await
         .map_err(AppError::Internal)?;
     let browser = state
         .analytics
-        .get_metrics(&website_id, None, "browser", 10, 0, &filter)
+        .get_metrics(&website_id, None, "browser", 10, 0, &filter, None)
         .await
         .map_err(AppError::Internal)?;
     let country = state
         .analytics
-        .get_metrics(&website_id, None, "country", 10, 0, &filter)
+        .get_metrics(&website_id, None, "country", 10, 0, &filter, None)
         .await
         .map_err(AppError::Internal)?;
     let os = state
         .analytics
-        .get_metrics(&website_id, None, "os", 10, 0, &filter)
+        .get_metrics(&website_id, None, "os", 10, 0, &filter, None)
         .await
         .map_err(AppError::Internal)?;
     let device = state
         .analytics
-        .get_metrics(&website_id, None, "device", 10, 0, &filter)
+        .get_metrics(&website_id, None, "device", 10, 0, &filter, None)
         .await
         .map_err(AppError::Internal)?;
 
@@ -281,7 +281,7 @@ pub async fn share_metrics(
 
     let page = state
         .analytics
-        .get_metrics(&website_id, None, metric_type, limit, offset, &filter)
+        .get_metrics(&website_id, None, metric_type, limit, offset, &filter, None)
         .await
         .map_err(AppError::Internal)?;
 

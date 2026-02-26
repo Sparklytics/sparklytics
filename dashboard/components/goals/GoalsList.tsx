@@ -51,6 +51,13 @@ function GoalRow({
       <td className="px-4 py-3 text-sm text-ink-2 max-w-[200px] truncate font-mono">
         {goal.match_value}
       </td>
+      <td className="px-4 py-3 text-xs text-ink-3 font-mono">
+        {goal.value_mode === 'fixed'
+          ? `${goal.currency} ${goal.fixed_value ?? 0}`
+          : goal.value_mode === 'event_property'
+          ? `${goal.value_property_key ?? 'property'} (${goal.currency})`
+          : 'None'}
+      </td>
       <td className="px-4 py-3">
         <GoalStatsCard stats={data?.data} loading={isLoading} variant="compact" />
       </td>
@@ -120,6 +127,7 @@ export function GoalsList({ websiteId }: GoalsListProps) {
                 <th className="px-4 py-2 text-left">Goal Name</th>
                 <th className="px-4 py-2 text-left">Type</th>
                 <th className="px-4 py-2 text-left">Match Value</th>
+                <th className="px-4 py-2 text-left">Value</th>
                 <th className="px-4 py-2 text-left">Conv. Rate</th>
                 <th className="px-4 py-2 text-left">Conversions</th>
                 <th className="px-4 py-2 text-right">Actions</th>

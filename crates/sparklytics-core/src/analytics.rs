@@ -1,6 +1,7 @@
 //! Analytics backend abstraction.
 
-use chrono::NaiveDate;
+use anyhow::{anyhow, Result};
+use chrono::{Months, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
@@ -26,6 +27,121 @@ pub struct AnalyticsFilter {
     pub filter_hostname: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CompareMode {
+    #[default]
+    None,
+    PreviousPeriod,
+    PreviousYear,
+    Custom,
+}
+
+impl CompareMode {
+    pub fn parse(raw: Option<&str>) -> Result<Self> {
+        match raw.map(str::trim) {
+            None | Some("") | Some("none") => Ok(Self::None),
+            Some("previous_period") => Ok(Self::PreviousPeriod),
+            Some("previous_year") => Ok(Self::PreviousYear),
+            Some("custom") => Ok(Self::Custom),
+            Some(_) => Err(anyhow!(
+                "compare_mode must be one of: none, previous_period, previous_year, custom"
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComparisonRange {
+    pub mode: CompareMode,
+    pub primary_start: NaiveDate,
+    pub primary_end: NaiveDate,
+    pub comparison_start: NaiveDate,
+    pub comparison_end: NaiveDate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComparisonMetadata {
+    pub mode: CompareMode,
+    pub primary_range: [String; 2],
+    pub comparison_range: [String; 2],
+}
+
+impl ComparisonRange {
+    pub fn to_metadata(&self) -> ComparisonMetadata {
+        ComparisonMetadata {
+            mode: self.mode.clone(),
+            primary_range: [self.primary_start.to_string(), self.primary_end.to_string()],
+            comparison_range: [
+                self.comparison_start.to_string(),
+                self.comparison_end.to_string(),
+            ],
+        }
+    }
+}
+
+pub fn resolve_comparison_range(
+    primary_start: NaiveDate,
+    primary_end: NaiveDate,
+    mode: CompareMode,
+    compare_start: Option<NaiveDate>,
+    compare_end: Option<NaiveDate>,
+) -> Result<Option<ComparisonRange>> {
+    if primary_end < primary_start {
+        return Err(anyhow!("end_date must be on or after start_date"));
+    }
+
+    if matches!(mode, CompareMode::None) {
+        return Ok(None);
+    }
+
+    let primary_days = (primary_end - primary_start).num_days() + 1;
+    let (comparison_start, comparison_end) = match mode {
+        CompareMode::PreviousPeriod => {
+            let end = primary_start - chrono::Duration::days(1);
+            let start = end - chrono::Duration::days(primary_days - 1);
+            (start, end)
+        }
+        CompareMode::PreviousYear => {
+            let start = primary_start
+                .checked_sub_months(Months::new(12))
+                .ok_or_else(|| anyhow!("previous_year comparison_start out of range"))?;
+            let end = primary_end
+                .checked_sub_months(Months::new(12))
+                .ok_or_else(|| anyhow!("previous_year comparison_end out of range"))?;
+            (start, end)
+        }
+        CompareMode::Custom => {
+            let start = compare_start
+                .ok_or_else(|| anyhow!("compare_start_date is required for custom compare"))?;
+            let end = compare_end
+                .ok_or_else(|| anyhow!("compare_end_date is required for custom compare"))?;
+            if end < start {
+                return Err(anyhow!(
+                    "compare_end_date must be on or after compare_start_date"
+                ));
+            }
+            (start, end)
+        }
+        CompareMode::None => unreachable!(),
+    };
+
+    let compare_days = (comparison_end - comparison_start).num_days() + 1;
+    if compare_days > primary_days * 2 {
+        return Err(anyhow!(
+            "comparison range cannot exceed primary range duration x 2"
+        ));
+    }
+
+    Ok(Some(ComparisonRange {
+        mode,
+        primary_start,
+        primary_end,
+        comparison_start,
+        comparison_end,
+    }))
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct StatsResult {
     pub pageviews: i64,
@@ -39,6 +155,8 @@ pub struct StatsResult {
     pub prev_bounce_rate: f64,
     pub prev_avg_duration_seconds: f64,
     pub timezone: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compare: Option<ComparisonMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,6 +170,10 @@ pub struct TimeseriesPoint {
 pub struct TimeseriesResult {
     pub series: Vec<TimeseriesPoint>,
     pub granularity: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compare_series: Option<Vec<TimeseriesPoint>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compare: Option<ComparisonMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -61,6 +183,14 @@ pub struct MetricRow {
     /// Always populated as of Sprint 12 (was optional for non-page types before).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pageviews: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prev_visitors: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prev_pageviews: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delta_visitors_abs: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delta_visitors_pct: Option<f64>,
     /// Fraction of sessions that had ≤ 1 pageview, 0–100.
     pub bounce_rate: f64,
     /// Mean session duration in seconds (0.0 when all sessions are single-event).
@@ -71,6 +201,7 @@ pub struct MetricRow {
 pub struct MetricsPage {
     pub rows: Vec<MetricRow>,
     pub total: i64,
+    pub compare: Option<ComparisonMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -225,6 +356,15 @@ pub enum GoalType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+pub enum GoalValueMode {
+    #[default]
+    None,
+    Fixed,
+    EventProperty,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum MatchOperator {
     #[default]
     Equals,
@@ -239,6 +379,10 @@ pub struct Goal {
     pub goal_type: GoalType,
     pub match_value: String,
     pub match_operator: MatchOperator,
+    pub value_mode: GoalValueMode,
+    pub fixed_value: Option<f64>,
+    pub value_property_key: Option<String>,
+    pub currency: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -249,6 +393,10 @@ pub struct CreateGoalRequest {
     pub goal_type: GoalType,
     pub match_value: String,
     pub match_operator: Option<MatchOperator>,
+    pub value_mode: Option<GoalValueMode>,
+    pub fixed_value: Option<f64>,
+    pub value_property_key: Option<String>,
+    pub currency: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,6 +404,10 @@ pub struct UpdateGoalRequest {
     pub name: Option<String>,
     pub match_value: Option<String>,
     pub match_operator: Option<MatchOperator>,
+    pub value_mode: Option<GoalValueMode>,
+    pub fixed_value: Option<f64>,
+    pub value_property_key: Option<String>,
+    pub currency: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -268,6 +420,50 @@ pub struct GoalStats {
     pub prev_conversions: Option<i64>,
     pub prev_conversion_rate: Option<f64>,
     pub trend_pct: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionModel {
+    FirstTouch,
+    #[default]
+    LastTouch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributionQuery {
+    pub goal_id: String,
+    pub model: AttributionModel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributionRow {
+    pub channel: String,
+    pub conversions: i64,
+    pub revenue: f64,
+    pub share: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributionTotals {
+    pub conversions: i64,
+    pub revenue: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributionResponse {
+    pub goal_id: String,
+    pub model: AttributionModel,
+    pub rows: Vec<AttributionRow>,
+    pub totals: AttributionTotals,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevenueSummary {
+    pub goal_id: String,
+    pub model: AttributionModel,
+    pub conversions: i64,
+    pub revenue: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -437,6 +633,177 @@ pub struct RetentionResponse {
     pub summary: RetentionSummary,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportType {
+    #[default]
+    Stats,
+    Pageviews,
+    Metrics,
+    Events,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DateRangeType {
+    #[default]
+    Relative,
+    Absolute,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportConfig {
+    pub version: u32,
+    pub report_type: ReportType,
+    pub date_range_type: DateRangeType,
+    pub relative_days: Option<u32>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub compare_mode: Option<CompareMode>,
+    pub compare_start_date: Option<String>,
+    pub compare_end_date: Option<String>,
+    pub timezone: Option<String>,
+    pub metric_type: Option<String>,
+    pub filter_country: Option<String>,
+    pub filter_browser: Option<String>,
+    pub filter_os: Option<String>,
+    pub filter_device: Option<String>,
+    pub filter_page: Option<String>,
+    pub filter_referrer: Option<String>,
+    pub filter_utm_source: Option<String>,
+    pub filter_utm_medium: Option<String>,
+    pub filter_utm_campaign: Option<String>,
+    pub filter_region: Option<String>,
+    pub filter_city: Option<String>,
+    pub filter_hostname: Option<String>,
+}
+
+impl Default for ReportConfig {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            report_type: ReportType::Stats,
+            date_range_type: DateRangeType::Relative,
+            relative_days: Some(30),
+            start_date: None,
+            end_date: None,
+            compare_mode: None,
+            compare_start_date: None,
+            compare_end_date: None,
+            timezone: Some("UTC".to_string()),
+            metric_type: None,
+            filter_country: None,
+            filter_browser: None,
+            filter_os: None,
+            filter_device: None,
+            filter_page: None,
+            filter_referrer: None,
+            filter_utm_source: None,
+            filter_utm_medium: None,
+            filter_utm_campaign: None,
+            filter_region: None,
+            filter_city: None,
+            filter_hostname: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedReport {
+    pub id: String,
+    pub website_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub config: ReportConfig,
+    pub last_run_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedReportSummary {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub report_type: ReportType,
+    pub last_run_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateReportRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub config: ReportConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateReportRequest {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub description: Option<Option<String>>,
+    pub config: Option<ReportConfig>,
+}
+
+fn deserialize_optional_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(deserializer)?))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportRunResult {
+    pub report_id: Option<String>,
+    pub config: ReportConfig,
+    pub ran_at: String,
+    pub data: serde_json::Value,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn previous_year_uses_calendar_alignment() {
+        let start = NaiveDate::from_ymd_opt(2025, 3, 1).expect("valid date");
+        let end = NaiveDate::from_ymd_opt(2025, 3, 31).expect("valid date");
+
+        let range = resolve_comparison_range(start, end, CompareMode::PreviousYear, None, None)
+            .expect("comparison should resolve")
+            .expect("comparison range should exist");
+
+        assert_eq!(
+            range.comparison_start,
+            NaiveDate::from_ymd_opt(2024, 3, 1).expect("valid date")
+        );
+        assert_eq!(
+            range.comparison_end,
+            NaiveDate::from_ymd_opt(2024, 3, 31).expect("valid date")
+        );
+    }
+
+    #[test]
+    fn previous_year_clamps_leap_day_to_feb_28() {
+        let date = NaiveDate::from_ymd_opt(2024, 2, 29).expect("valid date");
+
+        let range = resolve_comparison_range(date, date, CompareMode::PreviousYear, None, None)
+            .expect("comparison should resolve")
+            .expect("comparison range should exist");
+
+        assert_eq!(
+            range.comparison_start,
+            NaiveDate::from_ymd_opt(2023, 2, 28).expect("valid date")
+        );
+        assert_eq!(
+            range.comparison_end,
+            NaiveDate::from_ymd_opt(2023, 2, 28).expect("valid date")
+        );
+    }
+}
+
 pub const VALID_METRIC_TYPES: &[&str] = &[
     "page",
     "referrer",
@@ -455,6 +822,7 @@ pub const VALID_METRIC_TYPES: &[&str] = &[
 ];
 
 #[async_trait::async_trait]
+#[allow(clippy::too_many_arguments)]
 pub trait AnalyticsBackend: Send + Sync + 'static {
     async fn insert_events(&self, events: &[Event]) -> anyhow::Result<()>;
 
@@ -471,6 +839,7 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         website_id: &str,
         tenant_id: Option<&str>,
         filter: &AnalyticsFilter,
+        comparison: Option<&ComparisonRange>,
     ) -> anyhow::Result<StatsResult>;
 
     async fn get_timeseries(
@@ -479,6 +848,7 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         tenant_id: Option<&str>,
         filter: &AnalyticsFilter,
         granularity: Option<&str>,
+        comparison: Option<&ComparisonRange>,
     ) -> anyhow::Result<TimeseriesResult>;
 
     async fn get_metrics(
@@ -489,6 +859,7 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         limit: i64,
         offset: i64,
         filter: &AnalyticsFilter,
+        comparison: Option<&ComparisonRange>,
     ) -> anyhow::Result<MetricsPage>;
 
     async fn get_realtime(
@@ -580,6 +951,22 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         filter: &AnalyticsFilter,
     ) -> anyhow::Result<GoalStats>;
 
+    async fn get_attribution(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &AttributionQuery,
+    ) -> anyhow::Result<AttributionResponse>;
+
+    async fn get_revenue_summary(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        filter: &AnalyticsFilter,
+        query: &AttributionQuery,
+    ) -> anyhow::Result<RevenueSummary>;
+
     async fn count_goals(&self, website_id: &str, tenant_id: Option<&str>) -> anyhow::Result<i64>;
 
     async fn goal_name_exists(
@@ -648,4 +1035,57 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         filter: &AnalyticsFilter,
         query: &RetentionQuery,
     ) -> anyhow::Result<RetentionResponse>;
+
+    async fn list_reports(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+    ) -> anyhow::Result<Vec<SavedReportSummary>>;
+
+    async fn get_report(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<Option<SavedReport>>;
+
+    async fn create_report(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        req: CreateReportRequest,
+    ) -> anyhow::Result<SavedReport>;
+
+    async fn update_report(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        report_id: &str,
+        req: UpdateReportRequest,
+    ) -> anyhow::Result<Option<SavedReport>>;
+
+    async fn delete_report(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<bool>;
+
+    async fn count_reports(&self, website_id: &str, tenant_id: Option<&str>)
+        -> anyhow::Result<i64>;
+
+    async fn report_name_exists(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        name: &str,
+        exclude_report_id: Option<&str>,
+    ) -> anyhow::Result<bool>;
+
+    async fn touch_report_last_run(
+        &self,
+        website_id: &str,
+        tenant_id: Option<&str>,
+        report_id: &str,
+    ) -> anyhow::Result<()>;
 }

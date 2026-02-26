@@ -10,7 +10,9 @@ use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use sparklytics_core::analytics::{AnalyticsFilter, CreateGoalRequest, UpdateGoalRequest};
+use sparklytics_core::analytics::{
+    AnalyticsFilter, CreateGoalRequest, GoalValueMode, UpdateGoalRequest,
+};
 
 use crate::{error::AppError, state::AppState};
 
@@ -104,6 +106,67 @@ fn validate_match_value(match_value: &str) -> Result<(), (StatusCode, Json<Value
     Ok(())
 }
 
+fn validate_goal_value(
+    mode: Option<&GoalValueMode>,
+    fixed_value: Option<f64>,
+    value_property_key: Option<&str>,
+    currency: Option<&str>,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    if let Some(value) = fixed_value {
+        if value < 0.0 {
+            return Err(unprocessable(
+                "validation_error",
+                "fixed_value must be non-negative",
+                Some("fixed_value"),
+            ));
+        }
+    }
+
+    if let Some(curr) = currency {
+        let trimmed = curr.trim();
+        if trimmed.is_empty() || trimmed.len() > 8 {
+            return Err(unprocessable(
+                "validation_error",
+                "currency must be between 1 and 8 characters",
+                Some("currency"),
+            ));
+        }
+    }
+
+    if let Some(mode) = mode {
+        match mode {
+            GoalValueMode::None => {}
+            GoalValueMode::Fixed => {
+                if fixed_value.is_none() {
+                    return Err(unprocessable(
+                        "validation_error",
+                        "fixed_value is required when value_mode=fixed",
+                        Some("fixed_value"),
+                    ));
+                }
+            }
+            GoalValueMode::EventProperty => {
+                let Some(key) = value_property_key.map(str::trim) else {
+                    return Err(unprocessable(
+                        "validation_error",
+                        "value_property_key is required when value_mode=event_property",
+                        Some("value_property_key"),
+                    ));
+                };
+                if key.is_empty() {
+                    return Err(unprocessable(
+                        "validation_error",
+                        "value_property_key must not be empty",
+                        Some("value_property_key"),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn list_goals(
     State(state): State<Arc<AppState>>,
     Path(website_id): Path<String>,
@@ -131,6 +194,14 @@ pub async fn create_goal(
         return Ok(resp);
     }
     if let Err(resp) = validate_match_value(&req.match_value) {
+        return Ok(resp);
+    }
+    if let Err(resp) = validate_goal_value(
+        req.value_mode.as_ref(),
+        req.fixed_value,
+        req.value_property_key.as_deref(),
+        req.currency.as_deref(),
+    ) {
         return Ok(resp);
     }
 
@@ -214,6 +285,14 @@ pub async fn update_goal(
         if let Err(resp) = validate_match_value(match_value) {
             return Ok(resp);
         }
+    }
+    if let Err(resp) = validate_goal_value(
+        req.value_mode.as_ref(),
+        req.fixed_value,
+        req.value_property_key.as_deref(),
+        req.currency.as_deref(),
+    ) {
+        return Ok(resp);
     }
 
     let goal = match state

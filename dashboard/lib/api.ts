@@ -49,7 +49,13 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 }
 
 export type DateRange = { start_date: string; end_date: string };
-export type Filters = Record<string, string>;
+export type CompareMode = 'none' | 'previous_period' | 'previous_year' | 'custom';
+export type CompareParams = {
+  compare_mode?: CompareMode;
+  compare_start_date?: string;
+  compare_end_date?: string;
+};
+export type Filters = Record<string, string | undefined>;
 
 export const api = {
   // Auth — getAuthStatus returns null when auth mode is "none" (endpoint returns 404)
@@ -81,11 +87,11 @@ export const api = {
     request<void>(`/api/websites/${id}`, { method: 'DELETE' }),
 
   // Analytics
-  getStats: (websiteId: string, params: DateRange & Filters) =>
+  getStats: (websiteId: string, params: DateRange & Filters & CompareParams) =>
     request<{ data: StatsResponse }>(`/api/websites/${websiteId}/stats?${toQuery(params)}`),
-  getPageviews: (websiteId: string, params: DateRange & Filters) =>
+  getPageviews: (websiteId: string, params: DateRange & Filters & CompareParams) =>
     request<{ data: PageviewsResponse }>(`/api/websites/${websiteId}/pageviews?${toQuery(params)}`),
-  getMetrics: (websiteId: string, type: string, params: DateRange & Filters) =>
+  getMetrics: (websiteId: string, type: string, params: DateRange & Filters & CompareParams) =>
     request<{ data: MetricsResult; pagination: MetricsPagination }>(
       `/api/websites/${websiteId}/metrics?type=${type}&${toQuery(params)}`
     ),
@@ -162,6 +168,16 @@ export const api = {
   getGoalStats: (websiteId: string, goalId: string, params: Record<string, string>) =>
     request<{ data: GoalStats }>(`/api/websites/${websiteId}/goals/${goalId}/stats?${toQuery(params as Record<string, string>)}`),
 
+  // Attribution + Revenue-lite (Sprint 18)
+  getAttribution: (websiteId: string, params: AttributionParams) =>
+    request<{ data: AttributionResponse }>(
+      `/api/websites/${websiteId}/attribution?${toQuery(params)}`
+    ),
+  getRevenueSummary: (websiteId: string, params: AttributionParams) =>
+    request<{ data: RevenueSummary }>(
+      `/api/websites/${websiteId}/revenue/summary?${toQuery(params)}`
+    ),
+
   // Funnel Analysis (Sprint 13)
   listFunnels: (websiteId: string) =>
     request<{ data: FunnelSummary[] }>(`/api/websites/${websiteId}/funnels`),
@@ -187,6 +203,27 @@ export const api = {
     request<{ data: RetentionResponse }>(
       `/api/websites/${websiteId}/retention?${toQuery(params)}`
     ),
+
+  // Insights Builder / Saved Reports (Sprint 16)
+  listReports: (websiteId: string) =>
+    request<{ data: SavedReportSummary[] }>(`/api/websites/${websiteId}/reports`),
+  getReport: (websiteId: string, reportId: string) =>
+    request<{ data: SavedReport }>(`/api/websites/${websiteId}/reports/${reportId}`),
+  createReport: (websiteId: string, body: CreateReportPayload) =>
+    request<{ data: SavedReport }>(`/api/websites/${websiteId}/reports`, { method: 'POST', body }),
+  updateReport: (websiteId: string, reportId: string, body: UpdateReportPayload) =>
+    request<{ data: SavedReport }>(`/api/websites/${websiteId}/reports/${reportId}`, { method: 'PUT', body }),
+  deleteReport: (websiteId: string, reportId: string) =>
+    request<void>(`/api/websites/${websiteId}/reports/${reportId}`, { method: 'DELETE' }),
+  previewReport: (websiteId: string, config: ReportConfig) =>
+    request<{ data: ReportRunResult }>(`/api/websites/${websiteId}/reports/preview`, {
+      method: 'POST',
+      body: config,
+    }),
+  runReport: (websiteId: string, reportId: string) =>
+    request<{ data: ReportRunResult }>(`/api/websites/${websiteId}/reports/${reportId}/run`, {
+      method: 'POST',
+    }),
 };
 
 function toQuery<T extends object>(params: T): string {
@@ -229,6 +266,7 @@ export interface PageviewsPoint {
 
 export interface PageviewsResponse {
   series: PageviewsPoint[];
+  compare_series?: PageviewsPoint[];
   granularity: string;
 }
 
@@ -237,6 +275,10 @@ export interface MetricRow {
   visitors: number;
   /** Always present as of the CTE-based query; was optional for non-page types before. */
   pageviews?: number;
+  prev_visitors?: number;
+  prev_pageviews?: number;
+  delta_visitors_abs?: number;
+  delta_visitors_pct?: number;
   /** Percentage of sessions with ≤ 1 pageview (0–100). */
   bounce_rate: number;
   /** Mean session duration in seconds. */
@@ -387,6 +429,7 @@ export interface SessionsParams {
 
 export type GoalType = 'page_view' | 'event';
 export type MatchOperator = 'equals' | 'contains';
+export type GoalValueMode = 'none' | 'fixed' | 'event_property';
 
 export interface Goal {
   id: string;
@@ -395,6 +438,10 @@ export interface Goal {
   goal_type: GoalType;
   match_value: string;
   match_operator: MatchOperator;
+  value_mode: GoalValueMode;
+  fixed_value: number | null;
+  value_property_key: string | null;
+  currency: string;
   created_at: string;
   updated_at: string;
 }
@@ -404,12 +451,20 @@ export interface CreateGoalPayload {
   goal_type: GoalType;
   match_value: string;
   match_operator?: MatchOperator;
+  value_mode?: GoalValueMode;
+  fixed_value?: number;
+  value_property_key?: string;
+  currency?: string;
 }
 
 export interface UpdateGoalPayload {
   name?: string;
   match_value?: string;
   match_operator?: MatchOperator;
+  value_mode?: GoalValueMode;
+  fixed_value?: number;
+  value_property_key?: string;
+  currency?: string;
 }
 
 export interface GoalStats {
@@ -421,6 +476,57 @@ export interface GoalStats {
   prev_conversions: number | null;
   prev_conversion_rate: number | null;
   trend_pct: number | null;
+}
+
+// --- Attribution + Revenue-lite types (Sprint 18) ---
+
+export type AttributionModel = 'first_touch' | 'last_touch';
+
+export interface AttributionRow {
+  channel: string;
+  conversions: number;
+  revenue: number;
+  share: number;
+}
+
+export interface AttributionTotals {
+  conversions: number;
+  revenue: number;
+}
+
+export interface AttributionResponse {
+  goal_id: string;
+  model: AttributionModel;
+  rows: AttributionRow[];
+  totals: AttributionTotals;
+}
+
+export interface RevenueSummary {
+  goal_id: string;
+  model: AttributionModel;
+  conversions: number;
+  revenue: number;
+}
+
+export interface AttributionParams {
+  goal_id: string;
+  model?: AttributionModel;
+  start_date?: string;
+  end_date?: string;
+  timezone?: string;
+  filter_country?: string;
+  filter_page?: string;
+  filter_referrer?: string;
+  filter_browser?: string;
+  filter_os?: string;
+  filter_device?: string;
+  filter_language?: string;
+  filter_utm_source?: string;
+  filter_utm_medium?: string;
+  filter_utm_campaign?: string;
+  filter_region?: string;
+  filter_city?: string;
+  filter_hostname?: string;
 }
 
 // --- Funnel Analysis types (Sprint 13) ---
@@ -585,4 +691,75 @@ export interface RetentionParams {
   filter_region?: string;
   filter_city?: string;
   filter_hostname?: string;
+}
+
+// --- Insights Builder / Saved Reports types (Sprint 16) ---
+
+export type ReportType = 'stats' | 'pageviews' | 'metrics' | 'events';
+export type DateRangeType = 'relative' | 'absolute';
+
+export interface ReportConfig {
+  version: number;
+  report_type: ReportType;
+  date_range_type: DateRangeType;
+  relative_days?: number;
+  start_date?: string;
+  end_date?: string;
+  compare_mode?: CompareMode;
+  compare_start_date?: string;
+  compare_end_date?: string;
+  timezone?: string;
+  metric_type?: string;
+  filter_country?: string;
+  filter_browser?: string;
+  filter_os?: string;
+  filter_device?: string;
+  filter_page?: string;
+  filter_referrer?: string;
+  filter_utm_source?: string;
+  filter_utm_medium?: string;
+  filter_utm_campaign?: string;
+  filter_region?: string;
+  filter_city?: string;
+  filter_hostname?: string;
+}
+
+export interface SavedReportSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  report_type: ReportType;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedReport {
+  id: string;
+  website_id: string;
+  name: string;
+  description: string | null;
+  config: ReportConfig;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateReportPayload {
+  name: string;
+  description?: string | null;
+  config: ReportConfig;
+}
+
+export interface UpdateReportPayload {
+  name?: string;
+  description?: string | null;
+  config?: ReportConfig;
+}
+
+export interface ReportRunResult {
+  report_id: string | null;
+  config: ReportConfig;
+  ran_at: string;
+  data: unknown;
 }

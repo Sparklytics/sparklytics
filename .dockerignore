@@ -1,0 +1,9 @@
+.git
+.github
+target
+**/target
+**/node_modules
+dashboard/.next
+dashboard/out
+.DS_Store
+*.log
