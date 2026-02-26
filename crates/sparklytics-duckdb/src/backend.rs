@@ -30,6 +30,7 @@ pub(crate) fn rand_hex(n: usize) -> String {
 /// (default `"1GB"`). See CLAUDE.md critical fact #12.
 ///
 /// `tenant_id` is always `NULL` in self-hosted mode (critical fact #2).
+#[derive(Clone)]
 pub struct DuckDbBackend {
     pub(crate) conn: Arc<Mutex<Connection>>,
 }
