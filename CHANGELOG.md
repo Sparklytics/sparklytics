@@ -7,6 +7,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.2.0] — 2026-02-27
+
+### Added
+
+- New `sparklytics-metadata` crate with shared metadata contracts (`MetadataStore`, website/api-key models).
+- Metadata abstraction wiring in server state and routes, including DuckDB metadata adapter.
+- New metadata-injection integration coverage (`state_metadata_integration`) validating backend separation.
+- Bot policy/override cache improvements in collect path:
+  - hashed user-agent in override cache key (lower memory footprint),
+  - bounded eviction strategy (expire-first, oldest-next) across caches,
+  - explicit fallback threshold constants for strict/balanced-off modes.
+- API key generation fully mode-aware (`spk_selfhosted_` and `spk_live_`) with updated docs and tests.
+
+### Changed
+
+- Collect/auth/share/website flows now consistently route metadata operations through `MetadataStore`.
+- Bot policy + override cache invalidation now happens on relevant policy/list mutations.
+- Clippy-clean refactors in bot recompute/bot detection/state modules to keep CI strict-warning clean.
+
+### Fixed
+
+- Fixed stale bot-policy/override cache behavior after policy/list updates.
+- Fixed CI merge-blocking clippy failures (`type_complexity`, doc continuation) on release branch.
+
 ## [0.1.0] — 2026-02-19
 
 ### Added
@@ -73,4 +97,5 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - GitHub Actions CI: fmt, clippy, test, audit, build, npm test, npm build, bundle size, docker buildx
 - Pre-built binaries: `linux-amd64`, `linux-arm64`, `darwin-arm64`
 
+[0.2.0]: https://github.com/sparklytics/sparklytics/releases/tag/v0.2.0
 [0.1.0]: https://github.com/sparklytics/sparklytics/releases/tag/v0.1.0
