@@ -90,6 +90,9 @@ struct CachedBotOverride {
     expires_at: Instant,
 }
 
+type BotOverrideCacheKey = (String, String, u64);
+type BotOverrideCache = HashMap<BotOverrideCacheKey, CachedBotOverride>;
+
 #[derive(Debug, Clone)]
 struct CachedExportResponse {
     value: Bytes,
@@ -130,7 +133,7 @@ pub struct AppState {
     acquisition_cache_ttl: Duration,
     website_metadata_cache: Arc<Mutex<HashMap<String, CachedWebsiteMetadata>>>,
     bot_policy_cache: Arc<Mutex<HashMap<String, CachedBotPolicy>>>,
-    bot_override_cache: Arc<Mutex<HashMap<(String, String, u64), CachedBotOverride>>>,
+    bot_override_cache: Arc<Mutex<BotOverrideCache>>,
     collect_cache_max_entries: usize,
     collect_cache_ttl: Duration,
     export_cache: Arc<Mutex<HashMap<String, CachedExportResponse>>>,

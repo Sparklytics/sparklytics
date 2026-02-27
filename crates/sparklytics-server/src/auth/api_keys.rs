@@ -7,6 +7,7 @@ use sparklytics_core::config::AppMode;
 /// Raw key format:
 /// - self-hosted: `spk_selfhosted_` + 32 random hex chars
 /// - cloud: `spk_live_` + 32 random hex chars
+///
 /// Prefix: first 20 chars of raw key (for display/storage parity).
 pub fn generate_api_key(mode: &AppMode) -> (String, String, String) {
     use rand::RngCore;
