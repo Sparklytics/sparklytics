@@ -155,7 +155,7 @@ Full methodology and raw data: [`docs/perf-baseline.md`](docs/perf-baseline.md).
 
 | Metric | Value |
 |--------|-------|
-| Peak ingest throughput | ~24,000 req/s (single event) |
+| Peak ingest throughput | ~18,000–24,000 req/s (single event) |
 | Batch ingestion | ~86,660 events/s (batch of 10) |
 | Query throughput (analytics) | 1,600–4,300 req/s (all endpoints) |
 | Storage per 1M events | ~48 MB (5.8x more efficient) |
