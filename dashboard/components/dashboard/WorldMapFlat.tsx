@@ -17,6 +17,7 @@ interface TooltipState {
   a2: string;
   x: number;
   y: number;
+  containerWidth: number;
 }
 
 // Intl country name formatter (created once, memoized outside component)
@@ -76,7 +77,7 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
     const a2 = (target as unknown as HTMLElement).dataset?.a2;
     if (a2 && a2.length > 0) {
       const rect = e.currentTarget.getBoundingClientRect();
-      setTooltip({ a2, x: e.clientX - rect.left, y: e.clientY - rect.top });
+      setTooltip({ a2, x: e.clientX - rect.left, y: e.clientY - rect.top, containerWidth: rect.width });
     } else {
       setTooltip(null);
     }
@@ -91,7 +92,7 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
     const name = getCountryName(tooltip.a2);
 
     const TW = 172;
-    const left = Math.min(tooltip.x + 14, (typeof window !== 'undefined' ? window.innerWidth * 0.5 : 500) - TW);
+    const left = Math.min(tooltip.x + 14, Math.max(8, tooltip.containerWidth - TW - 8));
     const top = tooltip.y > 80 ? tooltip.y - 100 : tooltip.y + 16;
 
     const stat = (label: string, value: string) => (

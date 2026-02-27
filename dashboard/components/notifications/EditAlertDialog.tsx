@@ -57,8 +57,9 @@ export function EditAlertDialog({ rule, isPending, onSave, onClose }: EditAlertD
 
   function handleSubmit() {
     if (!rule || !target.trim()) return;
+    if (!thresholdValue.trim()) return;
     const threshold = Number(thresholdValue);
-    if (isNaN(threshold)) return;
+    if (!Number.isFinite(threshold)) return;
     onSave(rule.id, {
       metric,
       condition_type: conditionType,
@@ -122,7 +123,15 @@ export function EditAlertDialog({ rule, isPending, onSave, onClose }: EditAlertD
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={isPending || !target.trim() || isNaN(Number(thresholdValue))}>
+          <Button
+            onClick={handleSubmit}
+            disabled={
+              isPending ||
+              !target.trim() ||
+              !thresholdValue.trim() ||
+              !Number.isFinite(Number(thresholdValue))
+            }
+          >
             {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Save Changes
           </Button>

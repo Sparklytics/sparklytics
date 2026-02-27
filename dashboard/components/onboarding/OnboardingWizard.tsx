@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TrackingSnippet } from '@/components/settings/TrackingSnippet';
@@ -19,16 +19,26 @@ const STEPS: { id: Step; label: string }[] = [
   { id: 'verify', label: 'Verify' },
 ];
 
+const AVAILABLE_TIMEZONES = new Set(Object.values(TIMEZONE_GROUPS).flat());
+const browserTimezone = getBrowserTimezone();
+const DEFAULT_TIMEZONE = AVAILABLE_TIMEZONES.has(browserTimezone) ? browserTimezone : 'UTC';
+
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState<Step>('create');
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
-  const [timezone, setTimezone] = useState(getBrowserTimezone());
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [creating, setCreating] = useState(false);
   const [websiteId, setWebsiteId] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!AVAILABLE_TIMEZONES.has(timezone)) {
+      setTimezone('UTC');
+    }
+  }, [timezone]);
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
 

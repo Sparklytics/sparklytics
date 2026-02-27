@@ -48,7 +48,7 @@ export function SessionsPage({ websiteId }: SessionsPageProps) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
         {summaryCards.map((card) => (
           <div
             key={card.label}
@@ -57,11 +57,11 @@ export function SessionsPage({ websiteId }: SessionsPageProps) {
             <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">
               {card.label}
             </p>
-            {statsLoading || card.value === null ? (
+            {statsLoading ? (
               <div className="mt-1 h-8 w-20 animate-pulse bg-surface-2 rounded" />
             ) : (
               <p className="text-2xl font-mono font-semibold tabular-nums text-ink mt-1">
-                {card.value}
+                {card.value ?? '—'}
               </p>
             )}
           </div>
