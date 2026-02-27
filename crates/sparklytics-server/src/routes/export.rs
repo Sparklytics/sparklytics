@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
@@ -70,6 +71,18 @@ pub async fn export_events(
         }
     }
 
+    let cache_key = state.export_cache_key(&website_id, &q.start_date, &q.end_date);
+    let filename = format!("events-{}-{}-{}.csv", website_id, q.start_date, q.end_date);
+
+    if let Some(csv_bytes) = state.get_cached_export_csv(&cache_key).await {
+        return build_csv_response(&filename, csv_bytes);
+    }
+
+    let _export_cache_guard = state.lock_export_cache_compute().await;
+    if let Some(csv_bytes) = state.get_cached_export_csv(&cache_key).await {
+        return build_csv_response(&filename, csv_bytes);
+    }
+
     let _permit = state
         .export_semaphore
         .acquire()
@@ -90,21 +103,13 @@ pub async fn export_events(
     }
 
     // Serialise rows to CSV in memory.
-    let csv_bytes = build_csv(&rows).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+    let csv_bytes =
+        Bytes::from(build_csv(&rows).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?);
+    state
+        .put_cached_export_csv(cache_key, csv_bytes.clone())
+        .await;
 
-    let filename = format!("events-{}-{}-{}.csv", website_id, q.start_date, q.end_date);
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "text/csv; charset=utf-8")
-        .header(
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{filename}\""),
-        )
-        .body(axum::body::Body::from(csv_bytes))
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("response build failed: {e}")))?;
-
-    Ok(response)
+    build_csv_response(&filename, csv_bytes)
 }
 
 /// Sanitize a CSV field value against formula injection.
@@ -121,7 +126,7 @@ fn sanitize_csv_field(val: &str) -> std::borrow::Cow<'_, str> {
 }
 
 fn build_csv(rows: &[sparklytics_core::analytics::ExportRow]) -> anyhow::Result<Vec<u8>> {
-    let mut wtr = csv::Writer::from_writer(Vec::new());
+    let mut wtr = csv::Writer::from_writer(Vec::with_capacity(rows.len().saturating_mul(256)));
 
     // Write CSV headers.
     wtr.write_record([
@@ -144,30 +149,56 @@ fn build_csv(rows: &[sparklytics_core::analytics::ExportRow]) -> anyhow::Result<
     .map_err(|e| anyhow::anyhow!("csv write_record failed: {e}"))?;
 
     for row in rows {
-        let s = |v: &str| sanitize_csv_field(v).into_owned();
-        let sopt = |v: Option<&str>| sanitize_csv_field(v.unwrap_or("")).into_owned();
+        let id = sanitize_csv_field(&row.id);
+        let website_id = sanitize_csv_field(&row.website_id);
+        let event_type = sanitize_csv_field(&row.event_type);
+        let url = sanitize_csv_field(&row.url);
+        let referrer_domain = sanitize_csv_field(row.referrer_domain.as_deref().unwrap_or(""));
+        let event_name = sanitize_csv_field(row.event_name.as_deref().unwrap_or(""));
+        let country = sanitize_csv_field(row.country.as_deref().unwrap_or(""));
+        let browser = sanitize_csv_field(row.browser.as_deref().unwrap_or(""));
+        let os = sanitize_csv_field(row.os.as_deref().unwrap_or(""));
+        let device_type = sanitize_csv_field(row.device_type.as_deref().unwrap_or(""));
+        let language = sanitize_csv_field(row.language.as_deref().unwrap_or(""));
+        let utm_source = sanitize_csv_field(row.utm_source.as_deref().unwrap_or(""));
+        let utm_medium = sanitize_csv_field(row.utm_medium.as_deref().unwrap_or(""));
+        let utm_campaign = sanitize_csv_field(row.utm_campaign.as_deref().unwrap_or(""));
+        let created_at = sanitize_csv_field(&row.created_at);
+
         wtr.write_record([
-            s(&row.id),
-            s(&row.website_id),
-            s(&row.event_type),
-            s(&row.url),
-            sopt(row.referrer_domain.as_deref()),
-            sopt(row.event_name.as_deref()),
-            sopt(row.country.as_deref()),
-            sopt(row.browser.as_deref()),
-            sopt(row.os.as_deref()),
-            sopt(row.device_type.as_deref()),
-            sopt(row.language.as_deref()),
-            sopt(row.utm_source.as_deref()),
-            sopt(row.utm_medium.as_deref()),
-            sopt(row.utm_campaign.as_deref()),
-            s(&row.created_at),
+            id.as_ref(),
+            website_id.as_ref(),
+            event_type.as_ref(),
+            url.as_ref(),
+            referrer_domain.as_ref(),
+            event_name.as_ref(),
+            country.as_ref(),
+            browser.as_ref(),
+            os.as_ref(),
+            device_type.as_ref(),
+            language.as_ref(),
+            utm_source.as_ref(),
+            utm_medium.as_ref(),
+            utm_campaign.as_ref(),
+            created_at.as_ref(),
         ])
         .map_err(|e| anyhow::anyhow!("csv write_record failed: {e}"))?;
     }
 
     wtr.into_inner()
         .map_err(|e| anyhow::anyhow!("csv flush failed: {e}"))
+}
+
+fn build_csv_response(filename: &str, csv_bytes: Bytes) -> Result<Response, AppError> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/csv; charset=utf-8")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        )
+        .body(axum::body::Body::from(csv_bytes))
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("response build failed: {e}")))
 }
 
 /// `GET /api/usage` — not available in self-hosted mode (returns 404).

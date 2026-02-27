@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::Hash;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::body::Bytes;
 use chrono::{DateTime, Utc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, RwLock, Semaphore};
@@ -17,8 +19,11 @@ use sparklytics_core::{
     event::Event,
 };
 use sparklytics_duckdb::DuckDbBackend;
+use sparklytics_metadata::Website;
 
+use crate::bot_detection::{BotOverrideDecision, BotPolicyInput};
 use crate::error::AppError;
+use crate::metadata::{duckdb::DuckDbMetadataStore, MetadataStore};
 
 const SESSION_ID_PENDING: &str = "__pending__";
 const DEFAULT_INGEST_QUEUE_MAX_EVENTS: usize = 100_000;
@@ -32,6 +37,13 @@ const DEFAULT_SESSION_CACHE_TTL_SECONDS: i64 = 1_800;
 const DEFAULT_RATE_LIMIT_MAX_KEYS: usize = 100_000;
 const DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES: usize = 10_000;
 const DEFAULT_ACQUISITION_CACHE_TTL_SECONDS: u64 = 60;
+const DEFAULT_COLLECT_CACHE_MAX_ENTRIES: usize = 100_000;
+const DEFAULT_COLLECT_CACHE_TTL_SECONDS: u64 = 120;
+const DEFAULT_BOT_THRESHOLD_STRICT: i32 = 60;
+const DEFAULT_BOT_THRESHOLD_BALANCED_OR_OFF: i32 = 70;
+const DEFAULT_EXPORT_CACHE_MAX_ENTRIES: usize = 2;
+const DEFAULT_EXPORT_CACHE_TTL_SECONDS: u64 = 2;
+const DEFAULT_EXPORT_CACHE_MAX_BYTES: usize = 32 * 1024 * 1024;
 const INGEST_WAL_LOG_FILE: &str = "segment.log";
 const INGEST_WAL_CURSOR_FILE: &str = "segment.cursor";
 
@@ -60,6 +72,33 @@ struct CachedTrackingPixel {
     expires_at: Instant,
 }
 
+#[derive(Debug, Clone)]
+struct CachedWebsiteMetadata {
+    website: Option<Website>,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct CachedBotPolicy {
+    value: BotPolicyInput,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct CachedBotOverride {
+    value: Option<BotOverrideDecision>,
+    expires_at: Instant,
+}
+
+type BotOverrideCacheKey = (String, String, u64);
+type BotOverrideCache = HashMap<BotOverrideCacheKey, CachedBotOverride>;
+
+#[derive(Debug, Clone)]
+struct CachedExportResponse {
+    value: Bytes,
+    expires_at: Instant,
+}
+
 /// Shared application state injected into every Axum handler via
 /// [`axum::extract::State`].
 pub struct AppState {
@@ -72,6 +111,9 @@ pub struct AppState {
 
     /// Analytics backend used by all analytics routes and buffer flush.
     pub analytics: Arc<dyn AnalyticsBackend>,
+
+    /// Metadata backend used by website/auth/share metadata routes.
+    pub metadata: Arc<dyn MetadataStore>,
 
     /// Parsed configuration, loaded once at startup.
     pub config: Arc<Config>,
@@ -89,6 +131,16 @@ pub struct AppState {
     tracking_pixel_cache: Arc<Mutex<HashMap<String, CachedTrackingPixel>>>,
     acquisition_cache_max_entries: usize,
     acquisition_cache_ttl: Duration,
+    website_metadata_cache: Arc<Mutex<HashMap<String, CachedWebsiteMetadata>>>,
+    bot_policy_cache: Arc<Mutex<HashMap<String, CachedBotPolicy>>>,
+    bot_override_cache: Arc<Mutex<BotOverrideCache>>,
+    collect_cache_max_entries: usize,
+    collect_cache_ttl: Duration,
+    export_cache: Arc<Mutex<HashMap<String, CachedExportResponse>>>,
+    export_cache_compute_lock: Arc<Mutex<()>>,
+    export_cache_max_entries: usize,
+    export_cache_ttl: Duration,
+    export_cache_max_bytes: usize,
 
     /// Plan-limit gate.
     pub billing_gate: Arc<dyn BillingGate>,
@@ -166,6 +218,46 @@ impl AppState {
             .unwrap_or(default)
     }
 
+    fn hash_user_agent(user_agent: &str) -> u64 {
+        // FNV-1a keeps the cache key compact while remaining deterministic and cheap.
+        let mut hash = 14695981039346656037_u64;
+        for byte in user_agent.as_bytes() {
+            hash ^= *byte as u64;
+            hash = hash.wrapping_mul(1099511628211_u64);
+        }
+        hash
+    }
+
+    fn evict_cache_entries<K, V, F>(
+        cache: &mut HashMap<K, V>,
+        max_entries: usize,
+        now: Instant,
+        expires_at: F,
+    ) where
+        K: Clone + Eq + Hash,
+        F: Fn(&V) -> Instant,
+    {
+        if max_entries == 0 {
+            cache.clear();
+            return;
+        }
+        if cache.len() < max_entries {
+            return;
+        }
+
+        cache.retain(|_, entry| expires_at(entry) > now);
+        while cache.len() >= max_entries {
+            let Some(oldest_key) = cache
+                .iter()
+                .min_by_key(|(_, entry)| expires_at(entry))
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            cache.remove(&oldest_key);
+        }
+    }
+
     /// Constructor for self-hosted mode.
     pub fn new(db: DuckDbBackend, config: Config) -> Self {
         let ingest_wal_dir = PathBuf::from(&config.data_dir).join("ingest-wal");
@@ -215,6 +307,26 @@ impl AppState {
         let acquisition_cache_ttl_seconds = Self::env_u64(
             "SPARKLYTICS_ACQUISITION_CACHE_TTL_SECONDS",
             DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
+        );
+        let collect_cache_max_entries = Self::env_usize(
+            "SPARKLYTICS_COLLECT_CACHE_MAX_ENTRIES",
+            DEFAULT_COLLECT_CACHE_MAX_ENTRIES,
+        );
+        let collect_cache_ttl_seconds = Self::env_u64(
+            "SPARKLYTICS_COLLECT_CACHE_TTL_SECONDS",
+            DEFAULT_COLLECT_CACHE_TTL_SECONDS,
+        );
+        let export_cache_max_entries = Self::env_usize(
+            "SPARKLYTICS_EXPORT_CACHE_MAX_ENTRIES",
+            DEFAULT_EXPORT_CACHE_MAX_ENTRIES,
+        );
+        let export_cache_ttl_seconds = Self::env_u64(
+            "SPARKLYTICS_EXPORT_CACHE_TTL_SECONDS",
+            DEFAULT_EXPORT_CACHE_TTL_SECONDS,
+        );
+        let export_cache_max_bytes = Self::env_usize(
+            "SPARKLYTICS_EXPORT_CACHE_MAX_BYTES",
+            DEFAULT_EXPORT_CACHE_MAX_BYTES,
         );
         let ingest_wal_log_path = ingest_wal_dir.join(INGEST_WAL_LOG_FILE);
         let ingest_wal_cursor_path = ingest_wal_dir.join(INGEST_WAL_CURSOR_FILE);
@@ -270,10 +382,12 @@ impl AppState {
             Arc::clone(&db)
         };
         let analytics: Arc<dyn AnalyticsBackend> = db.clone();
+        let metadata: Arc<dyn MetadataStore> = Arc::new(DuckDbMetadataStore::new(Arc::clone(&db)));
         Self {
             db,
             scheduler_db,
             analytics,
+            metadata,
             config: Arc::new(config),
             buffer: Arc::new(Mutex::new(Vec::new())),
             website_cache: Arc::new(RwLock::new(HashSet::new())),
@@ -283,6 +397,16 @@ impl AppState {
             tracking_pixel_cache: Arc::new(Mutex::new(HashMap::new())),
             acquisition_cache_max_entries,
             acquisition_cache_ttl: Duration::from_secs(acquisition_cache_ttl_seconds),
+            website_metadata_cache: Arc::new(Mutex::new(HashMap::new())),
+            bot_policy_cache: Arc::new(Mutex::new(HashMap::new())),
+            bot_override_cache: Arc::new(Mutex::new(HashMap::new())),
+            collect_cache_max_entries,
+            collect_cache_ttl: Duration::from_secs(collect_cache_ttl_seconds),
+            export_cache: Arc::new(Mutex::new(HashMap::new())),
+            export_cache_compute_lock: Arc::new(Mutex::new(())),
+            export_cache_max_entries,
+            export_cache_ttl: Duration::from_secs(export_cache_ttl_seconds),
+            export_cache_max_bytes,
             billing_gate: Arc::new(NullBillingGate),
             export_semaphore: Arc::new(Semaphore::new(1)),
             funnel_results_semaphore: Arc::new(Semaphore::new(1)),
@@ -323,6 +447,22 @@ impl AppState {
         // so background jobs operate on the same data file.
         s.scheduler_db = Arc::clone(&s.db);
         s.analytics = analytics;
+        s.billing_gate = billing_gate;
+        s
+    }
+
+    /// Construct state with explicit analytics, metadata and billing backends.
+    pub fn new_with_backends_and_metadata(
+        db: DuckDbBackend,
+        config: Config,
+        analytics: Arc<dyn AnalyticsBackend>,
+        metadata: Arc<dyn MetadataStore>,
+        billing_gate: Arc<dyn BillingGate>,
+    ) -> Self {
+        let mut s = Self::new(db, config);
+        s.scheduler_db = Arc::clone(&s.db);
+        s.analytics = analytics;
+        s.metadata = metadata;
         s.billing_gate = billing_gate;
         s
     }
@@ -680,10 +820,11 @@ impl AppState {
                 cached_session_id
             } else {
                 base_count_already_recorded = true;
-                self.db
+                self.analytics
                     .get_or_create_session_at(
                         &event.website_id,
                         &event.visitor_id,
+                        event.referrer_domain.as_deref(),
                         &event.url,
                         event.created_at,
                     )
@@ -714,7 +855,7 @@ impl AppState {
             };
 
             if additional_pageviews > 0 {
-                self.db
+                self.analytics
                     .increment_session_pageviews(
                         &entry.session_id,
                         additional_pageviews,
@@ -722,14 +863,16 @@ impl AppState {
                     )
                     .await?;
             }
-            self.db
-                .set_session_bot_classification(
-                    &entry.session_id,
-                    entry.is_bot,
-                    entry.bot_score,
-                    entry.bot_reason.as_deref(),
-                )
-                .await?;
+            if entry.is_bot || entry.bot_score > 0 || entry.bot_reason.is_some() {
+                self.analytics
+                    .set_session_bot_classification(
+                        &entry.session_id,
+                        entry.is_bot,
+                        entry.bot_score,
+                        entry.bot_reason.as_deref(),
+                    )
+                    .await?;
+            }
 
             self.put_cached_session(
                 entry.website_id,
@@ -748,13 +891,242 @@ impl AppState {
         self.check_rate_limit_with_max(ip, 60).await
     }
 
+    pub async fn get_website_metadata_cached(
+        &self,
+        website_id: &str,
+    ) -> anyhow::Result<Option<Website>> {
+        let now = Instant::now();
+        {
+            let mut cache = self.website_metadata_cache.lock().await;
+            if let Some(entry) = cache.get(website_id) {
+                if entry.expires_at > now {
+                    return Ok(entry.website.clone());
+                }
+                cache.remove(website_id);
+            }
+        }
+
+        let website = self.metadata.get_website(website_id).await?;
+        {
+            let mut cache = self.website_metadata_cache.lock().await;
+            Self::evict_cache_entries(&mut cache, self.collect_cache_max_entries, now, |entry| {
+                entry.expires_at
+            });
+            cache.insert(
+                website_id.to_string(),
+                CachedWebsiteMetadata {
+                    website: website.clone(),
+                    expires_at: now + self.collect_cache_ttl,
+                },
+            );
+        }
+        {
+            let mut cache = self.website_cache.write().await;
+            if website.is_some() {
+                cache.insert(website_id.to_string());
+            } else {
+                cache.remove(website_id);
+            }
+        }
+        Ok(website)
+    }
+
+    pub async fn cache_website_metadata(&self, website: Website) {
+        let now = Instant::now();
+        {
+            let mut cache = self.website_metadata_cache.lock().await;
+            Self::evict_cache_entries(&mut cache, self.collect_cache_max_entries, now, |entry| {
+                entry.expires_at
+            });
+            cache.insert(
+                website.id.clone(),
+                CachedWebsiteMetadata {
+                    website: Some(website.clone()),
+                    expires_at: now + self.collect_cache_ttl,
+                },
+            );
+        }
+        self.website_cache.write().await.insert(website.id);
+    }
+
+    pub async fn invalidate_website_metadata_cache(&self, website_id: &str) {
+        self.website_cache.write().await.remove(website_id);
+        self.website_metadata_cache.lock().await.remove(website_id);
+        self.invalidate_bot_policy_cache(website_id).await;
+        self.invalidate_bot_override_cache(website_id).await;
+    }
+
+    pub async fn invalidate_bot_policy_cache(&self, website_id: &str) {
+        self.bot_policy_cache.lock().await.remove(website_id);
+    }
+
+    pub async fn invalidate_bot_override_cache(&self, website_id: &str) {
+        self.bot_override_cache
+            .lock()
+            .await
+            .retain(|(cached_website_id, _, _), _| cached_website_id != website_id);
+    }
+
+    pub async fn get_bot_policy_cached(&self, website_id: &str) -> anyhow::Result<BotPolicyInput> {
+        let now = Instant::now();
+        {
+            let mut cache = self.bot_policy_cache.lock().await;
+            if let Some(entry) = cache.get(website_id) {
+                if entry.expires_at > now {
+                    return Ok(entry.value.clone());
+                }
+                cache.remove(website_id);
+            }
+        }
+
+        let policy = self.metadata.get_bot_policy(website_id).await?;
+        let mode = policy.mode;
+        let threshold_score = match mode {
+            sparklytics_core::analytics::BotPolicyMode::Strict if policy.threshold_score <= 0 => {
+                DEFAULT_BOT_THRESHOLD_STRICT
+            }
+            sparklytics_core::analytics::BotPolicyMode::Balanced
+            | sparklytics_core::analytics::BotPolicyMode::Off
+                if policy.threshold_score <= 0 =>
+            {
+                DEFAULT_BOT_THRESHOLD_BALANCED_OR_OFF
+            }
+            _ => policy.threshold_score,
+        };
+        let input = BotPolicyInput {
+            mode,
+            threshold_score,
+        };
+        {
+            let mut cache = self.bot_policy_cache.lock().await;
+            Self::evict_cache_entries(&mut cache, self.collect_cache_max_entries, now, |entry| {
+                entry.expires_at
+            });
+            cache.insert(
+                website_id.to_string(),
+                CachedBotPolicy {
+                    value: input.clone(),
+                    expires_at: now + self.collect_cache_ttl,
+                },
+            );
+        }
+        Ok(input)
+    }
+
+    pub async fn classify_override_for_request_cached(
+        &self,
+        website_id: &str,
+        client_ip: &str,
+        user_agent: &str,
+    ) -> anyhow::Result<Option<BotOverrideDecision>> {
+        let now = Instant::now();
+        let key = (
+            website_id.to_string(),
+            client_ip.to_string(),
+            Self::hash_user_agent(user_agent),
+        );
+        {
+            let mut cache = self.bot_override_cache.lock().await;
+            if let Some(entry) = cache.get(&key) {
+                if entry.expires_at > now {
+                    return Ok(entry.value.clone());
+                }
+                cache.remove(&key);
+            }
+        }
+
+        let decision = self
+            .metadata
+            .classify_override_for_request(website_id, client_ip, user_agent)
+            .await?
+            .map(|is_bot| {
+                if is_bot {
+                    BotOverrideDecision::ForceBot
+                } else {
+                    BotOverrideDecision::ForceHuman
+                }
+            });
+
+        {
+            let mut cache = self.bot_override_cache.lock().await;
+            Self::evict_cache_entries(&mut cache, self.collect_cache_max_entries, now, |entry| {
+                entry.expires_at
+            });
+            cache.insert(
+                key,
+                CachedBotOverride {
+                    value: decision.clone(),
+                    expires_at: now + self.collect_cache_ttl,
+                },
+            );
+        }
+
+        Ok(decision)
+    }
+
     /// Returns the default query behavior for `include_bots`.
     /// When bot policy mode is `off`, queries include bot traffic by default.
     pub async fn default_include_bots(&self, website_id: &str) -> bool {
-        self.db
-            .effective_include_bots_default(website_id)
-            .await
-            .unwrap_or(false)
+        match self.get_bot_policy_cached(website_id).await {
+            Ok(policy) => matches!(policy.mode, sparklytics_core::analytics::BotPolicyMode::Off),
+            Err(err) => {
+                warn!(
+                    website_id,
+                    error = %err,
+                    "failed to resolve bot policy default include_bots"
+                );
+                false
+            }
+        }
+    }
+
+    fn export_cache_enabled(&self) -> bool {
+        self.export_cache_max_entries > 0
+            && self.export_cache_max_bytes > 0
+            && !self.export_cache_ttl.is_zero()
+    }
+
+    pub fn export_cache_key(&self, website_id: &str, start_date: &str, end_date: &str) -> String {
+        format!("{website_id}|{start_date}|{end_date}|csv")
+    }
+
+    pub async fn lock_export_cache_compute(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.export_cache_compute_lock.lock().await
+    }
+
+    pub async fn get_cached_export_csv(&self, key: &str) -> Option<Bytes> {
+        if !self.export_cache_enabled() {
+            return None;
+        }
+
+        let now = Instant::now();
+        let mut cache = self.export_cache.lock().await;
+        if let Some(entry) = cache.get(key) {
+            if entry.expires_at > now {
+                return Some(entry.value.clone());
+            }
+            cache.remove(key);
+        }
+        None
+    }
+
+    pub async fn put_cached_export_csv(&self, key: String, value: Bytes) {
+        if !self.export_cache_enabled() || value.len() > self.export_cache_max_bytes {
+            return;
+        }
+
+        let now = Instant::now();
+        let mut cache = self.export_cache.lock().await;
+        Self::evict_cache_entries(&mut cache, self.export_cache_max_entries, now, |entry| {
+            entry.expires_at
+        });
+        cache.insert(
+            key,
+            CachedExportResponse {
+                value,
+                expires_at: now + self.export_cache_ttl,
+            },
+        );
     }
 
     /// Check whether `ip` is within the given `max_per_min` rate limit.
@@ -807,9 +1179,12 @@ impl AppState {
         let link = self.analytics.get_campaign_link_by_slug(slug).await?;
         if let Some(link_value) = link.as_ref() {
             let mut cache = self.campaign_link_cache.lock().await;
-            if cache.len() >= self.acquisition_cache_max_entries {
-                cache.clear();
-            }
+            Self::evict_cache_entries(
+                &mut cache,
+                self.acquisition_cache_max_entries,
+                now,
+                |entry| entry.expires_at,
+            );
             cache.insert(
                 slug.to_string(),
                 CachedCampaignLink {
@@ -839,9 +1214,12 @@ impl AppState {
         let pixel = self.analytics.get_tracking_pixel_by_key(pixel_key).await?;
         if let Some(pixel_value) = pixel.as_ref() {
             let mut cache = self.tracking_pixel_cache.lock().await;
-            if cache.len() >= self.acquisition_cache_max_entries {
-                cache.clear();
-            }
+            Self::evict_cache_entries(
+                &mut cache,
+                self.acquisition_cache_max_entries,
+                now,
+                |entry| entry.expires_at,
+            );
             cache.insert(
                 pixel_key.to_string(),
                 CachedTrackingPixel {
@@ -1119,15 +1497,11 @@ impl AppState {
                 return true;
             }
         }
-        match self.db.website_exists(website_id).await {
-            Ok(true) => {
-                let mut cache = self.website_cache.write().await;
-                cache.insert(website_id.to_string());
-                true
-            }
-            Ok(false) => false,
+        match self.get_website_metadata_cached(website_id).await {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
             Err(e) => {
-                error!(website_id, error = %e, "website_exists DB lookup failed");
+                error!(website_id, error = %e, "website metadata lookup failed");
                 false
             }
         }

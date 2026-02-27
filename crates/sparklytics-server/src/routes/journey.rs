@@ -203,7 +203,7 @@ pub async fn get_journey(
         max_depth,
     };
 
-    let _permit = tokio::time::timeout(Duration::from_secs(1), state.journey_semaphore.acquire())
+    let _permit = tokio::time::timeout(Duration::from_secs(5), state.journey_semaphore.acquire())
         .await
         .map_err(|_| AppError::RateLimited)?
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;

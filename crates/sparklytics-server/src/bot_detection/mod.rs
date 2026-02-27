@@ -27,11 +27,13 @@ struct ActivitySample {
     path: String,
 }
 
-fn activity_shards(
-) -> &'static [Mutex<HashMap<(String, String), VecDeque<ActivitySample>>>; ACTIVITY_SHARDS] {
-    static SHARDS: OnceLock<
-        [Mutex<HashMap<(String, String), VecDeque<ActivitySample>>>; ACTIVITY_SHARDS],
-    > = OnceLock::new();
+type ActivityKey = (String, String);
+type ActivityQueue = VecDeque<ActivitySample>;
+type ActivityShardMap = HashMap<ActivityKey, ActivityQueue>;
+type ActivityShards = [Mutex<ActivityShardMap>; ACTIVITY_SHARDS];
+
+fn activity_shards() -> &'static ActivityShards {
+    static SHARDS: OnceLock<ActivityShards> = OnceLock::new();
     SHARDS.get_or_init(|| std::array::from_fn(|_| Mutex::new(HashMap::new())))
 }
 
@@ -161,6 +163,7 @@ fn policy_threshold(policy: &BotPolicyInput) -> i32 {
     policy.threshold_score.clamp(0, 100)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn classify_event(
     website_id: &str,
     visitor_id: &str,

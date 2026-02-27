@@ -35,7 +35,7 @@ pub async fn auth_status(
         AuthMode::Password(_) => ("password", false),
         AuthMode::Local => {
             let configured = state
-                .db
+                .metadata
                 .is_admin_configured()
                 .await
                 .map_err(AppError::Internal)?;
@@ -84,7 +84,7 @@ pub async fn auth_setup(
 
     // Check if already configured.
     let configured = state
-        .db
+        .metadata
         .is_admin_configured()
         .await
         .map_err(AppError::Internal)?;
@@ -98,7 +98,7 @@ pub async fn auth_setup(
         hash_password(&req.password, state.config.argon2_memory_kb).map_err(AppError::Internal)?;
 
     state
-        .db
+        .metadata
         .set_setting("admin_password_hash", &hash)
         .await
         .map_err(AppError::Internal)?;
@@ -128,7 +128,7 @@ pub async fn auth_login(
 
     // Check rate limit.
     let allowed = state
-        .db
+        .metadata
         .check_login_rate_limit(&client_ip)
         .await
         .map_err(AppError::Internal)?;
@@ -144,7 +144,7 @@ pub async fn auth_login(
             // For password mode, we verify against the env var directly.
             if req.password != *pw {
                 state
-                    .db
+                    .metadata
                     .record_login_attempt(&client_ip, false)
                     .await
                     .map_err(AppError::Internal)?;
@@ -152,7 +152,7 @@ pub async fn auth_login(
             }
             // Password mode doesn't use stored hash — generate JWT directly.
             let jwt_secret = state
-                .db
+                .metadata
                 .ensure_jwt_secret()
                 .await
                 .map_err(AppError::Internal)?;
@@ -160,7 +160,7 @@ pub async fn auth_login(
                 encode_jwt(&jwt_secret, state.config.session_days).map_err(AppError::Internal)?;
 
             state
-                .db
+                .metadata
                 .record_login_attempt(&client_ip, true)
                 .await
                 .map_err(AppError::Internal)?;
@@ -175,7 +175,7 @@ pub async fn auth_login(
         }
         AuthMode::Local => {
             match state
-                .db
+                .metadata
                 .get_setting("admin_password_hash")
                 .await
                 .map_err(AppError::Internal)?
@@ -192,7 +192,7 @@ pub async fn auth_login(
     // Verify password.
     if !verify_password(&req.password, &expected_hash) {
         state
-            .db
+            .metadata
             .record_login_attempt(&client_ip, false)
             .await
             .map_err(AppError::Internal)?;
@@ -200,13 +200,13 @@ pub async fn auth_login(
     }
 
     state
-        .db
+        .metadata
         .record_login_attempt(&client_ip, true)
         .await
         .map_err(AppError::Internal)?;
 
     let jwt_secret = state
-        .db
+        .metadata
         .ensure_jwt_secret()
         .await
         .map_err(AppError::Internal)?;
@@ -259,7 +259,7 @@ pub async fn auth_session(
     };
 
     let jwt_secret = state
-        .db
+        .metadata
         .get_setting("jwt_secret")
         .await
         .map_err(AppError::Internal)?
@@ -313,7 +313,7 @@ pub async fn auth_change_password(
 
     // Verify current password.
     let current_hash = state
-        .db
+        .metadata
         .get_setting("admin_password_hash")
         .await
         .map_err(AppError::Internal)?
@@ -330,7 +330,7 @@ pub async fn auth_change_password(
     let new_hash = hash_password(&req.new_password, state.config.argon2_memory_kb)
         .map_err(AppError::Internal)?;
     state
-        .db
+        .metadata
         .set_setting("admin_password_hash", &new_hash)
         .await
         .map_err(AppError::Internal)?;
@@ -343,7 +343,7 @@ pub async fn auth_change_password(
         hex::encode(buf)
     };
     state
-        .db
+        .metadata
         .set_setting("jwt_secret", &new_secret)
         .await
         .map_err(AppError::Internal)?;
@@ -370,7 +370,7 @@ pub async fn list_api_keys(
     let offset = query.offset.unwrap_or(0).max(0);
 
     let (keys, total) = state
-        .db
+        .metadata
         .list_api_keys(limit, offset)
         .await
         .map_err(AppError::Internal)?;
@@ -405,9 +405,9 @@ pub async fn create_api_key_handler(
     }
 
     let key_id = generate_key_id();
-    let (raw_key, hash, prefix) = generate_api_key();
+    let (raw_key, hash, prefix) = generate_api_key(&state.config.mode);
     state
-        .db
+        .metadata
         .create_api_key(&key_id, &req.name, &hash, &prefix)
         .await
         .map_err(AppError::Internal)?;
@@ -436,7 +436,7 @@ pub async fn delete_api_key(
     Path(key_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let revoked = state
-        .db
+        .metadata
         .revoke_api_key(&key_id)
         .await
         .map_err(AppError::Internal)?;
@@ -487,7 +487,7 @@ async fn is_cookie_authenticated(state: &AppState, headers: &HeaderMap) -> bool 
         None => return false,
     };
 
-    let jwt_secret = match state.db.get_setting("jwt_secret").await {
+    let jwt_secret = match state.metadata.get_setting("jwt_secret").await {
         Ok(Some(s)) => s,
         _ => return false,
     };

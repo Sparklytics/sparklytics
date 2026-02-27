@@ -2394,10 +2394,21 @@ dependencies = [
  "serde_json",
  "sha2",
  "sparklytics-core",
+ "sparklytics-metadata",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "sparklytics-metadata"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "serde",
+ "sparklytics-core",
 ]
 
 [[package]]
@@ -2427,6 +2438,7 @@ dependencies = [
  "sha2",
  "sparklytics-core",
  "sparklytics-duckdb",
+ "sparklytics-metadata",
  "thiserror 1.0.69",
  "tokio",
  "tower",

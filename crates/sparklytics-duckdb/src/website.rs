@@ -1,31 +1,7 @@
 use anyhow::Result;
-use serde::Serialize;
+pub use sparklytics_metadata::{CreateWebsiteParams, UpdateWebsiteParams, Website};
 
 use crate::DuckDbBackend;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Website {
-    pub id: String,
-    pub tenant_id: Option<String>,
-    pub name: String,
-    pub domain: String,
-    pub timezone: String,
-    pub share_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-pub struct CreateWebsiteParams {
-    pub name: String,
-    pub domain: String,
-    pub timezone: Option<String>,
-}
-
-pub struct UpdateWebsiteParams {
-    pub name: Option<String>,
-    pub domain: Option<String>,
-    pub timezone: Option<String>,
-}
 
 /// Generate a website ID: "site_" + 10 random alphanumeric chars.
 fn generate_website_id() -> String {

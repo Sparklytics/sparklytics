@@ -324,6 +324,7 @@ pub async fn put_bot_policy(
         )
         .await
         .map_err(AppError::Internal)?;
+    state.invalidate_bot_policy_cache(&website_id).await;
 
     Ok(Json(json!({ "data": policy })))
 }
@@ -389,6 +390,7 @@ pub async fn create_bot_allowlist(
         )
         .await
         .map_err(AppError::Internal)?;
+    state.invalidate_bot_override_cache(&website_id).await;
     Ok((StatusCode::CREATED, Json(json!({ "data": entry }))))
 }
 
@@ -417,6 +419,7 @@ pub async fn delete_bot_allowlist(
         )
         .await
         .map_err(AppError::Internal)?;
+    state.invalidate_bot_override_cache(&website_id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -481,6 +484,7 @@ pub async fn create_bot_blocklist(
         )
         .await
         .map_err(AppError::Internal)?;
+    state.invalidate_bot_override_cache(&website_id).await;
     Ok((StatusCode::CREATED, Json(json!({ "data": entry }))))
 }
 
@@ -509,6 +513,7 @@ pub async fn delete_bot_blocklist(
         )
         .await
         .map_err(AppError::Internal)?;
+    state.invalidate_bot_override_cache(&website_id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

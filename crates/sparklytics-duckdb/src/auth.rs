@@ -1,18 +1,8 @@
 use anyhow::Result;
-use serde::Serialize;
+pub use sparklytics_metadata::ApiKeyRecord;
 
 use crate::backend::rand_hex;
 use crate::DuckDbBackend;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ApiKeyRecord {
-    pub id: String,
-    pub name: String,
-    pub key_prefix: String,
-    pub created_at: String,
-    pub last_used_at: Option<String>,
-    pub revoked_at: Option<String>,
-}
 
 impl DuckDbBackend {
     pub async fn get_setting(&self, key: &str) -> Result<Option<String>> {

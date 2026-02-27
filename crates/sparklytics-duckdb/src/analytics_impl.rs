@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::json;
 
 use sparklytics_core::analytics::{
@@ -57,6 +57,39 @@ impl AnalyticsBackend for DuckDbBackend {
     ) -> anyhow::Result<String> {
         use chrono::Utc;
         self.get_or_create_session_at(website_id, visitor_id, url, Utc::now())
+            .await
+    }
+
+    async fn get_or_create_session_at(
+        &self,
+        website_id: &str,
+        visitor_id: &str,
+        _referrer_domain: Option<&str>,
+        url: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<String> {
+        self.get_or_create_session_at(website_id, visitor_id, url, now)
+            .await
+    }
+
+    async fn increment_session_pageviews(
+        &self,
+        session_id: &str,
+        additional_pageviews: u32,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        self.increment_session_pageviews(session_id, additional_pageviews, now)
+            .await
+    }
+
+    async fn set_session_bot_classification(
+        &self,
+        session_id: &str,
+        is_bot: bool,
+        bot_score: i32,
+        bot_reason: Option<&str>,
+    ) -> anyhow::Result<()> {
+        self.set_session_bot_classification(session_id, is_bot, bot_score, bot_reason)
             .await
     }
 

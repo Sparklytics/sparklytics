@@ -15,6 +15,15 @@ use crate::DuckDbBackend;
 
 const DEFAULT_POLICY_MODE: BotPolicyMode = BotPolicyMode::Balanced;
 const DEFAULT_POLICY_THRESHOLD: i32 = 70;
+type RecomputeEventRow = (String, String, String, Option<String>, Option<String>);
+type RecomputeEventRowWithCursor = (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+);
 
 fn generate_id(prefix: &str) -> String {
     let mut rng = rand::thread_rng();
@@ -785,23 +794,13 @@ impl DuckDbBackend {
         end_date: DateTime<Utc>,
         cursor: Option<(String, String)>,
         limit: u32,
-    ) -> Result<(
-        Vec<(String, String, String, Option<String>, Option<String>)>,
-        Option<(String, String)>,
-    )> {
+    ) -> Result<(Vec<RecomputeEventRow>, Option<(String, String)>)> {
         let bounded_limit = limit.clamp(1, 1000) as i64;
         let start = start_date.format("%Y-%m-%d %H:%M:%S%.f").to_string();
         let end = end_date.format("%Y-%m-%d %H:%M:%S%.f").to_string();
         let conn = self.conn.lock().await;
 
-        let mut rows_with_cursor: Vec<(
-            String,
-            String,
-            String,
-            Option<String>,
-            Option<String>,
-            String,
-        )> = Vec::new();
+        let mut rows_with_cursor: Vec<RecomputeEventRowWithCursor> = Vec::new();
         if let Some((cursor_created_at, cursor_id)) = cursor {
             let sql = format!(
                 "SELECT id, visitor_id, url, source_ip, user_agent, CAST(created_at AS VARCHAR)

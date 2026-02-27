@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 sparklytics-core = { path = "../sparklytics-core" }
 sparklytics-duckdb = { path = "../sparklytics-duckdb" }
+sparklytics-metadata = { path = "../sparklytics-metadata" }
 async-trait = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }

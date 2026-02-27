@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 use axum::{
     extract::{ConnectInfo, FromRequestParts, State},
@@ -18,7 +19,6 @@ use chrono::Utc;
 use serde_json::json;
 
 use sparklytics_core::{
-    analytics::BotPolicyMode,
     billing::BillingOutcome,
     config::AppMode,
     event::{CollectOrBatch, CollectPayload, Event},
@@ -109,13 +109,12 @@ pub async fn collect(
 
     // --- Validation: all website_ids must be known ---
     // Validate unique IDs only to avoid repeated DB lookups for batches.
-    let unique_website_ids: HashSet<&str> =
-        payloads.iter().map(|p| p.website_id.as_str()).collect();
+    let unique_website_ids: HashSet<String> =
+        payloads.iter().map(|p| p.website_id.clone()).collect();
     let mut website_tenant_ids: HashMap<String, Option<String>> = HashMap::new();
     for website_id in unique_website_ids {
         let website = state
-            .db
-            .get_website(website_id)
+            .get_website_metadata_cached(&website_id)
             .await
             .map_err(AppError::Internal)?;
         let Some(website) = website else {
@@ -124,7 +123,7 @@ pub async fn collect(
                 website_id
             )));
         };
-        website_tenant_ids.insert(website_id.to_string(), website.tenant_id);
+        website_tenant_ids.insert(website_id, website.tenant_id);
     }
 
     // --- Resolve cloud tenant context from website ownership ---
@@ -185,12 +184,12 @@ pub async fn collect(
     let geo = lookup_geo(&state.config.geoip_path, &client_ip);
 
     // --- UA parsing ---
-    let ua_info = parse_user_agent(&user_agent);
+    let ua_info = parse_user_agent_cached(&user_agent);
 
     // --- Build enriched Event structs ---
     let mut events: Vec<Event> = Vec::with_capacity(payloads.len());
     let base_now = Utc::now();
-    let server_visitor_id = compute_visitor_id(&client_ip, &user_agent);
+    let server_visitor_id = compute_visitor_id_cached(&client_ip, &user_agent);
     let mut website_bot_policies: HashMap<String, BotPolicyInput> = HashMap::new();
     let mut website_bot_overrides: HashMap<String, Option<BotOverrideDecision>> = HashMap::new();
 
@@ -209,38 +208,19 @@ pub async fn collect(
             policy.clone()
         } else {
             let policy = state
-                .db
-                .get_bot_policy(&website_id)
+                .get_bot_policy_cached(&website_id)
                 .await
                 .map_err(AppError::Internal)?;
-            let mode = policy.mode;
-            let threshold_score = match mode {
-                BotPolicyMode::Strict if policy.threshold_score <= 0 => 60,
-                BotPolicyMode::Balanced | BotPolicyMode::Off if policy.threshold_score <= 0 => 70,
-                _ => policy.threshold_score,
-            };
-            let input = BotPolicyInput {
-                mode,
-                threshold_score,
-            };
-            website_bot_policies.insert(website_id.clone(), input.clone());
-            input
+            website_bot_policies.insert(website_id.clone(), policy.clone());
+            policy
         };
         let override_decision = if let Some(decision) = website_bot_overrides.get(&website_id) {
             decision.clone()
         } else {
             let decision = state
-                .db
-                .classify_override_for_request(&website_id, &client_ip, &user_agent)
+                .classify_override_for_request_cached(&website_id, &client_ip, &user_agent)
                 .await
-                .map_err(AppError::Internal)?
-                .map(|is_bot| {
-                    if is_bot {
-                        BotOverrideDecision::ForceBot
-                    } else {
-                        BotOverrideDecision::ForceHuman
-                    }
-                });
+                .map_err(AppError::Internal)?;
             website_bot_overrides.insert(website_id.clone(), decision.clone());
             decision
         };
@@ -464,12 +444,25 @@ pub(crate) fn extract_utm_from_url(url: &str) -> HashMap<String, String> {
 }
 
 /// Parsed User-Agent fields.
+#[derive(Debug, Clone)]
 pub(crate) struct UaInfo {
     pub browser: String,
     pub browser_version: Option<String>,
     pub os: String,
     pub os_version: Option<String>,
     pub device_type: String,
+}
+
+#[derive(Debug, Clone)]
+struct CachedUaInfo {
+    value: Option<UaInfo>,
+    expires_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct CachedVisitorId {
+    value: String,
+    salt_epoch: i64,
 }
 
 /// Parse a `User-Agent` string via the `woothee` crate.
@@ -515,4 +508,102 @@ pub(crate) fn parse_user_agent(user_agent: &str) -> Option<UaInfo> {
         os_version,
         device_type,
     })
+}
+
+/// Parse User-Agent with a small process-local cache to reduce repeated woothee work.
+fn parse_user_agent_cached(user_agent: &str) -> Option<UaInfo> {
+    const UA_CACHE_MAX_ENTRIES: usize = 2048;
+    const UA_CACHE_TTL_SECONDS: u64 = 900;
+
+    if user_agent.is_empty() {
+        return None;
+    }
+
+    static UA_CACHE: OnceLock<RwLock<HashMap<String, CachedUaInfo>>> = OnceLock::new();
+    let cache = UA_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+    let now = Instant::now();
+
+    if let Ok(map) = cache.read() {
+        if let Some(entry) = map.get(user_agent) {
+            if entry.expires_at > now {
+                return entry.value.clone();
+            }
+        }
+    }
+    if let Ok(mut map) = cache.write() {
+        if let Some(entry) = map.get(user_agent) {
+            if entry.expires_at > now {
+                return entry.value.clone();
+            }
+            map.remove(user_agent);
+        }
+    }
+
+    let parsed = parse_user_agent(user_agent);
+
+    if let Ok(mut map) = cache.write() {
+        if map.len() >= UA_CACHE_MAX_ENTRIES {
+            map.retain(|_, entry| entry.expires_at > now);
+            if map.len() >= UA_CACHE_MAX_ENTRIES {
+                map.clear();
+            }
+        }
+        map.insert(
+            user_agent.to_string(),
+            CachedUaInfo {
+                value: parsed.clone(),
+                expires_at: now + Duration::from_secs(UA_CACHE_TTL_SECONDS),
+            },
+        );
+    }
+
+    parsed
+}
+
+/// Compute visitor ID with a small process-local cache keyed by ip+ua and salt epoch.
+fn compute_visitor_id_cached(ip: &str, user_agent: &str) -> String {
+    const VISITOR_ID_CACHE_MAX_IPS: usize = 4096;
+    const VISITOR_ID_CACHE_MAX_UA_PER_IP: usize = 8;
+
+    static VISITOR_ID_CACHE: OnceLock<RwLock<HashMap<String, HashMap<String, CachedVisitorId>>>> =
+        OnceLock::new();
+    let cache = VISITOR_ID_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+    let salt_epoch = chrono::Utc::now().timestamp() / 86400;
+
+    if let Ok(map) = cache.read() {
+        if let Some(entry) = map.get(ip).and_then(|ua_map| ua_map.get(user_agent)) {
+            if entry.salt_epoch == salt_epoch {
+                return entry.value.clone();
+            }
+        }
+    }
+
+    let visitor_id = compute_visitor_id(ip, user_agent);
+
+    if let Ok(mut map) = cache.write() {
+        if map.len() >= VISITOR_ID_CACHE_MAX_IPS {
+            map.retain(|_, ua_map| ua_map.values().any(|entry| entry.salt_epoch == salt_epoch));
+            if map.len() >= VISITOR_ID_CACHE_MAX_IPS {
+                map.clear();
+            }
+        }
+
+        let ua_map = map.entry(ip.to_string()).or_default();
+        if ua_map.len() >= VISITOR_ID_CACHE_MAX_UA_PER_IP {
+            ua_map.retain(|_, entry| entry.salt_epoch == salt_epoch);
+            if ua_map.len() >= VISITOR_ID_CACHE_MAX_UA_PER_IP {
+                ua_map.clear();
+            }
+        }
+
+        ua_map.insert(
+            user_agent.to_string(),
+            CachedVisitorId {
+                value: visitor_id.clone(),
+                salt_epoch,
+            },
+        );
+    }
+
+    visitor_id
 }

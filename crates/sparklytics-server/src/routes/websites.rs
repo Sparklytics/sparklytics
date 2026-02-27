@@ -10,7 +10,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use sparklytics_duckdb::website::{CreateWebsiteParams, UpdateWebsiteParams};
+use sparklytics_metadata::{CreateWebsiteParams, UpdateWebsiteParams};
 
 use crate::{error::AppError, state::AppState};
 
@@ -75,7 +75,7 @@ pub async fn create_website(
     let domain = normalize_domain(&req.domain)?;
 
     let website = state
-        .db
+        .metadata
         .create_website(CreateWebsiteParams {
             name: req.name,
             domain: domain.clone(),
@@ -84,11 +84,7 @@ pub async fn create_website(
         .await
         .map_err(AppError::Internal)?;
 
-    // Add to website cache.
-    {
-        let mut cache = state.website_cache.write().await;
-        cache.insert(website.id.clone());
-    }
+    state.cache_website_metadata(website.clone()).await;
 
     let tracking_snippet = format!(
         r#"<script defer src="{}/s.js" data-website-id="{}"></script>"#,
@@ -120,7 +116,7 @@ pub async fn list_websites(
     let cursor = query.cursor.as_deref();
 
     let (websites, total, has_more) = state
-        .db
+        .metadata
         .list_websites(limit, cursor)
         .await
         .map_err(AppError::Internal)?;
@@ -153,7 +149,7 @@ pub async fn update_website(
     }
 
     let result = state
-        .db
+        .metadata
         .update_website(
             &website_id,
             UpdateWebsiteParams {
@@ -166,15 +162,18 @@ pub async fn update_website(
         .map_err(AppError::Internal)?;
 
     match result {
-        Some(website) => Ok(Json(json!({
-            "data": {
-                "id": website.id,
-                "name": website.name,
-                "domain": website.domain,
-                "timezone": website.timezone,
-                "updated_at": website.updated_at,
-            }
-        }))),
+        Some(website) => {
+            state.cache_website_metadata(website.clone()).await;
+            Ok(Json(json!({
+                "data": {
+                    "id": website.id,
+                    "name": website.name,
+                    "domain": website.domain,
+                    "timezone": website.timezone,
+                    "updated_at": website.updated_at,
+                }
+            })))
+        }
         None => Err(AppError::NotFound("Website not found".to_string())),
     }
 }
@@ -186,8 +185,7 @@ pub async fn get_website(
     Path(website_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let website = state
-        .db
-        .get_website(&website_id)
+        .get_website_metadata_cached(&website_id)
         .await
         .map_err(AppError::Internal)?
         .ok_or_else(|| AppError::NotFound("Website not found".to_string()))?;
@@ -201,7 +199,7 @@ pub async fn delete_website(
     Path(website_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let deleted = state
-        .db
+        .metadata
         .delete_website(&website_id)
         .await
         .map_err(AppError::Internal)?;
@@ -210,11 +208,7 @@ pub async fn delete_website(
         return Err(AppError::NotFound("Website not found".to_string()));
     }
 
-    // Evict from website cache.
-    {
-        let mut cache = state.website_cache.write().await;
-        cache.remove(&website_id);
-    }
+    state.invalidate_website_metadata_cache(&website_id).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
