@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use sparklytics_core::analytics::BotPolicy;
 
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_metadata::{
@@ -122,6 +123,10 @@ impl MetadataStore for DuckDbMetadataStore {
 
     async fn get_share_id(&self, website_id: &str) -> anyhow::Result<Option<String>> {
         self.db.get_share_id(website_id).await
+    }
+
+    async fn get_bot_policy(&self, website_id: &str) -> anyhow::Result<BotPolicy> {
+        self.db.get_bot_policy(website_id).await
     }
 
     async fn classify_override_for_request(

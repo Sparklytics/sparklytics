@@ -956,7 +956,7 @@ impl AppState {
             }
         }
 
-        let policy = self.db.get_bot_policy(website_id).await?;
+        let policy = self.metadata.get_bot_policy(website_id).await?;
         let mode = policy.mode;
         let threshold_score = match mode {
             sparklytics_core::analytics::BotPolicyMode::Strict if policy.threshold_score <= 0 => 60,

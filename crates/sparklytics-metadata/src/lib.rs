@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::Serialize;
+use sparklytics_core::analytics::BotPolicy;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiKeyRecord {
@@ -88,6 +89,7 @@ pub trait MetadataStore: Send + Sync + 'static {
     async fn set_share_id(&self, website_id: &str, share_id: &str) -> anyhow::Result<()>;
     async fn clear_share_id(&self, website_id: &str) -> anyhow::Result<()>;
     async fn get_share_id(&self, website_id: &str) -> anyhow::Result<Option<String>>;
+    async fn get_bot_policy(&self, website_id: &str) -> anyhow::Result<BotPolicy>;
 
     async fn classify_override_for_request(
         &self,
