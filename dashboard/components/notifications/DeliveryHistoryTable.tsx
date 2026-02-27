@@ -36,7 +36,7 @@ export function DeliveryHistoryTable({ websiteId }: DeliveryHistoryTableProps) {
                 <td className="px-3 py-2 text-xs text-ink">{row.delivered_at}</td>
                 <td className="px-3 py-2 text-xs text-ink">{row.source_type}:{row.source_id}</td>
                 <td className="px-3 py-2 text-xs">
-                  <span className={`px-1.5 py-0.5 rounded border ${row.status === 'sent' ? 'border-spark text-spark' : 'border-down text-down'}`}>
+                  <span className={`px-1.5 py-0.5 rounded-sm border ${row.status === 'sent' ? 'border-spark text-spark' : 'border-down text-down'}`}>
                     {row.status}
                   </span>
                 </td>

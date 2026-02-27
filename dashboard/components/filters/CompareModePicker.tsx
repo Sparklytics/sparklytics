@@ -3,7 +3,7 @@
 import { useFilters } from '@/hooks/useFilters';
 
 const inputClass =
-  'h-8 px-2 text-xs bg-surface-1 border border-line rounded-md text-ink focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark';
+  'h-8 px-2 text-xs bg-surface-1 border border-line rounded-md text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark';
 
 export function CompareModePicker() {
   const { compare, dateRange, setCompare } = useFilters();
@@ -57,7 +57,7 @@ export function CompareModePicker() {
                 compare_start_date: e.target.value,
               })
             }
-            className={`${inputClass} ${invalidCustomRange ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : ''}`}
+            className={`${inputClass} ${invalidCustomRange ? 'border-down focus:ring-down focus:border-down' : ''}`}
             aria-invalid={invalidCustomRange}
             aria-label="Compare start"
           />
@@ -71,11 +71,11 @@ export function CompareModePicker() {
                 compare_end_date: e.target.value,
               })
             }
-            className={`${inputClass} ${invalidCustomRange ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : ''}`}
+            className={`${inputClass} ${invalidCustomRange ? 'border-down focus:ring-down focus:border-down' : ''}`}
             aria-invalid={invalidCustomRange}
             aria-label="Compare end"
           />
-          <span className={`text-[10px] ${invalidCustomRange ? 'text-red-400' : 'text-ink-4'}`}>
+          <span className={`text-[10px] ${invalidCustomRange ? 'text-down' : 'text-ink-4'}`}>
             {invalidCustomRange
               ? 'Compare range must be valid and no longer than 2x primary range.'
               : 'Custom compare dates are required.'}

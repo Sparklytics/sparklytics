@@ -16,7 +16,7 @@ import { useTopPages } from '@/hooks/useTopPages';
 import type { Funnel, CreateFunnelStepPayload } from '@/lib/api';
 
 const inputClass =
-  'w-full px-3 py-2 text-sm bg-surface-input border border-line rounded-md text-ink placeholder:text-ink-3 focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark';
+  'w-full px-3 py-2 text-sm bg-surface-input border border-line rounded-md text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark';
 
 const labelClass = 'block text-xs font-medium text-ink-3 mb-1';
 
@@ -183,7 +183,7 @@ export function FunnelBuilderDialog({ websiteId, open, onClose, editingFunnel }:
           </fieldset>
 
           {apiError && (
-            <p className="text-xs text-red-400 border border-red-400/20 bg-red-400/5 rounded-sm px-3 py-2">
+            <p className="text-xs text-down border border-down/20 bg-down/5 rounded-sm px-3 py-2">
               {apiError}
             </p>
           )}

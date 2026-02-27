@@ -8,6 +8,7 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
+  SheetDescription,
 } from '@/components/ui/sheet';
 
 interface SessionDetailDrawerProps {
@@ -60,6 +61,9 @@ export function SessionDetailDrawer({
           <SheetTitle className="text-sm font-medium text-ink text-left">
             Session Detail
           </SheetTitle>
+          <SheetDescription className="sr-only">
+            Session details and activity timeline
+          </SheetDescription>
           {detail && (
             <>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3 sm:grid-cols-4">

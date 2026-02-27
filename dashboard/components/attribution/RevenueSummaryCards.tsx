@@ -5,6 +5,7 @@ import { RevenueSummary } from '@/lib/api';
 interface RevenueSummaryCardsProps {
   summary: RevenueSummary;
   goalName?: string;
+  topChannel?: string;
 }
 
 function formatMoney(value: number) {
@@ -14,11 +15,11 @@ function formatMoney(value: number) {
   });
 }
 
-export function RevenueSummaryCards({ summary, goalName }: RevenueSummaryCardsProps) {
+export function RevenueSummaryCards({ summary, goalName, topChannel }: RevenueSummaryCardsProps) {
   const modelLabel = summary.model === 'first_touch' ? 'First touch' : 'Last touch';
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <div className="border border-line rounded-lg bg-surface-1 p-3">
         <p className="text-xs text-ink-3">Goal</p>
         <p data-testid="attribution-goal-value" className="mt-1 text-sm text-ink font-medium truncate">
@@ -35,6 +36,12 @@ export function RevenueSummaryCards({ summary, goalName }: RevenueSummaryCardsPr
         <p className="text-xs text-ink-3">Revenue ({modelLabel})</p>
         <p data-testid="attribution-revenue-value" className="mt-1 text-lg text-ink font-mono tabular-nums">
           {formatMoney(summary.revenue)}
+        </p>
+      </div>
+      <div className="border border-line rounded-lg bg-surface-1 p-3">
+        <p className="text-xs text-ink-3">Top channel</p>
+        <p className="mt-1 text-sm text-ink font-medium truncate">
+          {topChannel ?? '—'}
         </p>
       </div>
     </div>

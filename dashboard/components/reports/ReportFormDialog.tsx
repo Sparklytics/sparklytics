@@ -29,10 +29,10 @@ interface ReportFormDialogProps {
 }
 
 const inputClass =
-  'w-full px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink placeholder:text-ink-3 focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark disabled:opacity-50 disabled:cursor-not-allowed';
+  'w-full px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-50 disabled:cursor-not-allowed';
 
 const selectClass =
-  'w-full px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark disabled:opacity-50 disabled:cursor-not-allowed';
+  'w-full px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-50 disabled:cursor-not-allowed';
 
 const labelClass = 'block text-xs font-medium text-ink-3 mb-1';
 
@@ -158,7 +158,7 @@ export function ReportFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
-      <DialogContent className="bg-surface-1 border-line sm:rounded-xl max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="bg-surface-1 border-line sm:rounded-lg max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-ink">
             {isEditing ? 'Edit report' : 'New report'}
@@ -477,7 +477,7 @@ export function ReportFormDialog({
           </div>
 
           {apiError && (
-            <p className="text-xs text-red-400 border border-red-400/20 bg-red-400/5 rounded-md px-3 py-2">
+            <p className="text-xs text-down border border-down/20 bg-down/5 rounded-md px-3 py-2">
               {apiError}
             </p>
           )}

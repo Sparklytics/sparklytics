@@ -24,7 +24,7 @@ export function FunnelResultsPanel({ websiteId, funnelId }: FunnelResultsPanelPr
   if (error) {
     console.error('[FunnelResultsPanel]', error);
     return (
-      <p className="pt-4 text-xs text-red-400">
+      <p className="pt-4 text-xs text-down">
         Failed to load funnel results. Try refreshing.
       </p>
     );
@@ -85,7 +85,7 @@ export function FunnelResultsPanel({ websiteId, funnelId }: FunnelResultsPanelPr
                 <td className="py-2 text-right font-mono tabular-nums text-ink pl-3">
                   {step.sessions_reached.toLocaleString()}
                 </td>
-                <td className="py-2 text-right font-mono tabular-nums text-red-400 pl-3">
+                <td className="py-2 text-right font-mono tabular-nums text-down pl-3">
                   {step.drop_off_count > 0 ? `-${step.drop_off_count.toLocaleString()}` : '—'}
                 </td>
                 <td className="py-2 text-right font-mono tabular-nums text-ink-2 pl-3">

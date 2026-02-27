@@ -14,7 +14,7 @@ interface AttributionPageProps {
 }
 
 const selectClass =
-  'w-full md:w-[320px] px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark';
+  'w-full md:w-[320px] px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark';
 
 export function AttributionPage({ websiteId }: AttributionPageProps) {
   const { dateRange } = useFilters();
@@ -79,7 +79,7 @@ export function AttributionPage({ websiteId }: AttributionPageProps) {
 
           {summaryQuery.isError || attributionQuery.isError ? (
             <div className="border border-line rounded-lg bg-surface-1 px-4 py-6">
-              <p className="text-sm text-red-400">
+              <p className="text-sm text-down">
                 Failed to load attribution data. Try refreshing.
               </p>
             </div>
@@ -89,6 +89,7 @@ export function AttributionPage({ websiteId }: AttributionPageProps) {
                 <RevenueSummaryCards
                   summary={summaryQuery.data.data}
                   goalName={activeGoal?.name}
+                  topChannel={attributionQuery.data?.data.rows?.[0]?.channel}
                 />
               )}
               <AttributionTable

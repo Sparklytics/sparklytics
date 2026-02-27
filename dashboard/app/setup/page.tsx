@@ -116,7 +116,7 @@ export default function SetupPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoFocus
-                className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark/20 focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
+                className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
                 placeholder="Choose a password"
               />
             </div>
@@ -131,7 +131,7 @@ export default function SetupPage() {
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 required
-                className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark/20 focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
+                className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
                 placeholder="Repeat password"
               />
             </div>

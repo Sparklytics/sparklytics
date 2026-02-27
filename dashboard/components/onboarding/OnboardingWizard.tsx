@@ -5,6 +5,7 @@ import { Check, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TrackingSnippet } from '@/components/settings/TrackingSnippet';
 import { api } from '@/lib/api';
+import { TIMEZONE_GROUPS, getBrowserTimezone } from '@/lib/timezones';
 
 type Step = 'create' | 'snippet' | 'verify';
 
@@ -22,6 +23,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState<Step>('create');
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
+  const [timezone, setTimezone] = useState(getBrowserTimezone());
   const [creating, setCreating] = useState(false);
   const [websiteId, setWebsiteId] = useState('');
   const [verifying, setVerifying] = useState(false);
@@ -38,7 +40,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     setCreating(true);
     setError('');
     try {
-      const result = await api.createWebsite({ name: name.trim(), domain: domain.trim() });
+      const result = await api.createWebsite({ name: name.trim(), domain: domain.trim(), timezone });
       setWebsiteId(result.data.id);
       setStep('snippet');
     } catch (e: unknown) {
@@ -100,7 +102,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My Blog"
-                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-spark"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
             </label>
             <label className="block">
@@ -109,8 +111,24 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 placeholder="example.com"
-                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-spark"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
+            </label>
+            <label className="block">
+              <span className="text-xs text-ink-2 mb-1 block">Timezone</span>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
+              >
+                {Object.entries(TIMEZONE_GROUPS).map(([group, zones]) => (
+                  <optgroup key={group} label={group}>
+                    {zones.map((tz) => (
+                      <option key={tz} value={tz}>{tz}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
             </label>
           </div>
           {error && <p className="text-xs text-down">{error}</p>}

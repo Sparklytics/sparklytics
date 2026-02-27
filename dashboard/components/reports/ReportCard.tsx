@@ -59,7 +59,7 @@ export function ReportCard({ report, isRunning, onRun, onEdit, onDelete }: Repor
             type="button"
             onClick={() => onDelete(report.id)}
             aria-label="Delete report"
-            className="p-1.5 text-ink-3 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
+            className="p-1.5 text-ink-3 hover:text-down hover:bg-down/10 rounded-md transition-colors"
             title="Delete report"
           >
             <Trash2 className="w-3.5 h-3.5" />

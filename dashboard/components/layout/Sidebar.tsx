@@ -126,7 +126,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
         'group flex items-center gap-2 w-full pl-[10px] pr-3 py-2 text-[13px] rounded-r-md border-l-2 transition-all duration-100 text-left',
         isActive(path)
           ? 'border-spark text-ink'
-          : 'border-transparent text-ink-3 hover:text-ink-2 hover:bg-white/[0.04]'
+          : 'border-transparent text-ink-3 hover:text-ink-2 hover:bg-ink/[0.04]'
       )}
     >
       <Icon
@@ -152,10 +152,10 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
       <aside className="w-[260px] md:w-[220px] flex flex-col min-h-0">
 
         {/* ── Brand header ─────────────────────────── */}
-        <div className="px-3 pt-3.5 pb-3 border-b border-line shrink-0">
-          <div className="flex items-center gap-2 mb-2.5">
+        <div className="px-3 pt-4 pb-3 border-b border-line shrink-0">
+          <div className="flex items-center gap-2 mb-3">
             {/* App mark */}
-            <div className="w-[22px] h-[22px] rounded-[5px] bg-spark flex items-center justify-center shrink-0">
+            <div className="w-[22px] h-[22px] rounded bg-spark flex items-center justify-center shrink-0">
               <span className="text-[9px] font-bold text-black leading-none tracking-tight">sp</span>
             </div>
             <span className="text-[13px] font-semibold text-ink tracking-tight">sparklytics</span>
@@ -216,7 +216,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
           <UsageBadge />
           <button
             onClick={handleLogout}
-            className="mt-1 group flex items-center gap-2 w-full px-3 py-2 text-[13px] text-ink-3 hover:text-ink-2 hover:bg-white/[0.04] rounded-md transition-colors"
+            className="mt-1 group flex items-center gap-2 w-full px-3 py-2 text-[13px] text-ink-3 hover:text-ink-2 hover:bg-ink/[0.04] rounded-md transition-colors"
           >
             <LogOut className="w-5 h-5 shrink-0 text-ink-4 group-hover:text-ink-3" />
             Log out

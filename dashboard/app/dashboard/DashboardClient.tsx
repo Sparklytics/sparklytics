@@ -26,7 +26,7 @@ import { useMetrics } from '@/hooks/useMetrics';
 import { useRealtime } from '@/hooks/useRealtime';
 import { useAuth } from '@/hooks/useAuth';
 import { useWebsites } from '@/hooks/useWebsites';
-import { cn } from '@/lib/utils';
+import { cn, formatNumber, formatDuration } from '@/lib/utils';
 
 const AttributionPage = dynamic(
   async () => {
@@ -116,6 +116,8 @@ export function DashboardClient() {
   const { data: devicesData, isLoading: devicesLoading } = useMetrics(websiteId, 'device', analyticsEnabled);
   const { data: regionsData, isLoading: regionsLoading } = useMetrics(websiteId, 'region', analyticsEnabled);
   const { data: citiesData, isLoading: citiesLoading } = useMetrics(websiteId, 'city', analyticsEnabled);
+  const { data: screenData, isLoading: screenLoading } = useMetrics(websiteId, 'screen', analyticsEnabled);
+  const { data: languageData, isLoading: languageLoading } = useMetrics(websiteId, 'language', analyticsEnabled);
   const { data: realtimeData, isLoading: rtLoading } = useRealtime(websiteId, 30_000, analyticsEnabled);
 
   // Settings subpage: render inline
@@ -243,87 +245,186 @@ export function DashboardClient() {
             </>
           )}
 
-          {subPage === 'pages' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <DataTable
-                title="Pages"
-                filterKey="page"
-                data={pagesData?.data?.rows}
-                loading={pagesLoading}
-                showPageviews
-                totalVisitors={stats?.visitors}
-              />
-              {/* Detailed view coming here */}
-            </div>
-          )}
-
-          {subPage === 'geolocation' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                <WorldMap data={countriesData?.data?.rows} loading={countriesLoading} />
-                <DataTable
-                  title="Countries"
-                  filterKey="country"
-                  data={countriesData?.data?.rows}
-                  loading={countriesLoading}
-                  totalVisitors={stats?.visitors}
-                />
+          {subPage === 'pages' && (() => {
+            const pageRows = pagesData?.data?.rows ?? [];
+            const totalPages = pageRows.length;
+            const totalPV = pageRows.reduce((s, r) => s + (r.pageviews ?? 0), 0);
+            const avgBounce = totalPages > 0
+              ? pageRows.reduce((s, r) => s + r.bounce_rate, 0) / totalPages
+              : 0;
+            const avgDur = totalPages > 0
+              ? pageRows.reduce((s, r) => s + r.avg_duration_seconds, 0) / totalPages
+              : 0;
+            return (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Pages tracked', value: formatNumber(totalPages) },
+                    { label: 'Total pageviews', value: formatNumber(totalPV) },
+                    { label: 'Avg. bounce rate', value: `${avgBounce.toFixed(1)}%` },
+                    { label: 'Avg. duration', value: avgDur > 0 ? formatDuration(avgDur) : '—' },
+                  ].map((card) => (
+                    <div key={card.label} className="border border-line rounded-lg bg-surface-1 p-4">
+                      <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">{card.label}</p>
+                      <p className="mt-1 text-2xl font-mono font-semibold tabular-nums text-ink">{card.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <DataTable
+                    title="All Pages"
+                    filterKey="page"
+                    data={pagesData?.data?.rows}
+                    loading={pagesLoading}
+                    showPageviews
+                    totalVisitors={stats?.visitors}
+                  />
+                  <DataTable
+                    title="Referrers"
+                    filterKey="referrer"
+                    data={referrersData?.data?.rows}
+                    loading={refLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                </div>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <DataTable
-                  title="Regions"
-                  filterKey="region"
-                  data={regionsData?.data?.rows}
-                  loading={regionsLoading}
-                  totalVisitors={stats?.visitors}
-                />
-                <DataTable
-                  title="Cities"
-                  filterKey="city"
-                  data={citiesData?.data?.rows}
-                  loading={citiesLoading}
-                  totalVisitors={stats?.visitors}
-                />
-              </div>
-              <p className="text-[11px] text-ink-3">
-                IP Geolocation by{' '}
-                <a
-                  href="https://db-ip.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-ink-2 underline underline-offset-2 hover:text-ink"
-                >
-                  DB-IP
-                </a>
-              </p>
-            </div>
-          )}
+            );
+          })()}
 
-          {subPage === 'systems' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <DataTable
-                title="Browsers"
-                filterKey="browser"
-                data={browsersData?.data?.rows}
-                loading={browsersLoading}
-                totalVisitors={stats?.visitors}
-              />
-              <DataTable
-                title="Operating Systems"
-                filterKey="os"
-                data={osData?.data?.rows}
-                loading={osLoading}
-                totalVisitors={stats?.visitors}
-              />
-              <DataTable
-                title="Devices"
-                filterKey="device"
-                data={devicesData?.data?.rows}
-                loading={devicesLoading}
-                totalVisitors={stats?.visitors}
-              />
-            </div>
-          )}
+          {subPage === 'geolocation' && (() => {
+            const geoRows = countriesData?.data?.rows ?? [];
+            const countryCount = geoRows.length;
+            const topCountry = geoRows[0];
+            const cityRows = citiesData?.data?.rows ?? [];
+            const topCity = cityRows[0];
+            return (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Countries', value: formatNumber(countryCount) },
+                    { label: 'Top country', value: topCountry?.value || '—' },
+                    { label: 'Top city', value: topCity?.value || '—' },
+                    { label: 'Languages', value: formatNumber(languageData?.data?.rows?.length ?? 0) },
+                  ].map((card) => (
+                    <div key={card.label} className="border border-line rounded-lg bg-surface-1 p-4">
+                      <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">{card.label}</p>
+                      <p className="mt-1 text-lg font-medium text-ink truncate">{card.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                  <WorldMap data={countriesData?.data?.rows} loading={countriesLoading} />
+                  <DataTable
+                    title="Countries"
+                    filterKey="country"
+                    data={countriesData?.data?.rows}
+                    loading={countriesLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <DataTable
+                    title="Regions"
+                    filterKey="region"
+                    data={regionsData?.data?.rows}
+                    loading={regionsLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                  <DataTable
+                    title="Cities"
+                    filterKey="city"
+                    data={citiesData?.data?.rows}
+                    loading={citiesLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                </div>
+                <DataTable
+                  title="Languages"
+                  filterKey="language"
+                  data={languageData?.data?.rows}
+                  loading={languageLoading}
+                  totalVisitors={stats?.visitors}
+                />
+                <p className="text-[11px] text-ink-3">
+                  IP Geolocation by{' '}
+                  <a
+                    href="https://db-ip.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-ink-2 underline underline-offset-2 hover:text-ink"
+                  >
+                    DB-IP
+                  </a>
+                </p>
+              </div>
+            );
+          })()}
+
+          {subPage === 'systems' && (() => {
+            const deviceRows = devicesData?.data?.rows ?? [];
+            const totalDeviceVisitors = deviceRows.reduce((s, r) => s + r.visitors, 0) || 1;
+            const mobilePct = ((deviceRows.find((r) => r.value === 'mobile')?.visitors ?? 0) / totalDeviceVisitors * 100).toFixed(1);
+            const desktopPct = ((deviceRows.find((r) => r.value === 'desktop')?.visitors ?? 0) / totalDeviceVisitors * 100).toFixed(1);
+            const tabletPct = ((deviceRows.find((r) => r.value === 'tablet')?.visitors ?? 0) / totalDeviceVisitors * 100).toFixed(1);
+            return (
+              <div className="space-y-6">
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Desktop', value: `${desktopPct}%`, icon: '🖥' },
+                    { label: 'Mobile', value: `${mobilePct}%`, icon: '📱' },
+                    { label: 'Tablet', value: `${tabletPct}%`, icon: '📟' },
+                  ].map((card) => (
+                    <div key={card.label} className="border border-line rounded-lg bg-surface-1 p-4 flex items-center gap-3">
+                      <span className="text-2xl">{card.icon}</span>
+                      <div>
+                        <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">{card.label}</p>
+                        <p className="text-2xl font-mono font-semibold tabular-nums text-ink">{card.value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <DataTable
+                    title="Browsers"
+                    filterKey="browser"
+                    data={browsersData?.data?.rows}
+                    loading={browsersLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                  <DataTable
+                    title="Operating Systems"
+                    filterKey="os"
+                    data={osData?.data?.rows}
+                    loading={osLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                  <DataTable
+                    title="Devices"
+                    filterKey="device"
+                    data={devicesData?.data?.rows}
+                    loading={devicesLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <DataTable
+                    title="Screen Resolutions"
+                    filterKey="screen"
+                    data={screenData?.data?.rows}
+                    loading={screenLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                  <DataTable
+                    title="Languages"
+                    filterKey="language"
+                    data={languageData?.data?.rows}
+                    loading={languageLoading}
+                    totalVisitors={stats?.visitors}
+                  />
+                </div>
+              </div>
+            );
+          })()}
 
           {subPage === 'events' && <EventsPage websiteId={websiteId} />}
         </div>
