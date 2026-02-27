@@ -63,13 +63,13 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
     if (a2 === selectedCountry) return 'var(--spark)';
     // Linear scale: low-traffic → alpha 0.12, top-traffic → alpha 1.0
     const alpha = (0.12 + 0.88 * (visitors / maxVisitors)).toFixed(2);
-    return `rgba(0, 208, 132, ${alpha})`;
+    return `rgb(var(--spark-rgb) / ${alpha})`;
   };
 
   const getHoverFill = (a2: string | null, visitors: number): string => {
     if (!a2 || !visitors) return 'var(--surface-1)';
     if (a2 === selectedCountry) return 'var(--spark)';
-    return 'rgba(0, 208, 132, 0.65)';
+    return 'rgb(var(--spark-rgb) / 0.65)';
   };
 
   // ── Tooltip via event delegation (pointer events support mouse + touch) ─
@@ -154,7 +154,7 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
                   fill={fill}
                   stroke="var(--canvas)"
                   strokeWidth={0.4}
-                  // data-a2 read by the container's onMouseMove for tooltip
+                  // data-a2 read by the container's pointer handlers for tooltip
                   data-a2={a2 ?? ''}
                   style={{
                     default: { outline: 'none', cursor: 'default' },
