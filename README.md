@@ -134,14 +134,28 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 
 ## Benchmarks
 
+### Self-Hosted (DuckDB)
+
 | Metric | Value |
 |--------|-------|
-| Ingestion p99 latency | < 50ms on Linux at 900+ req/s |
-| Memory (idle) | ~41 MB |
-| Storage per million events | ~25 MB |
+| Peak ingest throughput | ~26,000 req/s (single event) |
+| Ingestion p99 latency (800 req/s) | 1.1 ms |
+| Memory (idle) | ~29 MB |
+| Memory (under load) | ~64 MB |
+| Storage per million events | ~278 MB (DuckDB) |
 | Binary size (linux-amd64 musl) | ~15 MB |
-| Dashboard bundle (gzipped) | ~97 KB |
+| Dashboard bundle (gzipped) | ~632 KB |
 | `@sparklytics/next` SDK (gzipped) | < 5 KB |
+
+### Cloud (ClickHouse)
+
+| Metric | Value |
+|--------|-------|
+| Peak ingest throughput | ~18,000 req/s (single event) |
+| Query throughput (stats) | ~3,190 req/s |
+| Query throughput (sessions) | ~2,920 req/s |
+| Storage per million events | ~48 MB (ClickHouse) |
+| ClickHouse vs DuckDB speedup | **10–68x** at 100k, **47–239x** at 1M |
 
 ---
 

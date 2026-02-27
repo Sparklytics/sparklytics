@@ -2,11 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dashboard",
+      "name": "marketing",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3001,
-      "cwd": "dashboard"
+      "port": 3002,
+      "cwd": "marketing"
     }
   ]
 }
