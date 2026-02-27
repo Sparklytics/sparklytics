@@ -18,6 +18,7 @@ interface TooltipState {
   x: number;
   y: number;
   containerWidth: number;
+  containerHeight: number;
 }
 
 // Intl country name formatter (created once, memoized outside component)
@@ -77,7 +78,13 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
     const a2 = (target as unknown as HTMLElement).dataset?.a2;
     if (a2 && a2.length > 0) {
       const rect = e.currentTarget.getBoundingClientRect();
-      setTooltip({ a2, x: e.clientX - rect.left, y: e.clientY - rect.top, containerWidth: rect.width });
+      setTooltip({
+        a2,
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        containerWidth: rect.width,
+        containerHeight: rect.height,
+      });
     } else {
       setTooltip(null);
     }
@@ -92,8 +99,10 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
     const name = getCountryName(tooltip.a2);
 
     const TW = 172;
+    const TH = 100;
     const left = Math.min(tooltip.x + 14, Math.max(8, tooltip.containerWidth - TW - 8));
-    const top = tooltip.y > 80 ? tooltip.y - 100 : tooltip.y + 16;
+    const rawTop = tooltip.y > 80 ? tooltip.y - TH : tooltip.y + 16;
+    const top = Math.max(8, Math.min(rawTop, tooltip.containerHeight - TH - 8));
 
     const stat = (label: string, value: string) => (
       <div className="flex justify-between gap-6">
