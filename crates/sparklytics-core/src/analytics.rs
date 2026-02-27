@@ -1,7 +1,7 @@
 //! Analytics backend abstraction.
 
 use anyhow::{anyhow, Result};
-use chrono::{Months, NaiveDate};
+use chrono::{DateTime, Months, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::event::Event;
@@ -1210,6 +1210,30 @@ pub trait AnalyticsBackend: Send + Sync + 'static {
         referrer_domain: Option<&str>,
         url: &str,
     ) -> anyhow::Result<String>;
+
+    async fn get_or_create_session_at(
+        &self,
+        website_id: &str,
+        visitor_id: &str,
+        referrer_domain: Option<&str>,
+        url: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<String>;
+
+    async fn increment_session_pageviews(
+        &self,
+        session_id: &str,
+        additional_pageviews: u32,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
+
+    async fn set_session_bot_classification(
+        &self,
+        session_id: &str,
+        is_bot: bool,
+        bot_score: i32,
+        bot_reason: Option<&str>,
+    ) -> anyhow::Result<()>;
 
     async fn get_stats(
         &self,

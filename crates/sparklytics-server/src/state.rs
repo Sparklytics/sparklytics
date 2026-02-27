@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::body::Bytes;
 use chrono::{DateTime, Utc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, RwLock, Semaphore};
@@ -36,6 +37,9 @@ const DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES: usize = 10_000;
 const DEFAULT_ACQUISITION_CACHE_TTL_SECONDS: u64 = 60;
 const DEFAULT_COLLECT_CACHE_MAX_ENTRIES: usize = 100_000;
 const DEFAULT_COLLECT_CACHE_TTL_SECONDS: u64 = 120;
+const DEFAULT_EXPORT_CACHE_MAX_ENTRIES: usize = 2;
+const DEFAULT_EXPORT_CACHE_TTL_SECONDS: u64 = 2;
+const DEFAULT_EXPORT_CACHE_MAX_BYTES: usize = 32 * 1024 * 1024;
 const INGEST_WAL_LOG_FILE: &str = "segment.log";
 const INGEST_WAL_CURSOR_FILE: &str = "segment.cursor";
 
@@ -82,6 +86,12 @@ struct CachedBotOverride {
     expires_at: Instant,
 }
 
+#[derive(Debug, Clone)]
+struct CachedExportResponse {
+    value: Bytes,
+    expires_at: Instant,
+}
+
 /// Shared application state injected into every Axum handler via
 /// [`axum::extract::State`].
 pub struct AppState {
@@ -119,6 +129,11 @@ pub struct AppState {
     bot_override_cache: Arc<Mutex<HashMap<(String, String, String), CachedBotOverride>>>,
     collect_cache_max_entries: usize,
     collect_cache_ttl: Duration,
+    export_cache: Arc<Mutex<HashMap<String, CachedExportResponse>>>,
+    export_cache_compute_lock: Arc<Mutex<()>>,
+    export_cache_max_entries: usize,
+    export_cache_ttl: Duration,
+    export_cache_max_bytes: usize,
 
     /// Plan-limit gate.
     pub billing_gate: Arc<dyn BillingGate>,
@@ -254,6 +269,18 @@ impl AppState {
             "SPARKLYTICS_COLLECT_CACHE_TTL_SECONDS",
             DEFAULT_COLLECT_CACHE_TTL_SECONDS,
         );
+        let export_cache_max_entries = Self::env_usize(
+            "SPARKLYTICS_EXPORT_CACHE_MAX_ENTRIES",
+            DEFAULT_EXPORT_CACHE_MAX_ENTRIES,
+        );
+        let export_cache_ttl_seconds = Self::env_u64(
+            "SPARKLYTICS_EXPORT_CACHE_TTL_SECONDS",
+            DEFAULT_EXPORT_CACHE_TTL_SECONDS,
+        );
+        let export_cache_max_bytes = Self::env_usize(
+            "SPARKLYTICS_EXPORT_CACHE_MAX_BYTES",
+            DEFAULT_EXPORT_CACHE_MAX_BYTES,
+        );
         let ingest_wal_log_path = ingest_wal_dir.join(INGEST_WAL_LOG_FILE);
         let ingest_wal_cursor_path = ingest_wal_dir.join(INGEST_WAL_CURSOR_FILE);
 
@@ -328,6 +355,11 @@ impl AppState {
             bot_override_cache: Arc::new(Mutex::new(HashMap::new())),
             collect_cache_max_entries,
             collect_cache_ttl: Duration::from_secs(collect_cache_ttl_seconds),
+            export_cache: Arc::new(Mutex::new(HashMap::new())),
+            export_cache_compute_lock: Arc::new(Mutex::new(())),
+            export_cache_max_entries,
+            export_cache_ttl: Duration::from_secs(export_cache_ttl_seconds),
+            export_cache_max_bytes,
             billing_gate: Arc::new(NullBillingGate),
             export_semaphore: Arc::new(Semaphore::new(1)),
             funnel_results_semaphore: Arc::new(Semaphore::new(1)),
@@ -741,10 +773,11 @@ impl AppState {
                 cached_session_id
             } else {
                 base_count_already_recorded = true;
-                self.db
+                self.analytics
                     .get_or_create_session_at(
                         &event.website_id,
                         &event.visitor_id,
+                        event.referrer_domain.as_deref(),
                         &event.url,
                         event.created_at,
                     )
@@ -775,7 +808,7 @@ impl AppState {
             };
 
             if additional_pageviews > 0 {
-                self.db
+                self.analytics
                     .increment_session_pageviews(
                         &entry.session_id,
                         additional_pageviews,
@@ -783,14 +816,16 @@ impl AppState {
                     )
                     .await?;
             }
-            self.db
-                .set_session_bot_classification(
-                    &entry.session_id,
-                    entry.is_bot,
-                    entry.bot_score,
-                    entry.bot_reason.as_deref(),
-                )
-                .await?;
+            if entry.is_bot || entry.bot_score > 0 || entry.bot_reason.is_some() {
+                self.analytics
+                    .set_session_bot_classification(
+                        &entry.session_id,
+                        entry.is_bot,
+                        entry.bot_score,
+                        entry.bot_reason.as_deref(),
+                    )
+                    .await?;
+            }
 
             self.put_cached_session(
                 entry.website_id,
@@ -986,6 +1021,55 @@ impl AppState {
                 false
             }
         }
+    }
+
+    fn export_cache_enabled(&self) -> bool {
+        self.export_cache_max_entries > 0
+            && self.export_cache_max_bytes > 0
+            && !self.export_cache_ttl.is_zero()
+    }
+
+    pub fn export_cache_key(&self, website_id: &str, start_date: &str, end_date: &str) -> String {
+        format!("{website_id}|{start_date}|{end_date}|csv")
+    }
+
+    pub async fn lock_export_cache_compute(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.export_cache_compute_lock.lock().await
+    }
+
+    pub async fn get_cached_export_csv(&self, key: &str) -> Option<Bytes> {
+        if !self.export_cache_enabled() {
+            return None;
+        }
+
+        let now = Instant::now();
+        let mut cache = self.export_cache.lock().await;
+        if let Some(entry) = cache.get(key) {
+            if entry.expires_at > now {
+                return Some(entry.value.clone());
+            }
+            cache.remove(key);
+        }
+        None
+    }
+
+    pub async fn put_cached_export_csv(&self, key: String, value: Bytes) {
+        if !self.export_cache_enabled() || value.len() > self.export_cache_max_bytes {
+            return;
+        }
+
+        let now = Instant::now();
+        let mut cache = self.export_cache.lock().await;
+        if cache.len() >= self.export_cache_max_entries {
+            cache.clear();
+        }
+        cache.insert(
+            key,
+            CachedExportResponse {
+                value,
+                expires_at: now + self.export_cache_ttl,
+            },
+        );
     }
 
     /// Check whether `ip` is within the given `max_per_min` rate limit.
