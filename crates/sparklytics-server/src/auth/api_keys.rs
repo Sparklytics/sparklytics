@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use sparklytics_core::config::AppMode;
 
-/// Generate a new self-hosted API key.
+/// Generate a new mode-aware API key.
 ///
 /// Returns (raw_key, hash, prefix).
 /// Raw key format:

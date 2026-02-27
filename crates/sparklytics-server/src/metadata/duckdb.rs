@@ -126,4 +126,15 @@ impl MetadataStore for DuckDbMetadataStore {
     async fn get_share_id(&self, website_id: &str) -> anyhow::Result<Option<String>> {
         self.db.get_share_id(website_id).await
     }
+
+    async fn classify_override_for_request(
+        &self,
+        website_id: &str,
+        client_ip: &str,
+        user_agent: &str,
+    ) -> anyhow::Result<Option<bool>> {
+        self.db
+            .classify_override_for_request(website_id, client_ip, user_agent)
+            .await
+    }
 }

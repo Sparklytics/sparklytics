@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::Hash;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicU64, AtomicUsize};
@@ -209,6 +210,36 @@ impl AppState {
                     || trimmed.eq_ignore_ascii_case("yes")
             })
             .unwrap_or(default)
+    }
+
+    fn evict_cache_entries<K, V, F>(
+        cache: &mut HashMap<K, V>,
+        max_entries: usize,
+        now: Instant,
+        expires_at: F,
+    ) where
+        K: Clone + Eq + Hash,
+        F: Fn(&V) -> Instant,
+    {
+        if max_entries == 0 {
+            cache.clear();
+            return;
+        }
+        if cache.len() < max_entries {
+            return;
+        }
+
+        cache.retain(|_, entry| expires_at(entry) > now);
+        while cache.len() >= max_entries {
+            let Some(oldest_key) = cache
+                .iter()
+                .min_by_key(|(_, entry)| expires_at(entry))
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            cache.remove(&oldest_key);
+        }
     }
 
     /// Constructor for self-hosted mode.
@@ -862,9 +893,9 @@ impl AppState {
         let website = self.metadata.get_website(website_id).await?;
         {
             let mut cache = self.website_metadata_cache.lock().await;
-            if cache.len() >= self.collect_cache_max_entries {
-                cache.clear();
-            }
+            Self::evict_cache_entries(&mut cache, self.collect_cache_max_entries, now, |entry| {
+                entry.expires_at
+            });
             cache.insert(
                 website_id.to_string(),
                 CachedWebsiteMetadata {
@@ -888,9 +919,9 @@ impl AppState {
         let now = Instant::now();
         {
             let mut cache = self.website_metadata_cache.lock().await;
-            if cache.len() >= self.collect_cache_max_entries {
-                cache.clear();
-            }
+            Self::evict_cache_entries(&mut cache, self.collect_cache_max_entries, now, |entry| {
+                entry.expires_at
+            });
             cache.insert(
                 website.id.clone(),
                 CachedWebsiteMetadata {
@@ -942,9 +973,9 @@ impl AppState {
         };
         {
             let mut cache = self.bot_policy_cache.lock().await;
-            if cache.len() >= self.collect_cache_max_entries {
-                cache.clear();
-            }
+            Self::evict_cache_entries(&mut cache, self.collect_cache_max_entries, now, |entry| {
+                entry.expires_at
+            });
             cache.insert(
                 website_id.to_string(),
                 CachedBotPolicy {
@@ -979,7 +1010,7 @@ impl AppState {
         }
 
         let decision = self
-            .db
+            .metadata
             .classify_override_for_request(website_id, client_ip, user_agent)
             .await?
             .map(|is_bot| {
@@ -992,9 +1023,9 @@ impl AppState {
 
         {
             let mut cache = self.bot_override_cache.lock().await;
-            if cache.len() >= self.collect_cache_max_entries {
-                cache.clear();
-            }
+            Self::evict_cache_entries(&mut cache, self.collect_cache_max_entries, now, |entry| {
+                entry.expires_at
+            });
             cache.insert(
                 key,
                 CachedBotOverride {
@@ -1060,9 +1091,9 @@ impl AppState {
 
         let now = Instant::now();
         let mut cache = self.export_cache.lock().await;
-        if cache.len() >= self.export_cache_max_entries {
-            cache.clear();
-        }
+        Self::evict_cache_entries(&mut cache, self.export_cache_max_entries, now, |entry| {
+            entry.expires_at
+        });
         cache.insert(
             key,
             CachedExportResponse {
@@ -1122,9 +1153,12 @@ impl AppState {
         let link = self.analytics.get_campaign_link_by_slug(slug).await?;
         if let Some(link_value) = link.as_ref() {
             let mut cache = self.campaign_link_cache.lock().await;
-            if cache.len() >= self.acquisition_cache_max_entries {
-                cache.clear();
-            }
+            Self::evict_cache_entries(
+                &mut cache,
+                self.acquisition_cache_max_entries,
+                now,
+                |entry| entry.expires_at,
+            );
             cache.insert(
                 slug.to_string(),
                 CachedCampaignLink {
@@ -1154,9 +1188,12 @@ impl AppState {
         let pixel = self.analytics.get_tracking_pixel_by_key(pixel_key).await?;
         if let Some(pixel_value) = pixel.as_ref() {
             let mut cache = self.tracking_pixel_cache.lock().await;
-            if cache.len() >= self.acquisition_cache_max_entries {
-                cache.clear();
-            }
+            Self::evict_cache_entries(
+                &mut cache,
+                self.acquisition_cache_max_entries,
+                now,
+                |entry| entry.expires_at,
+            );
             cache.insert(
                 pixel_key.to_string(),
                 CachedTrackingPixel {
