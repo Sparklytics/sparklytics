@@ -81,7 +81,7 @@ export function RealtimePage({ websiteId }: RealtimePageProps) {
           <div className="px-6 py-12 text-center">
             <p className="text-sm text-ink-3 mb-4">No activity in the last 30 minutes</p>
             <button
-              onClick={() => navigate(`/settings/${websiteId}`)}
+              onClick={() => navigate(`/dashboard/${websiteId}/settings/snippet`)}
               className="text-xs text-spark hover:underline"
             >
               View tracking snippet

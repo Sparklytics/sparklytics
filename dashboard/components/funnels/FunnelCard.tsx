@@ -70,7 +70,7 @@ export function FunnelCard({ websiteId, funnel }: FunnelCardProps) {
             <button
               type="button"
               onClick={() => setDeleteTarget(funnel)}
-              className="p-1 text-ink-3 hover:text-red-400 hover:bg-red-400/10 rounded-sm transition-colors"
+              className="p-1 text-ink-3 hover:text-down hover:bg-down/10 rounded-sm transition-colors"
               aria-label="Delete funnel"
             >
               <Trash2 className="w-4 h-4" />

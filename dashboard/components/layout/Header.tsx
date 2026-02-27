@@ -48,6 +48,8 @@ const SUB_PAGE_LABELS: Record<string, string> = {
   retention: 'Retention',
   attribution: 'Attribution',
   realtime: 'Realtime',
+  acquisition: 'Acquisition',
+  reports: 'Reports',
   settings: 'Settings',
 };
 

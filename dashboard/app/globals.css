@@ -19,8 +19,9 @@
   --line-3: #4A5568;
 
   --spark:        #00D084;
+  --spark-rgb:    0 208 132;
   --spark-dim:    #00B86D;
-  --spark-subtle: rgba(0, 208, 132, 0.08);
+  --spark-subtle: rgb(var(--spark-rgb) / 0.08);
 
   --up:      #10B981;
   --down:    #EF4444;

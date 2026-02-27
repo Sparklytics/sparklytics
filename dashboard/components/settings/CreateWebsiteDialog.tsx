@@ -50,7 +50,7 @@ export function CreateWebsiteDialog({ open, onClose }: CreateWebsiteDialogProps)
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) handleClose(); }}>
-      <DialogContent className="bg-surface-1 border-line sm:rounded-xl max-w-md">
+      <DialogContent className="bg-surface-1 border-line sm:rounded-lg max-w-md">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold text-ink">Add website</DialogTitle>
           <DialogDescription className="text-xs text-ink-3">
@@ -67,7 +67,7 @@ export function CreateWebsiteDialog({ open, onClose }: CreateWebsiteDialogProps)
               placeholder="My Website"
               maxLength={100}
               autoFocus
-              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:border-spark"
+              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
             />
           </label>
 
@@ -77,7 +77,7 @@ export function CreateWebsiteDialog({ open, onClose }: CreateWebsiteDialogProps)
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="example.com"
-              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:border-spark"
+              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink placeholder:text-ink-4 focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
             />
           </label>
 
@@ -86,7 +86,7 @@ export function CreateWebsiteDialog({ open, onClose }: CreateWebsiteDialogProps)
             <select
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
-              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-spark"
+              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
             >
               {Object.entries(TIMEZONE_GROUPS).map(([group, zones]) => (
                 <optgroup key={group} label={group}>

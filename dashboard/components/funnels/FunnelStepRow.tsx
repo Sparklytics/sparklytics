@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button';
 import type { CreateFunnelStepPayload, MatchOperator, StepType } from '@/lib/api';
 
 const inputClass =
-  'flex-1 px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink placeholder:text-ink-3 focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark';
+  'flex-1 px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark';
 
 const selectClass =
-  'px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink focus:outline-none focus:ring-1 focus:ring-spark focus:border-spark';
+  'px-3 py-2 text-sm bg-canvas border border-line rounded-md text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark';
 
 interface FunnelStepRowProps {
   index: number;
@@ -72,7 +72,7 @@ export function FunnelStepRow({ index, step, canDelete, onChange, onDelete, sugg
         size="icon"
         onClick={onDelete}
         disabled={!canDelete}
-        className="shrink-0 text-ink-4 hover:text-red-400 hover:bg-red-400/10 disabled:opacity-30"
+        className="shrink-0 text-ink-4 hover:text-down hover:bg-down/10 disabled:opacity-30"
         aria-label="Remove step"
       >
         <X className="w-4 h-4" />

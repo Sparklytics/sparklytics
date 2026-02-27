@@ -45,7 +45,7 @@ export function FunnelBarChart({ steps, totalEntered }: FunnelBarChartProps) {
                 {(step.conversion_rate_from_start * 100).toFixed(1)}%
               </div>
               {!isFirst && (
-                <div className="font-mono tabular-nums text-red-400 text-xs">
+                <div className="font-mono tabular-nums text-down text-xs">
                   -{(step.drop_off_rate * 100).toFixed(1)}%
                 </div>
               )}

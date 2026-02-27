@@ -70,7 +70,7 @@ export function RetentionPage({ websiteId }: RetentionPageProps) {
         </div>
       ) : error ? (
         <div className="border border-line rounded-lg bg-surface-1 px-4 py-6">
-          <p className="text-sm text-red-400">Failed to load retention data. Try refreshing.</p>
+          <p className="text-sm text-down">Failed to load retention data. Try refreshing.</p>
         </div>
       ) : result ? (
         <div className={`space-y-3 transition-opacity ${isFetching ? 'opacity-60' : ''}`}>

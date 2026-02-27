@@ -23,8 +23,12 @@ export function AttributionTable({ rows, loading }: AttributionTableProps) {
     return (
       <div className="border border-line rounded-lg bg-surface-1 divide-y divide-line">
         {Array.from({ length: 5 }).map((_, index) => (
-          <div key={index} className="px-4 py-3 animate-pulse">
-            <div className="h-4 bg-surface-2 rounded w-full" />
+          <div key={index} className="px-4 py-3 animate-pulse flex items-center gap-4">
+            <div className="h-4 bg-surface-2 rounded w-28" />
+            <div className="flex-1" />
+            <div className="h-4 bg-surface-2 rounded w-16" />
+            <div className="h-4 bg-surface-2 rounded w-16" />
+            <div className="h-4 bg-surface-2 rounded w-12" />
           </div>
         ))}
       </div>
@@ -40,6 +44,8 @@ export function AttributionTable({ rows, loading }: AttributionTableProps) {
     );
   }
 
+  const maxConversions = Math.max(...rows.map((r) => r.conversions), 1);
+
   return (
     <div className="border border-line rounded-lg bg-surface-1 overflow-hidden">
       <div className="overflow-x-auto">
@@ -53,20 +59,29 @@ export function AttributionTable({ rows, loading }: AttributionTableProps) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.channel} className="border-b border-line/70 last:border-b-0">
-                <td className="px-4 py-3 text-ink font-medium">{row.channel}</td>
-                <td className="px-4 py-3 text-right font-mono tabular-nums text-ink-2">
-                  {row.conversions.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-right font-mono tabular-nums text-ink-2">
-                  {formatMoney(row.revenue)}
-                </td>
-                <td className="px-4 py-3 text-right font-mono tabular-nums text-ink-2">
-                  {formatPct(row.share)}
-                </td>
-              </tr>
-            ))}
+            {rows.map((row) => {
+              const barPct = Math.round((row.conversions / maxConversions) * 100);
+              return (
+                <tr key={row.channel} className="border-b border-line/70 last:border-b-0 relative">
+                  <td className="px-4 py-3 text-ink font-medium relative">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-r-sm"
+                      style={{ width: `${barPct}%`, background: 'var(--spark-subtle)' }}
+                    />
+                    <span className="relative">{row.channel}</span>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-ink-2">
+                    {row.conversions.toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-ink-2">
+                    {formatMoney(row.revenue)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-ink-2">
+                    {formatPct(row.share)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

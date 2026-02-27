@@ -4,6 +4,10 @@
 **Target Launch:** Week 13
 **Infrastructure:** Fly.io (API) + Hetzner (ClickHouse) + Stripe (billing)
 
+> Historical/private-cloud specification: this document describes cloud architecture scope for the private cloud repository and is not the current implementation contract of the public `sparklytics` repo.
+>
+> Public repo reality today: self-hosted auth modes are `none/password/local`, and local API keys use SHA-256 hashing. Cloud runtime/auth/billing details are maintained in the private `sparklytics-cloud` repo docs.
+
 ## Overview
 
 The cloud platform adds multi-tenancy, authentication, billing, and managed ClickHouse to the core Sparklytics server. It runs the same Rust binary with cloud-specific environment variables enabled.
@@ -25,12 +29,16 @@ User Account
 
 ## Authentication
 
+> Note: This authentication section is historical product-planning content.
+> Current local cloud runtime in `sparklytics-cloud` reuses `SPARKLYTICS_AUTH=local` flows for developer testing.
+> Production cloud auth contracts are maintained in private cloud docs/runbooks.
+
 ### Registration Flow
 
 ```
 1. User submits email + password + name
 2. Server validates (email format, password min 8 chars)
-3. Server creates user (password hashed with bcrypt, cost 12)
+3. Server creates user (password hashed with Argon2id)
 4. Server sends verification email
 5. User clicks verification link
 6. Account activated
@@ -45,7 +53,7 @@ Until verified:
 
 ```
 1. User submits email + password
-2. Server verifies against bcrypt hash
+2. Server verifies against Argon2id hash
 3. If valid: create JWT, set HttpOnly cookie
 4. If invalid: return 401 (don't reveal if email exists)
 5. Rate limit: 5 attempts per minute per IP
@@ -154,7 +162,7 @@ WHERE user_id = ? AND period = ?;
 
 **Key format:** `spk_live_` + 32 hex chars (e.g., `spk_live_a1b2c3d4e5f6...`)
 
-**Storage:** Only the argon2 hash stored in database. Key prefix (`spk_live_a1b2`) stored for display/identification.
+**Storage:** Only the SHA-256 hash stored in database. Key prefix (`spk_live_a1b2`) stored for display/identification.
 
 **Permissions:** API keys have same access as the user who created them. Scoped to all websites owned by that user.
 
@@ -202,7 +210,7 @@ primary_region = "ams"
 
 [env]
   SPARKLYTICS_MODE = "cloud"
-  SPARKLYTICS_BACKEND = "clickhouse"
+  SPARKLYTICS_ENFORCE_BILLING = "true"
   SPARKLYTICS_PORT = "8080"
 
 [http_service]
@@ -223,27 +231,20 @@ primary_region = "ams"
 ```bash
 fly secrets set \
   SPARKLYTICS_JWT_SECRET="..." \
-  SPARKLYTICS_CLICKHOUSE_URL="http://clickhouse.example:8123" \
-  SPARKLYTICS_DATABASE_URL="postgres://..." \
+  CLICKHOUSE_URL="http://clickhouse.example:8123" \
+  DATABASE_URL="postgres://..." \
   STRIPE_SECRET_KEY="sk_live_..." \
   STRIPE_WEBHOOK_SECRET="whsec_..." \
   RESEND_API_KEY="re_..."
 ```
 
-### ClickHouse (Hetzner) — Phase 2 Only
+### ClickHouse (Hetzner)
 
-**Decision: Cloud V1 launches on DuckDB-per-tenant, NOT ClickHouse.**
+**Decision: Cloud analytics uses ClickHouse with tenant-scoped storage.**
 
-Each cloud tenant gets their own DuckDB file (`/data/{tenant_id}.db`). This eliminates ClickHouse as a SPOF at launch, keeps infrastructure cost near zero, and allows shipping cloud sooner. ClickHouse is introduced only when a tenant exceeds **5M events/month** or total cloud storage exceeds **50GB**.
+Cloud architecture in this specification assumes ClickHouse is the analytics store and PostgreSQL is the metadata/control-plane store.
 
-This changes the launch architecture to: Fly.io (API) + Fly.io Volumes (DuckDB files) + Stripe (billing). No Hetzner server needed at launch.
-
-**ClickHouse migration path (when needed):**
-- Export tenant data from DuckDB to Parquet: `COPY (SELECT * FROM events) TO '/tmp/export.parquet'`
-- Load into ClickHouse via `clickhouse-client --query="INSERT INTO events FORMAT Parquet" < export.parquet`
-- Script this as `sparklytics migrate-tenant --id <tenant_id> --to clickhouse`
-
-**When ClickHouse is eventually needed:**
+**Reference deployment shape:**
 
 ```bash
 # Hetzner CPX51: 8 vCPU, 16GB RAM, 240GB SSD (NOT CPX31 — ClickHouse minimum is 16GB RAM)
@@ -297,7 +298,7 @@ fly postgres attach sparklytics-db
 
 - [ ] All traffic over TLS 1.3
 - [ ] JWT secrets rotated quarterly
-- [ ] API keys hashed with argon2
+- [ ] API keys hashed with SHA-256
 - [ ] SQL injection impossible (parameterized queries)
 - [ ] Rate limiting on all endpoints
 - [ ] CORS restricted to sparklytics.dev

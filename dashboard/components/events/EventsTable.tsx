@@ -23,7 +23,7 @@ function DeltaBadge({ current, prev }: { current: number; prev?: number }) {
     <span
       className={cn(
         'text-xs font-mono tabular-nums px-1 rounded-sm',
-        up ? 'text-spark bg-spark/10' : 'text-red-400 bg-red-400/10'
+        up ? 'text-spark bg-spark/10' : 'text-down bg-down/10'
       )}
     >
       {up ? '+' : ''}

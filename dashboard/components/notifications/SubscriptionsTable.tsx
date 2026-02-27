@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { FlaskConical, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDeleteReportSubscription, useReportSubscriptions, useTestReportSubscription, useUpdateReportSubscription } from '@/hooks/useNotifications';
-import type { NotificationChannel, ReportSubscription, SubscriptionSchedule } from '@/lib/api';
+import { EditSubscriptionDialog } from './EditSubscriptionDialog';
+import type { ReportSubscription } from '@/lib/api';
 
 interface SubscriptionsTableProps {
   websiteId: string;
@@ -32,7 +34,7 @@ function Row({
       </td>
       <td className="px-3 py-2 text-xs text-ink-2">{subscription.next_run_at}</td>
       <td className="px-3 py-2 text-xs">
-        <span className={`px-1.5 py-0.5 rounded border ${subscription.is_active ? 'border-spark text-spark' : 'border-line text-ink-3'}`}>
+        <span className={`px-1.5 py-0.5 rounded-sm border ${subscription.is_active ? 'border-spark text-spark' : 'border-line text-ink-3'}`}>
           {subscription.is_active ? 'Active' : 'Inactive'}
         </span>
       </td>
@@ -63,65 +65,56 @@ export function SubscriptionsTable({ websiteId }: SubscriptionsTableProps) {
   const deleteSubscription = useDeleteReportSubscription(websiteId);
   const updateSubscription = useUpdateReportSubscription(websiteId);
   const testSubscription = useTestReportSubscription(websiteId);
-
-  function handleEdit(subscription: ReportSubscription) {
-    const schedule = window.prompt('Schedule (daily|weekly|monthly)', subscription.schedule);
-    if (schedule === null) return;
-    const channel = window.prompt('Channel (email|webhook)', subscription.channel);
-    if (channel === null) return;
-    const target = window.prompt('Target', subscription.target);
-    if (target === null) return;
-    const timezone = window.prompt('Timezone', subscription.timezone);
-    if (timezone === null) return;
-
-    updateSubscription.mutate({
-      subscriptionId: subscription.id,
-      payload: {
-        schedule: schedule as SubscriptionSchedule,
-        channel: channel as NotificationChannel,
-        target,
-        timezone,
-      },
-    });
-  }
+  const [editingSub, setEditingSub] = useState<ReportSubscription | null>(null);
 
   return (
-    <div className="border border-line rounded-lg bg-surface-1 overflow-hidden">
-      <table className="w-full text-left">
-        <thead className="bg-surface-2">
-          <tr className="text-xs text-ink-3">
-            <th className="px-3 py-2 font-medium">Report</th>
-            <th className="px-3 py-2 font-medium">Schedule</th>
-            <th className="px-3 py-2 font-medium">Timezone</th>
-            <th className="px-3 py-2 font-medium">Delivery</th>
-            <th className="px-3 py-2 font-medium">Next run</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr>
-              <td colSpan={7} className="px-3 py-6 text-sm text-ink-3">Loading subscriptions…</td>
+    <>
+      <div className="border border-line rounded-lg bg-surface-1 overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-surface-2">
+            <tr className="text-xs text-ink-3">
+              <th className="px-3 py-2 font-medium">Report</th>
+              <th className="px-3 py-2 font-medium">Schedule</th>
+              <th className="px-3 py-2 font-medium">Timezone</th>
+              <th className="px-3 py-2 font-medium">Delivery</th>
+              <th className="px-3 py-2 font-medium">Next run</th>
+              <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Actions</th>
             </tr>
-          ) : subscriptions.length === 0 ? (
-            <tr>
-              <td colSpan={7} className="px-3 py-6 text-sm text-ink-3">No subscriptions configured.</td>
-            </tr>
-          ) : (
-            subscriptions.map((subscription) => (
-              <Row
-                key={subscription.id}
-                subscription={subscription}
-                onDelete={(id) => deleteSubscription.mutate(id)}
-                onTest={(id) => testSubscription.mutate(id)}
-                onToggle={(id, isActive) => updateSubscription.mutate({ subscriptionId: id, payload: { is_active: isActive } })}
-                onEdit={handleEdit}
-              />
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-sm text-ink-3">Loading subscriptions...</td>
+              </tr>
+            ) : subscriptions.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-sm text-ink-3">No subscriptions configured.</td>
+              </tr>
+            ) : (
+              subscriptions.map((subscription) => (
+                <Row
+                  key={subscription.id}
+                  subscription={subscription}
+                  onDelete={(id) => deleteSubscription.mutate(id)}
+                  onTest={(id) => testSubscription.mutate(id)}
+                  onToggle={(id, isActive) => updateSubscription.mutate({ subscriptionId: id, payload: { is_active: isActive } })}
+                  onEdit={setEditingSub}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <EditSubscriptionDialog
+        subscription={editingSub}
+        isPending={updateSubscription.isPending}
+        onSave={(subscriptionId, payload) => {
+          updateSubscription.mutate({ subscriptionId, payload }, { onSuccess: () => setEditingSub(null) });
+        }}
+        onClose={() => setEditingSub(null)}
+      />
+    </>
   );
 }

@@ -20,8 +20,8 @@ function GoalTypeBadge({ type }: { type: 'page_view' | 'event' }) {
       className={cn(
         'text-xs rounded-sm px-1.5 py-0.5 font-medium',
         type === 'page_view'
-          ? 'bg-blue-500/10 text-blue-400'
-          : 'bg-purple-500/10 text-purple-400'
+          ? 'bg-neutral/10 text-neutral'
+          : 'bg-spark/10 text-spark'
       )}
     >
       {type === 'page_view' ? 'Page View' : 'Event'}
@@ -75,7 +75,7 @@ function GoalRow({
           </button>
           <button
             onClick={() => onDelete(goal)}
-            className="p-1.5 text-ink-3 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
+            className="p-1.5 text-ink-3 hover:text-down hover:bg-down/10 rounded-md transition-colors"
             title="Delete goal"
           >
             <Trash2 className="w-3.5 h-3.5" />

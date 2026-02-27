@@ -65,7 +65,7 @@ export function EmptyState({ websiteId, domain }: EmptyStateProps) {
           </button>
           <button
             onClick={() => {
-              window.history.pushState({}, '', `/settings/${websiteId}`);
+              window.history.pushState({}, '', `/dashboard/${websiteId}/settings/snippet`);
               window.dispatchEvent(new PopStateEvent('popstate'));
             }}
             className="text-xs text-ink-3 hover:text-ink transition-colors"

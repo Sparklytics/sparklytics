@@ -48,7 +48,7 @@ export function WebsitePicker({ websites, currentId, onAddWebsite }: WebsitePick
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md hover:bg-white/[0.04] transition-colors duration-100"
+        className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md hover:bg-ink/[0.04] transition-colors duration-100"
       >
         <Globe className="w-3.5 h-3.5 text-ink-4 shrink-0" />
         <span className="flex-1 text-left text-[13px] text-ink-2 truncate">

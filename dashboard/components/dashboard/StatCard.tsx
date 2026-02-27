@@ -21,7 +21,7 @@ function TrendBadge({ delta }: { delta: number }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-[4px] font-medium tabular-nums',
+        'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-sm font-mono font-medium tabular-nums',
         isUp && 'text-up bg-up/10',
         isDown && 'text-down bg-down/10',
         !isUp && !isDown && 'text-ink-3 bg-surface-2'
@@ -53,7 +53,7 @@ export function StatCard({ label, value, delta, sparklineData, loading }: StatCa
         </span>
         {delta !== undefined && <TrendBadge delta={delta} />}
       </div>
-      <span className="text-[34px] font-semibold tracking-tight tabular-nums text-ink leading-none">
+      <span className="text-[34px] font-mono font-semibold tracking-tight tabular-nums text-ink leading-none">
         {value}
       </span>
       {sparklineData && sparklineData.length > 0 && (

@@ -91,7 +91,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-spark"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
             </label>
             <label className="block">
@@ -99,7 +99,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <input
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
-                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-spark"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
             </label>
             <label className="block">
@@ -107,7 +107,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <select
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
-                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:border-spark"
+                className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               >
                 {Object.entries(TIMEZONE_GROUPS).map(([group, zones]) => (
                   <optgroup key={group} label={group}>

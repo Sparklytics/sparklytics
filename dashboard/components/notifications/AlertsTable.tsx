@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { FlaskConical, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAlertRules, useDeleteAlertRule, useTestAlertRule, useUpdateAlertRule } from '@/hooks/useNotifications';
-import type { AlertConditionType, AlertMetric, AlertRule, NotificationChannel } from '@/lib/api';
+import { EditAlertDialog } from './EditAlertDialog';
+import type { AlertRule } from '@/lib/api';
 
 interface AlertsTableProps {
   websiteId: string;
@@ -32,7 +34,7 @@ function Row({
         {rule.channel}: {rule.target}
       </td>
       <td className="px-3 py-2 text-xs">
-        <span className={`px-1.5 py-0.5 rounded border ${rule.is_active ? 'border-spark text-spark' : 'border-line text-ink-3'}`}>
+        <span className={`px-1.5 py-0.5 rounded-sm border ${rule.is_active ? 'border-spark text-spark' : 'border-line text-ink-3'}`}>
           {rule.is_active ? 'Active' : 'Inactive'}
         </span>
       </td>
@@ -63,68 +65,56 @@ export function AlertsTable({ websiteId }: AlertsTableProps) {
   const deleteAlert = useDeleteAlertRule(websiteId);
   const testAlert = useTestAlertRule(websiteId);
   const alerts = data?.data ?? [];
-
-  function handleEdit(rule: AlertRule) {
-    const metric = window.prompt('Metric', rule.metric);
-    if (metric === null) return;
-    const conditionType = window.prompt('Condition type', rule.condition_type);
-    if (conditionType === null) return;
-    const thresholdValue = window.prompt('Threshold value', String(rule.threshold_value));
-    if (thresholdValue === null) return;
-    const channel = window.prompt('Channel', rule.channel);
-    if (channel === null) return;
-    const target = window.prompt('Target', rule.target);
-    if (target === null) return;
-
-    updateAlert.mutate({
-      alertId: rule.id,
-      payload: {
-        metric: metric as AlertMetric,
-        condition_type: conditionType as AlertConditionType,
-        threshold_value: Number(thresholdValue),
-        channel: channel as NotificationChannel,
-        target,
-      },
-    });
-  }
+  const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
 
   return (
-    <div className="border border-line rounded-lg bg-surface-1 overflow-hidden">
-      <table className="w-full text-left">
-        <thead className="bg-surface-2">
-          <tr className="text-xs text-ink-3">
-            <th className="px-3 py-2 font-medium">Rule</th>
-            <th className="px-3 py-2 font-medium">Metric</th>
-            <th className="px-3 py-2 font-medium">Condition</th>
-            <th className="px-3 py-2 font-medium">Threshold</th>
-            <th className="px-3 py-2 font-medium">Delivery</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr>
-              <td colSpan={7} className="px-3 py-6 text-sm text-ink-3">Loading alerts…</td>
+    <>
+      <div className="border border-line rounded-lg bg-surface-1 overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-surface-2">
+            <tr className="text-xs text-ink-3">
+              <th className="px-3 py-2 font-medium">Rule</th>
+              <th className="px-3 py-2 font-medium">Metric</th>
+              <th className="px-3 py-2 font-medium">Condition</th>
+              <th className="px-3 py-2 font-medium">Threshold</th>
+              <th className="px-3 py-2 font-medium">Delivery</th>
+              <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Actions</th>
             </tr>
-          ) : alerts.length === 0 ? (
-            <tr>
-              <td colSpan={7} className="px-3 py-6 text-sm text-ink-3">No alert rules configured.</td>
-            </tr>
-          ) : (
-            alerts.map((rule) => (
-              <Row
-                key={rule.id}
-                rule={rule}
-                onDelete={(id) => deleteAlert.mutate(id)}
-                onToggle={(id, isActive) => updateAlert.mutate({ alertId: id, payload: { is_active: isActive } })}
-                onTest={(id) => testAlert.mutate(id)}
-                onEdit={handleEdit}
-              />
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-sm text-ink-3">Loading alerts...</td>
+              </tr>
+            ) : alerts.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-sm text-ink-3">No alert rules configured.</td>
+              </tr>
+            ) : (
+              alerts.map((rule) => (
+                <Row
+                  key={rule.id}
+                  rule={rule}
+                  onDelete={(id) => deleteAlert.mutate(id)}
+                  onToggle={(id, isActive) => updateAlert.mutate({ alertId: id, payload: { is_active: isActive } })}
+                  onTest={(id) => testAlert.mutate(id)}
+                  onEdit={setEditingRule}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <EditAlertDialog
+        rule={editingRule}
+        isPending={updateAlert.isPending}
+        onSave={(alertId, payload) => {
+          updateAlert.mutate({ alertId, payload }, { onSuccess: () => setEditingRule(null) });
+        }}
+        onClose={() => setEditingRule(null)}
+      />
+    </>
   );
 }

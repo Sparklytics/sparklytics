@@ -7,20 +7,6 @@
       "runtimeArgs": ["run", "dev"],
       "port": 3001,
       "cwd": "dashboard"
-    },
-    {
-      "name": "dashboard-static",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["serve-spa.mjs"],
-      "port": 3002,
-      "cwd": "dashboard"
-    }
-  ,{
-      "name": "marketing",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3002,
-      "cwd": "marketing"
     }
   ]
 }

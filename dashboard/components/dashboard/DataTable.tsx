@@ -130,7 +130,7 @@ export function DataTable({ title, filterKey, data = [], loading, showPageviews 
             return (
               <div
                 key={row.value}
-                className="relative flex items-center justify-between py-2 border-b border-line last:border-0 hover:bg-white/[0.03] -mx-1.5 px-1.5 cursor-pointer transition-colors rounded-md"
+                className="relative flex items-center justify-between py-2 border-b border-line last:border-0 hover:bg-ink/[0.03] -mx-1.5 px-1.5 cursor-pointer transition-colors rounded-md"
                 onClick={() => setFilter(filterKey, row.value)}
               >
                 {/* Background bar */}
@@ -159,7 +159,7 @@ export function DataTable({ title, filterKey, data = [], loading, showPageviews 
                     <span className="text-[10px] text-ink-4 w-14 text-right">{formatNumber(previousNumeric)}</span>
                   )}
                   {showCompareColumns && (
-                    <span className={cn('text-[10px] w-12 text-right', deltaPct >= 0 ? 'text-spark' : 'text-red-400')}>
+                    <span className={cn('text-[10px] w-12 text-right', deltaPct >= 0 ? 'text-spark' : 'text-down')}>
                       {deltaPct >= 0 ? '+' : ''}
                       {deltaPct.toFixed(1)}%
                     </span>
