@@ -72,8 +72,8 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
     return 'rgba(0, 208, 132, 0.65)';
   };
 
-  // ── Tooltip via event delegation ─────────────────────────────────────────
-  const onMouseMoveContainer = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  // ── Tooltip via event delegation (pointer events support mouse + touch) ─
+  const onPointerTrackContainer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as SVGPathElement;
     const a2 = (target as unknown as HTMLElement).dataset?.a2;
     if (a2 && a2.length > 0) {
@@ -90,7 +90,7 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
     }
   }, []);
 
-  const onMouseLeaveContainer = useCallback(() => setTooltip(null), []);
+  const onPointerLeaveContainer = useCallback(() => setTooltip(null), []);
 
   // ── Tooltip render ────────────────────────────────────────────────────────
   const renderTooltip = () => {
@@ -130,8 +130,10 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
   return (
     <div
       className="relative"
-      onMouseMove={onMouseMoveContainer}
-      onMouseLeave={onMouseLeaveContainer}
+      onPointerMove={onPointerTrackContainer}
+      onPointerDown={onPointerTrackContainer}
+      onPointerLeave={onPointerLeaveContainer}
+      onPointerCancel={onPointerLeaveContainer}
     >
       <ComposableMap
         projectionConfig={{ scale: 130, center: [0, 10] }}
