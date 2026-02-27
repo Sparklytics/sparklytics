@@ -26,6 +26,8 @@ docker compose up -d
 
 Open `http://your-server-ip:3000` — you'll be guided through a one-time setup to create your admin account.
 
+If you use plain HTTP locally, set `SPARKLYTICS_HTTPS=false` in `docker-compose.yml` (or env). Keep `SPARKLYTICS_HTTPS=true` only behind HTTPS/TLS.
+
 ### 2. Add your first website
 
 In the dashboard: **New website** → enter name + domain → click **Create**.
@@ -206,7 +208,7 @@ SPARKLYTICS_DATA_DIR=./data ./sparklytics
 |-------|-----------|
 | Backend | Rust · Axum 0.8 · Tokio |
 | Storage | DuckDB (embedded, no separate DB process) |
-| Dashboard | Next.js 16 · TailwindCSS · shadcn/ui |
+| Dashboard | Next.js 15 · TailwindCSS · shadcn/ui |
 | SDK | `@sparklytics/next` (npm) |
 | Auth | Argon2id · JWT HttpOnly cookies |
 
@@ -223,7 +225,9 @@ cargo run
 # Dashboard (dev server at :3001, proxies /api → :3000)
 cd dashboard && npm run dev
 
-# SDK
+# SDK (separate nested repo checkout)
+# if sdk/next is not present locally:
+#   git clone git@github.com:Sparklytics/sparklytics-next.git sdk/next
 cd sdk/next && npm run dev
 ```
 

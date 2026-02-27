@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS experiment_exposures (
     variant         VARCHAR NOT NULL,
     url             VARCHAR,
     created_at      TIMESTAMP NOT NULL,
-    FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE
+    FOREIGN KEY (website_id) REFERENCES websites(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_exp_website_experiment
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS experiment_conversions (
     conversion_data VARCHAR,           -- JSON string
     revenue         DOUBLE,            -- optional revenue value
     created_at      TIMESTAMP NOT NULL,
-    FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE
+    FOREIGN KEY (website_id) REFERENCES websites(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_conv_website_experiment
@@ -86,9 +86,11 @@ CREATE TABLE IF NOT EXISTS experiments (
     started_at      TIMESTAMP,
     ended_at        TIMESTAMP,
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE
+    FOREIGN KEY (website_id) REFERENCES websites(id)
 );
 ```
+
+DuckDB delete behavior note: cascading cleanup is handled by application code (child-first deletes in one transaction), not `ON DELETE CASCADE`.
 
 ### ClickHouse (Cloud)
 
