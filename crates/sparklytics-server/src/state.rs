@@ -18,7 +18,8 @@ use sparklytics_core::{
     config::Config,
     event::Event,
 };
-use sparklytics_duckdb::{website::Website, DuckDbBackend};
+use sparklytics_duckdb::DuckDbBackend;
+use sparklytics_metadata::Website;
 
 use crate::bot_detection::{BotOverrideDecision, BotPolicyInput};
 use crate::error::AppError;

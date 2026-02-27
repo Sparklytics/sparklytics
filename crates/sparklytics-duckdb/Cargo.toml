@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 sparklytics-core = { path = "../sparklytics-core" }
+sparklytics-metadata = { path = "../sparklytics-metadata" }
 async-trait = { workspace = true }
 duckdb = { workspace = true }
 tokio = { workspace = true }

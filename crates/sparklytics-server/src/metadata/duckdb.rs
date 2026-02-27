@@ -2,13 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use sparklytics_duckdb::{
-    auth::ApiKeyRecord,
-    website::{CreateWebsiteParams, UpdateWebsiteParams, Website},
-    DuckDbBackend,
+use sparklytics_duckdb::DuckDbBackend;
+use sparklytics_metadata::{
+    ApiKeyRecord, CreateWebsiteParams, MetadataStore, UpdateWebsiteParams, Website,
 };
-
-use super::MetadataStore;
 
 pub struct DuckDbMetadataStore {
     db: Arc<DuckDbBackend>,

@@ -2,6 +2,7 @@
 members = [
     "crates/sparklytics-core",
     "crates/sparklytics-duckdb",
+    "crates/sparklytics-metadata",
     "crates/sparklytics-server",
 ]
 resolver = "2"

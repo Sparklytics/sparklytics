@@ -10,7 +10,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-use sparklytics_duckdb::website::{CreateWebsiteParams, UpdateWebsiteParams};
+use sparklytics_metadata::{CreateWebsiteParams, UpdateWebsiteParams};
 
 use crate::{error::AppError, state::AppState};
 

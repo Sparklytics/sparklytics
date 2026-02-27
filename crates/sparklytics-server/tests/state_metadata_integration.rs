@@ -3,8 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use sparklytics_core::billing::NullBillingGate;
 use sparklytics_core::config::{AppMode, AuthMode, Config};
-use sparklytics_duckdb::website::CreateWebsiteParams;
 use sparklytics_duckdb::DuckDbBackend;
+use sparklytics_metadata::CreateWebsiteParams;
 use sparklytics_server::metadata::duckdb::DuckDbMetadataStore;
 use sparklytics_server::state::AppState;
 
