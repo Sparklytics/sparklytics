@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use sparklytics_core::analytics::{BotPolicyMode, UpdateBotPolicyRequest};
 use sparklytics_core::billing::NullBillingGate;
 use sparklytics_core::config::{AppMode, AuthMode, Config};
 use sparklytics_duckdb::DuckDbBackend;
@@ -60,6 +61,27 @@ async fn new_with_backends_and_metadata_uses_injected_metadata_store() {
         "test site ids should differ"
     );
 
+    primary_db
+        .upsert_bot_policy(
+            &primary_site.id,
+            &UpdateBotPolicyRequest {
+                mode: BotPolicyMode::Off,
+                threshold_score: 45,
+            },
+        )
+        .await
+        .expect("set bot policy in primary db");
+    metadata_db
+        .upsert_bot_policy(
+            &metadata_site.id,
+            &UpdateBotPolicyRequest {
+                mode: BotPolicyMode::Strict,
+                threshold_score: 55,
+            },
+        )
+        .await
+        .expect("set bot policy in metadata db");
+
     let analytics = Arc::new(primary_db.clone());
     let metadata = Arc::new(DuckDbMetadataStore::new(Arc::new(metadata_db.clone())));
     let billing_gate = Arc::new(NullBillingGate);
@@ -79,4 +101,18 @@ async fn new_with_backends_and_metadata_uses_injected_metadata_store() {
         !state.is_valid_website(&primary_site.id).await,
         "website only in primary DB should not be valid when metadata backend is separate"
     );
+
+    let metadata_policy = state
+        .get_bot_policy_cached(&metadata_site.id)
+        .await
+        .expect("read metadata bot policy");
+    assert_eq!(metadata_policy.mode, BotPolicyMode::Strict);
+    assert_eq!(metadata_policy.threshold_score, 55);
+
+    let primary_policy = state
+        .get_bot_policy_cached(&primary_site.id)
+        .await
+        .expect("read primary-site bot policy from metadata backend");
+    assert_eq!(primary_policy.mode, BotPolicyMode::Balanced);
+    assert_eq!(primary_policy.threshold_score, 70);
 }

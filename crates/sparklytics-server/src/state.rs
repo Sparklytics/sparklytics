@@ -39,6 +39,8 @@ const DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES: usize = 10_000;
 const DEFAULT_ACQUISITION_CACHE_TTL_SECONDS: u64 = 60;
 const DEFAULT_COLLECT_CACHE_MAX_ENTRIES: usize = 100_000;
 const DEFAULT_COLLECT_CACHE_TTL_SECONDS: u64 = 120;
+const DEFAULT_BOT_THRESHOLD_STRICT: i32 = 60;
+const DEFAULT_BOT_THRESHOLD_BALANCED_OR_OFF: i32 = 70;
 const DEFAULT_EXPORT_CACHE_MAX_ENTRIES: usize = 2;
 const DEFAULT_EXPORT_CACHE_TTL_SECONDS: u64 = 2;
 const DEFAULT_EXPORT_CACHE_MAX_BYTES: usize = 32 * 1024 * 1024;
@@ -128,7 +130,7 @@ pub struct AppState {
     acquisition_cache_ttl: Duration,
     website_metadata_cache: Arc<Mutex<HashMap<String, CachedWebsiteMetadata>>>,
     bot_policy_cache: Arc<Mutex<HashMap<String, CachedBotPolicy>>>,
-    bot_override_cache: Arc<Mutex<HashMap<(String, String, String), CachedBotOverride>>>,
+    bot_override_cache: Arc<Mutex<HashMap<(String, String, u64), CachedBotOverride>>>,
     collect_cache_max_entries: usize,
     collect_cache_ttl: Duration,
     export_cache: Arc<Mutex<HashMap<String, CachedExportResponse>>>,
@@ -211,6 +213,16 @@ impl AppState {
                     || trimmed.eq_ignore_ascii_case("yes")
             })
             .unwrap_or(default)
+    }
+
+    fn hash_user_agent(user_agent: &str) -> u64 {
+        // FNV-1a keeps the cache key compact while remaining deterministic and cheap.
+        let mut hash = 14695981039346656037_u64;
+        for byte in user_agent.as_bytes() {
+            hash ^= *byte as u64;
+            hash = hash.wrapping_mul(1099511628211_u64);
+        }
+        hash
     }
 
     fn evict_cache_entries<K, V, F>(
@@ -967,12 +979,14 @@ impl AppState {
         let policy = self.metadata.get_bot_policy(website_id).await?;
         let mode = policy.mode;
         let threshold_score = match mode {
-            sparklytics_core::analytics::BotPolicyMode::Strict if policy.threshold_score <= 0 => 60,
+            sparklytics_core::analytics::BotPolicyMode::Strict if policy.threshold_score <= 0 => {
+                DEFAULT_BOT_THRESHOLD_STRICT
+            }
             sparklytics_core::analytics::BotPolicyMode::Balanced
             | sparklytics_core::analytics::BotPolicyMode::Off
                 if policy.threshold_score <= 0 =>
             {
-                70
+                DEFAULT_BOT_THRESHOLD_BALANCED_OR_OFF
             }
             _ => policy.threshold_score,
         };
@@ -1006,7 +1020,7 @@ impl AppState {
         let key = (
             website_id.to_string(),
             client_ip.to_string(),
-            user_agent.to_string(),
+            Self::hash_user_agent(user_agent),
         );
         {
             let mut cache = self.bot_override_cache.lock().await;

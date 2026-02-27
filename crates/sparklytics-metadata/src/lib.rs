@@ -82,6 +82,11 @@ pub trait MetadataStore: Send + Sync + 'static {
     ) -> anyhow::Result<Option<Website>>;
     async fn delete_website(&self, id: &str) -> anyhow::Result<bool>;
 
+    /// Resolve a share id to `(website_id, tenant_id_opt)`.
+    ///
+    /// Returns:
+    /// - `Ok(None)` when no matching shared website exists.
+    /// - `Ok(Some((website_id, tenant_id_opt)))` when found.
     async fn get_website_by_share_id(
         &self,
         share_id: &str,
@@ -91,6 +96,12 @@ pub trait MetadataStore: Send + Sync + 'static {
     async fn get_share_id(&self, website_id: &str) -> anyhow::Result<Option<String>>;
     async fn get_bot_policy(&self, website_id: &str) -> anyhow::Result<BotPolicy>;
 
+    /// Classify request overrides from allow/block lists.
+    ///
+    /// Returns:
+    /// - `Ok(Some(true))` to force bot classification.
+    /// - `Ok(Some(false))` to force human classification.
+    /// - `Ok(None)` when no override rule matches.
     async fn classify_override_for_request(
         &self,
         website_id: &str,
