@@ -937,7 +937,15 @@ impl AppState {
     pub async fn invalidate_website_metadata_cache(&self, website_id: &str) {
         self.website_cache.write().await.remove(website_id);
         self.website_metadata_cache.lock().await.remove(website_id);
+        self.invalidate_bot_policy_cache(website_id).await;
+        self.invalidate_bot_override_cache(website_id).await;
+    }
+
+    pub async fn invalidate_bot_policy_cache(&self, website_id: &str) {
         self.bot_policy_cache.lock().await.remove(website_id);
+    }
+
+    pub async fn invalidate_bot_override_cache(&self, website_id: &str) {
         self.bot_override_cache
             .lock()
             .await
