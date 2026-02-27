@@ -22,11 +22,11 @@ interface TooltipState {
 }
 
 // Intl country name formatter (created once, memoized outside component)
-let _cnf: Intl.DisplayNames | null = null;
+let countryNameFormatter: Intl.DisplayNames | null = null;
 function getCountryName(a2: string): string {
   try {
-    _cnf ??= new Intl.DisplayNames(['en'], { type: 'region' });
-    return _cnf.of(a2) ?? a2;
+    countryNameFormatter ??= new Intl.DisplayNames(['en'], { type: 'region' });
+    return countryNameFormatter.of(a2) ?? a2;
   } catch {
     return a2;
   }
