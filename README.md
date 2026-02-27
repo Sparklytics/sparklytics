@@ -134,15 +134,19 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 
 ## Benchmarks
 
+Measured on Apple Silicon macOS, release builds, 100k–1M realistic events.
+Full methodology and raw data: [`docs/perf-baseline.md`](docs/perf-baseline.md).
+
 ### Self-Hosted (DuckDB)
 
 | Metric | Value |
 |--------|-------|
 | Peak ingest throughput | ~26,000 req/s (single event) |
-| Ingestion p99 latency (800 req/s) | 1.1 ms |
-| Memory (idle) | ~29 MB |
+| Batch ingestion | ~74,800 events/s (batch of 10) |
+| Ingestion p99 latency (800 req/s) | 1.14 ms |
+| Memory (idle) | **~29 MB** |
 | Memory (under load) | ~64 MB |
-| Storage per million events | ~278 MB (DuckDB) |
+| Storage per 1M events | ~278 MB |
 | Binary size (linux-amd64 musl) | ~15 MB |
 | Dashboard bundle (gzipped) | ~632 KB |
 | `@sparklytics/next` SDK (gzipped) | < 5 KB |
@@ -151,11 +155,20 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 
 | Metric | Value |
 |--------|-------|
-| Peak ingest throughput | ~18,000 req/s (single event) |
-| Query throughput (stats) | ~3,190 req/s |
-| Query throughput (sessions) | ~2,920 req/s |
-| Storage per million events | ~48 MB (ClickHouse) |
+| Peak ingest throughput | ~24,000 req/s (single event) |
+| Batch ingestion | ~86,660 events/s (batch of 10) |
+| Query throughput (analytics) | 1,600–4,300 req/s (all endpoints) |
+| Storage per 1M events | ~48 MB (5.8x more efficient) |
 | ClickHouse vs DuckDB speedup | **10–68x** at 100k, **47–239x** at 1M |
+
+### Scaling: 100k → 1M Events
+
+| Dimension | DuckDB | ClickHouse |
+|-----------|--------|-----------|
+| Query degradation | 3.5–5x slower per 10x data | Near-constant (< 1.2x) |
+| Ingest degradation | Drops 59% (26k→11k) | Unchanged |
+| Memory (query peak) | 407 MB → 3.5 GB | 200 MB → 325 MB |
+| Storage efficiency | 278 MB/1M | 48 MB/1M |
 
 ---
 
