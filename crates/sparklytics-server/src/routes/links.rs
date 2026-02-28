@@ -12,6 +12,7 @@ use url::Url;
 
 use sparklytics_core::{
     analytics::{CreateCampaignLinkRequest, UpdateCampaignLinkRequest},
+    config::AppMode,
     event::Event,
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
@@ -323,6 +324,17 @@ pub async fn track_link_redirect(
     }
 
     let link_id = link.id.clone();
+    let tenant_id = match state.get_website_metadata_cached(&link.website_id).await {
+        Ok(website) => website.and_then(|w| w.tenant_id),
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                website_id = %link.website_id,
+                "Failed to load website metadata for tracking redirect"
+            );
+            None
+        }
+    };
     let event_data = json!({
         "link_id": link_id,
         "slug": link.slug,
@@ -333,46 +345,54 @@ pub async fn track_link_redirect(
     if serialized_event_data.len() > MAX_PUBLIC_EVENT_DATA_BYTES {
         return Err(AppError::PayloadTooLarge);
     }
-    let event = Event {
-        id: uuid::Uuid::new_v4().to_string(),
-        website_id: link.website_id,
-        tenant_id: None,
-        session_id: AppState::pending_session_marker().to_string(),
-        visitor_id,
-        event_type: "event".to_string(),
-        url: destination_url.clone(),
-        referrer_url: referrer_url.clone(),
-        referrer_domain: referrer_url.as_deref().and_then(extract_referrer_domain),
-        event_name: Some("link_click".to_string()),
-        event_data: Some(serialized_event_data),
-        country: geo.as_ref().and_then(|g| g.country.clone()),
-        region: geo.as_ref().and_then(|g| g.region.clone()),
-        city: geo.as_ref().and_then(|g| g.city.clone()),
-        browser: ua.as_ref().map(|u| u.browser.clone()),
-        browser_version: ua.as_ref().and_then(|u| u.browser_version.clone()),
-        os: ua.as_ref().map(|u| u.os.clone()),
-        os_version: ua.as_ref().and_then(|u| u.os_version.clone()),
-        device_type: ua.as_ref().map(|u| u.device_type.clone()),
-        screen: None,
-        language: headers
-            .get(axum::http::header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string),
-        utm_source: link.utm_source,
-        utm_medium: link.utm_medium,
-        utm_campaign: link.utm_campaign,
-        utm_term: link.utm_term,
-        utm_content: link.utm_content,
-        link_id: Some(link.id),
-        pixel_id: None,
-        source_ip: Some(client_ip),
-        user_agent: Some(user_agent),
-        is_bot: false,
-        bot_score: 0,
-        bot_reason: None,
-        created_at: Utc::now(),
-    };
-    state.enqueue_ingest_events(vec![event]).await?;
+    if state.config.mode == AppMode::Cloud && tenant_id.is_none() {
+        tracing::warn!(
+            website_id = %link.website_id,
+            link_id = %link_id,
+            "Skipping link_click event in cloud mode because tenant_id is missing"
+        );
+    } else {
+        let event = Event {
+            id: uuid::Uuid::new_v4().to_string(),
+            website_id: link.website_id,
+            tenant_id,
+            session_id: AppState::pending_session_marker().to_string(),
+            visitor_id,
+            event_type: "event".to_string(),
+            url: destination_url.clone(),
+            referrer_url: referrer_url.clone(),
+            referrer_domain: referrer_url.as_deref().and_then(extract_referrer_domain),
+            event_name: Some("link_click".to_string()),
+            event_data: Some(serialized_event_data),
+            country: geo.as_ref().and_then(|g| g.country.clone()),
+            region: geo.as_ref().and_then(|g| g.region.clone()),
+            city: geo.as_ref().and_then(|g| g.city.clone()),
+            browser: ua.as_ref().map(|u| u.browser.clone()),
+            browser_version: ua.as_ref().and_then(|u| u.browser_version.clone()),
+            os: ua.as_ref().map(|u| u.os.clone()),
+            os_version: ua.as_ref().and_then(|u| u.os_version.clone()),
+            device_type: ua.as_ref().map(|u| u.device_type.clone()),
+            screen: None,
+            language: headers
+                .get(axum::http::header::ACCEPT_LANGUAGE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string),
+            utm_source: link.utm_source,
+            utm_medium: link.utm_medium,
+            utm_campaign: link.utm_campaign,
+            utm_term: link.utm_term,
+            utm_content: link.utm_content,
+            link_id: Some(link.id),
+            pixel_id: None,
+            source_ip: Some(client_ip),
+            user_agent: Some(user_agent),
+            is_bot: false,
+            bot_score: 0,
+            bot_reason: None,
+            created_at: Utc::now(),
+        };
+        state.enqueue_ingest_events(vec![event]).await?;
+    }
 
     let mut response = StatusCode::FOUND.into_response();
     let location = HeaderValue::from_str(&destination_url)

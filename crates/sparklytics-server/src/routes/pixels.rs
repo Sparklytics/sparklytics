@@ -12,6 +12,7 @@ use url::Url;
 
 use sparklytics_core::{
     analytics::{CreateTrackingPixelRequest, UpdateTrackingPixelRequest},
+    config::AppMode,
     event::Event,
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
@@ -305,6 +306,17 @@ pub async fn track_pixel(
     }
 
     let pixel_id = pixel.id.clone();
+    let tenant_id = match state.get_website_metadata_cached(&pixel.website_id).await {
+        Ok(website) => website.and_then(|w| w.tenant_id),
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                website_id = %pixel.website_id,
+                "Failed to load website metadata for tracking pixel"
+            );
+            None
+        }
+    };
     let event_data = json!({
         "pixel_id": pixel_id,
         "pixel_key": pixel.pixel_key,
@@ -316,46 +328,54 @@ pub async fn track_pixel(
         return Err(AppError::PayloadTooLarge);
     }
 
-    let event = Event {
-        id: uuid::Uuid::new_v4().to_string(),
-        website_id: pixel.website_id,
-        tenant_id: None,
-        session_id: AppState::pending_session_marker().to_string(),
-        visitor_id,
-        event_type: "event".to_string(),
-        url: event_url,
-        referrer_url: referrer_url.clone(),
-        referrer_domain: referrer_url.as_deref().and_then(extract_referrer_domain),
-        event_name: Some("pixel_view".to_string()),
-        event_data: Some(serialized_event_data),
-        country: geo.as_ref().and_then(|g| g.country.clone()),
-        region: geo.as_ref().and_then(|g| g.region.clone()),
-        city: geo.as_ref().and_then(|g| g.city.clone()),
-        browser: ua.as_ref().map(|u| u.browser.clone()),
-        browser_version: ua.as_ref().and_then(|u| u.browser_version.clone()),
-        os: ua.as_ref().map(|u| u.os.clone()),
-        os_version: ua.as_ref().and_then(|u| u.os_version.clone()),
-        device_type: ua.as_ref().map(|u| u.device_type.clone()),
-        screen: None,
-        language: headers
-            .get(axum::http::header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string),
-        utm_source: url_utm.get("utm_source").cloned(),
-        utm_medium: url_utm.get("utm_medium").cloned(),
-        utm_campaign: url_utm.get("utm_campaign").cloned(),
-        utm_term: url_utm.get("utm_term").cloned(),
-        utm_content: url_utm.get("utm_content").cloned(),
-        link_id: None,
-        pixel_id: Some(pixel.id),
-        source_ip: Some(client_ip),
-        user_agent: Some(user_agent),
-        is_bot: bot_classification.is_bot,
-        bot_score: bot_classification.bot_score,
-        bot_reason: bot_classification.bot_reason,
-        created_at: Utc::now(),
-    };
-    state.enqueue_ingest_events(vec![event]).await?;
+    if state.config.mode == AppMode::Cloud && tenant_id.is_none() {
+        tracing::warn!(
+            website_id = %pixel.website_id,
+            pixel_id = %pixel_id,
+            "Skipping pixel_view event in cloud mode because tenant_id is missing"
+        );
+    } else {
+        let event = Event {
+            id: uuid::Uuid::new_v4().to_string(),
+            website_id: pixel.website_id,
+            tenant_id,
+            session_id: AppState::pending_session_marker().to_string(),
+            visitor_id,
+            event_type: "event".to_string(),
+            url: event_url,
+            referrer_url: referrer_url.clone(),
+            referrer_domain: referrer_url.as_deref().and_then(extract_referrer_domain),
+            event_name: Some("pixel_view".to_string()),
+            event_data: Some(serialized_event_data),
+            country: geo.as_ref().and_then(|g| g.country.clone()),
+            region: geo.as_ref().and_then(|g| g.region.clone()),
+            city: geo.as_ref().and_then(|g| g.city.clone()),
+            browser: ua.as_ref().map(|u| u.browser.clone()),
+            browser_version: ua.as_ref().and_then(|u| u.browser_version.clone()),
+            os: ua.as_ref().map(|u| u.os.clone()),
+            os_version: ua.as_ref().and_then(|u| u.os_version.clone()),
+            device_type: ua.as_ref().map(|u| u.device_type.clone()),
+            screen: None,
+            language: headers
+                .get(axum::http::header::ACCEPT_LANGUAGE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string),
+            utm_source: url_utm.get("utm_source").cloned(),
+            utm_medium: url_utm.get("utm_medium").cloned(),
+            utm_campaign: url_utm.get("utm_campaign").cloned(),
+            utm_term: url_utm.get("utm_term").cloned(),
+            utm_content: url_utm.get("utm_content").cloned(),
+            link_id: None,
+            pixel_id: Some(pixel.id),
+            source_ip: Some(client_ip),
+            user_agent: Some(user_agent),
+            is_bot: bot_classification.is_bot,
+            bot_score: bot_classification.bot_score,
+            bot_reason: bot_classification.bot_reason,
+            created_at: Utc::now(),
+        };
+        state.enqueue_ingest_events(vec![event]).await?;
+    }
 
     let mut response = Response::new(axum::body::Body::from(TRANSPARENT_GIF.to_vec()));
     *response.status_mut() = StatusCode::OK;
