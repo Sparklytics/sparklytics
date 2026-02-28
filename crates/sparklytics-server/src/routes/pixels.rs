@@ -306,16 +306,20 @@ pub async fn track_pixel(
     }
 
     let pixel_id = pixel.id.clone();
-    let tenant_id = match state.get_website_metadata_cached(&pixel.website_id).await {
-        Ok(website) => website.and_then(|w| w.tenant_id),
-        Err(error) => {
-            tracing::warn!(
-                error = %error,
-                website_id = %pixel.website_id,
-                "Failed to load website metadata for tracking pixel"
-            );
-            None
+    let tenant_id = if state.config.mode == AppMode::Cloud {
+        match state.get_website_metadata_cached(&pixel.website_id).await {
+            Ok(website) => website.and_then(|w| w.tenant_id),
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    website_id = %pixel.website_id,
+                    "Failed to load website metadata for tracking pixel"
+                );
+                None
+            }
         }
+    } else {
+        None
     };
     let event_data = json!({
         "pixel_id": pixel_id,

@@ -324,16 +324,20 @@ pub async fn track_link_redirect(
     }
 
     let link_id = link.id.clone();
-    let tenant_id = match state.get_website_metadata_cached(&link.website_id).await {
-        Ok(website) => website.and_then(|w| w.tenant_id),
-        Err(error) => {
-            tracing::warn!(
-                error = %error,
-                website_id = %link.website_id,
-                "Failed to load website metadata for tracking redirect"
-            );
-            None
+    let tenant_id = if state.config.mode == AppMode::Cloud {
+        match state.get_website_metadata_cached(&link.website_id).await {
+            Ok(website) => website.and_then(|w| w.tenant_id),
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    website_id = %link.website_id,
+                    "Failed to load website metadata for tracking redirect"
+                );
+                None
+            }
         }
+    } else {
+        None
     };
     let event_data = json!({
         "link_id": link_id,
