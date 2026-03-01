@@ -5,7 +5,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -14,6 +13,7 @@ use sparklytics_core::analytics::{AnalyticsFilter, VALID_METRIC_TYPES};
 use crate::{
     error::AppError,
     routes::compare::{metadata_json, resolve_compare_range},
+    routes::query::parse_defaulted_date_range_lenient,
     state::AppState,
 };
 
@@ -62,17 +62,11 @@ pub async fn get_metrics(
         )));
     }
 
-    let today = chrono::Utc::now().date_naive();
-    let start_date = query
-        .start_date
-        .as_deref()
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| today - chrono::Duration::days(6));
-    let end_date = query
-        .end_date
-        .as_deref()
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or(today);
+    let (start_date, end_date) = parse_defaulted_date_range_lenient(
+        query.start_date.as_deref(),
+        query.end_date.as_deref(),
+        6,
+    )?;
     let include_bots = query
         .include_bots
         .unwrap_or(state.default_include_bots(&website_id).await);

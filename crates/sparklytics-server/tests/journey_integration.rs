@@ -71,6 +71,7 @@ async fn create_website(app: &axum::Router) -> String {
     json["data"]["id"].as_str().expect("id").to_string()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_event_row(
     state: &AppState,
     website_id: &str,

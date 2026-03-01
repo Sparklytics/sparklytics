@@ -6,7 +6,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -14,7 +13,7 @@ use sparklytics_core::analytics::{
     AnalyticsFilter, CreateGoalRequest, GoalValueMode, UpdateGoalRequest,
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{error::AppError, routes::query::parse_defaulted_date_range_lenient, state::AppState};
 
 const MAX_GOALS_PER_WEBSITE: i64 = 50;
 
@@ -50,25 +49,6 @@ fn unprocessable(code: &str, message: &str, field: Option<&str>) -> (StatusCode,
             }
         })),
     )
-}
-
-fn parse_date_range(
-    start_date: Option<&str>,
-    end_date: Option<&str>,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let today = chrono::Utc::now().date_naive();
-    let start = start_date
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| today - chrono::Duration::days(6));
-    let end = end_date
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or(today);
-    if end < start {
-        return Err(AppError::BadRequest(
-            "end_date must be on or after start_date".to_string(),
-        ));
-    }
-    Ok((start, end))
 }
 
 fn validate_name(name: &str) -> Result<(), (StatusCode, Json<Value>)> {
@@ -346,8 +326,11 @@ pub async fn get_goal_stats(
         return Err(AppError::NotFound("Website not found".to_string()));
     }
 
-    let (start_date, end_date) =
-        parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let (start_date, end_date) = parse_defaulted_date_range_lenient(
+        query.start_date.as_deref(),
+        query.end_date.as_deref(),
+        6,
+    )?;
     let include_bots = query
         .include_bots
         .unwrap_or(state.default_include_bots(&website_id).await);

@@ -105,6 +105,7 @@ fn insert_session(
     .expect("insert session");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn insert_event(
     conn: &sparklytics_duckdb::duckdb::Connection,
     website_id: &str,

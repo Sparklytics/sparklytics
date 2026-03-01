@@ -5,13 +5,19 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 
 use sparklytics_core::analytics::AnalyticsFilter;
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::query::{
+        normalize_timezone_non_empty, parse_defaulted_date_range_lenient, parse_optional_bool,
+        validate_date_span,
+    },
+    state::AppState,
+};
 
 /// Maximum date range allowed for events analytics endpoints.
 const MAX_EVENTS_QUERY_DAYS: i64 = 90;
@@ -58,74 +64,22 @@ pub struct EventTimeseriesQuery {
     pub filter: EventFilterQuery,
 }
 
-fn parse_date_range(
-    start_date: Option<&str>,
-    end_date: Option<&str>,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let today = chrono::Utc::now().date_naive();
-    let start = start_date
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| today - chrono::Duration::days(6));
-    let end = end_date
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or(today);
-
-    if end < start {
-        return Err(AppError::BadRequest(
-            "end_date must be on or after start_date".to_string(),
-        ));
-    }
-
-    let range_days = (end - start).num_days() + 1;
-    if range_days > MAX_EVENTS_QUERY_DAYS {
-        return Err(AppError::BadRequest(format!(
-            "date range too large: {range_days} days (max {MAX_EVENTS_QUERY_DAYS})"
-        )));
-    }
-
-    Ok((start, end))
-}
-
-fn normalize_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError> {
-    match timezone {
-        Some(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Err(AppError::BadRequest(
-                    "timezone cannot be empty when provided".to_string(),
-                ));
-            }
-            Ok(Some(trimmed.to_string()))
-        }
-        None => Ok(None),
-    }
-}
-
-fn parse_optional_bool(value: Option<&str>, field: &str) -> Result<Option<bool>, AppError> {
-    let Some(raw) = value else {
-        return Ok(None);
-    };
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "true" | "1" => Ok(Some(true)),
-        "false" | "0" => Ok(Some(false)),
-        _ => Err(AppError::BadRequest(format!(
-            "{field} must be one of: true, false, 1, 0"
-        ))),
-    }
-}
-
 fn build_filter(
     query: &EventFilterQuery,
     default_include_bots: bool,
 ) -> Result<AnalyticsFilter, AppError> {
-    let (start_date, end_date) =
-        parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let (start_date, end_date) = parse_defaulted_date_range_lenient(
+        query.start_date.as_deref(),
+        query.end_date.as_deref(),
+        6,
+    )?;
+    validate_date_span(start_date, end_date, MAX_EVENTS_QUERY_DAYS, "date range")?;
     let include_bots = parse_optional_bool(query.include_bots.as_deref(), "include_bots")?
         .unwrap_or(default_include_bots);
     Ok(AnalyticsFilter {
         start_date,
         end_date,
-        timezone: normalize_timezone(query.timezone.as_deref())?,
+        timezone: normalize_timezone_non_empty(query.timezone.as_deref())?,
         filter_country: query.filter_country.clone(),
         filter_page: query.filter_page.clone(),
         filter_referrer: query.filter_referrer.clone(),
@@ -247,7 +201,7 @@ pub async fn get_event_timeseries(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_optional_bool;
+    use crate::routes::query::parse_optional_bool;
 
     #[test]
     fn parse_optional_bool_accepts_common_variants() {

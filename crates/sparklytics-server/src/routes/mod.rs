@@ -13,6 +13,7 @@ pub mod metrics;
 pub mod notifications;
 pub mod pageviews;
 pub mod pixels;
+pub mod query;
 pub mod realtime;
 pub mod reports;
 pub mod retention;

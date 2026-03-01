@@ -583,9 +583,9 @@ async fn allowlist_and_blocklist_override_classification() {
         .collect::<Result<Vec<_>, _>>()
         .expect("collect");
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].1, false);
+    assert!(!rows[0].1);
     assert_eq!(rows[0].2.as_deref(), Some("allowlist"));
-    assert_eq!(rows[1].1, true);
+    assert!(rows[1].1);
     assert_eq!(rows[1].2.as_deref(), Some("blocklist"));
     drop(stmt);
     drop(conn);

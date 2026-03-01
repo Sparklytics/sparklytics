@@ -5,7 +5,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -13,7 +12,7 @@ use sparklytics_core::analytics::{
     AnalyticsFilter, SessionSort, SessionsQuery as BackendSessionsQuery,
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{error::AppError, routes::query::parse_defaulted_date_range_lenient, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct SessionsQuery {
@@ -38,25 +37,6 @@ pub struct SessionsQuery {
     pub include_bots: Option<bool>,
 }
 
-fn parse_date_range(
-    start_date: Option<&str>,
-    end_date: Option<&str>,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let today = chrono::Utc::now().date_naive();
-    let start = start_date
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| today - chrono::Duration::days(6));
-    let end = end_date
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or(today);
-    if end < start {
-        return Err(AppError::BadRequest(
-            "end_date must be on or after start_date".to_string(),
-        ));
-    }
-    Ok((start, end))
-}
-
 pub async fn list_sessions(
     State(state): State<Arc<AppState>>,
     Path(website_id): Path<String>,
@@ -73,8 +53,11 @@ pub async fn list_sessions(
         ));
     }
 
-    let (start_date, end_date) =
-        parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let (start_date, end_date) = parse_defaulted_date_range_lenient(
+        query.start_date.as_deref(),
+        query.end_date.as_deref(),
+        6,
+    )?;
     let include_bots = query
         .include_bots
         .unwrap_or(state.default_include_bots(&website_id).await);
