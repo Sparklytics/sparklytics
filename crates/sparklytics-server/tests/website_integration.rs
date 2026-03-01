@@ -454,3 +454,32 @@ async fn test_stats_invalid_country_filter() {
     let json = json_body(response).await;
     assert_eq!(json["error"]["code"], "validation_error");
 }
+
+// ============================================================
+// BDD: Core analytics endpoints reject reversed date ranges
+// ============================================================
+#[tokio::test]
+async fn test_core_analytics_endpoints_reject_reversed_date_ranges() {
+    let (_state, app) = setup().await;
+    let website_id = create_test_website(&app).await;
+
+    let requests = [
+        format!("/api/websites/{website_id}/stats?start_date=2026-01-10&end_date=2026-01-01"),
+        format!("/api/websites/{website_id}/pageviews?start_date=2026-01-10&end_date=2026-01-01"),
+        format!(
+            "/api/websites/{website_id}/metrics?type=page&start_date=2026-01-10&end_date=2026-01-01"
+        ),
+    ];
+
+    for uri in requests {
+        let request = Request::builder()
+            .method("GET")
+            .uri(uri)
+            .body(Body::empty())
+            .expect("build request");
+        let response = app.clone().oneshot(request).await.expect("request");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let json = json_body(response).await;
+        assert_eq!(json["error"]["code"], "validation_error");
+    }
+}

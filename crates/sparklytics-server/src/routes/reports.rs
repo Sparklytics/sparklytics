@@ -17,6 +17,7 @@ use sparklytics_core::analytics::{
 use crate::{
     error::AppError,
     routes::compare::{compare_metadata, metadata_json, resolve_compare_range_for_mode},
+    routes::query::today_for_optional_timezone,
     state::AppState,
 };
 
@@ -64,20 +65,6 @@ fn normalize_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError
     }
 }
 
-fn today_for_timezone(timezone: Option<&str>) -> Result<NaiveDate, AppError> {
-    let now = chrono::Utc::now();
-    let today = match timezone {
-        None => now.date_naive(),
-        Some(raw) => {
-            let tz = raw
-                .parse::<chrono_tz::Tz>()
-                .map_err(|_| AppError::BadRequest("invalid timezone".to_string()))?;
-            now.with_timezone(&tz).date_naive()
-        }
-    };
-    Ok(today)
-}
-
 fn parse_relative_range(
     relative_days: Option<u32>,
     timezone: Option<&str>,
@@ -88,7 +75,7 @@ fn parse_relative_range(
             "relative_days must be between 1 and 365".to_string(),
         ));
     }
-    let today = today_for_timezone(timezone)?;
+    let today = today_for_optional_timezone(timezone)?;
     let start = today - chrono::Duration::days((days - 1) as i64);
     Ok((start, today))
 }

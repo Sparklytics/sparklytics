@@ -7,15 +7,19 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 use sparklytics_core::analytics::AnalyticsFilter;
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::query::{parse_defaulted_date_range_lenient, validate_date_span},
+    state::AppState,
+};
 
 /// Rate limit for public share endpoints: 30 req/min per IP.
 const SHARE_RATE_LIMIT: usize = 30;
+const MAX_SHARE_SPAN_DAYS: i64 = 90;
 
 // ---------------------------------------------------------------------------
 // Query param structs (date range only — no filter params on public share)
@@ -51,18 +55,25 @@ fn client_ip(headers: &HeaderMap) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn parse_dates(start: Option<&str>, end: Option<&str>) -> (NaiveDate, NaiveDate) {
-    let today = chrono::Utc::now().date_naive();
-    let s = start
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| today - chrono::Duration::days(6));
-    let e = end
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or(today);
-    (s, e)
+fn parse_dates(
+    start: Option<&str>,
+    end: Option<&str>,
+) -> Result<(chrono::NaiveDate, chrono::NaiveDate), AppError> {
+    let (start_date, end_date) = parse_defaulted_date_range_lenient(start, end, 6)?;
+    validate_date_span(
+        start_date,
+        end_date,
+        MAX_SHARE_SPAN_DAYS,
+        "share date range",
+    )?;
+    Ok((start_date, end_date))
 }
 
-fn share_filter(start_date: NaiveDate, end_date: NaiveDate, include_bots: bool) -> AnalyticsFilter {
+fn share_filter(
+    start_date: chrono::NaiveDate,
+    end_date: chrono::NaiveDate,
+    include_bots: bool,
+) -> AnalyticsFilter {
     AnalyticsFilter {
         start_date,
         end_date,
@@ -123,7 +134,7 @@ pub async fn share_stats(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let website_id = resolve_share(&state, &share_id, &headers).await?;
-    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
+    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref())?;
     let include_bots = state.default_include_bots(&website_id).await;
     let filter = share_filter(start_date, end_date, include_bots);
 
@@ -145,7 +156,7 @@ pub async fn share_pageviews(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let website_id = resolve_share(&state, &share_id, &headers).await?;
-    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
+    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref())?;
     let include_bots = state.default_include_bots(&website_id).await;
     let filter = share_filter(start_date, end_date, include_bots);
 
@@ -175,7 +186,7 @@ pub async fn share_overview(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let website_id = resolve_share(&state, &share_id, &headers).await?;
-    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
+    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref())?;
     let include_bots = state.default_include_bots(&website_id).await;
     let filter = share_filter(start_date, end_date, include_bots);
 
@@ -278,7 +289,7 @@ pub async fn share_metrics(
         )));
     }
 
-    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref());
+    let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref())?;
     let limit = q.limit.unwrap_or(10).clamp(1, 100);
     let offset = q.offset.unwrap_or(0).max(0);
     let include_bots = state.default_include_bots(&website_id).await;

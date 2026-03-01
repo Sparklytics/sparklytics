@@ -12,7 +12,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -20,7 +19,14 @@ use sparklytics_core::analytics::{
     AnalyticsFilter, CreateFunnelRequest, CreateFunnelStepRequest, UpdateFunnelRequest,
 };
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::query::{
+        normalize_optional_filter, normalize_timezone_non_empty, parse_defaulted_date_range_strict,
+        validate_date_span,
+    },
+    state::AppState,
+};
 
 const DEFAULT_RESULTS_RANGE_DAYS: i64 = 30;
 const MAX_RESULTS_RANGE_DAYS: i64 = 90;
@@ -42,74 +48,6 @@ fn unprocessable(code: &str, message: &str, field: Option<&str>) -> (StatusCode,
             }
         })),
     )
-}
-
-fn parse_date_range(
-    start_date: Option<&str>,
-    end_date: Option<&str>,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let today = chrono::Utc::now().date_naive();
-    let start = match start_date {
-        Some(raw) => NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d").map_err(|_| {
-            AppError::BadRequest("invalid start_date (expected YYYY-MM-DD)".to_string())
-        })?,
-        None => today - chrono::Duration::days(DEFAULT_RESULTS_RANGE_DAYS - 1),
-    };
-    let end = match end_date {
-        Some(raw) => NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d").map_err(|_| {
-            AppError::BadRequest("invalid end_date (expected YYYY-MM-DD)".to_string())
-        })?,
-        None => today,
-    };
-    if end < start {
-        return Err(AppError::BadRequest(
-            "end_date must be on or after start_date".to_string(),
-        ));
-    }
-    let range_days = (end - start).num_days() + 1;
-    if range_days > MAX_RESULTS_RANGE_DAYS {
-        return Err(AppError::BadRequest(format!(
-            "date range too large: {range_days} days (max {MAX_RESULTS_RANGE_DAYS})"
-        )));
-    }
-    Ok((start, end))
-}
-
-fn normalize_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError> {
-    match timezone {
-        Some(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Err(AppError::BadRequest(
-                    "timezone cannot be empty when provided".to_string(),
-                ));
-            }
-            Ok(Some(trimmed.to_string()))
-        }
-        None => Ok(None),
-    }
-}
-
-fn normalize_optional_filter(
-    field: &str,
-    value: Option<String>,
-    max_len: usize,
-) -> Result<Option<String>, AppError> {
-    if let Some(raw) = value {
-        let trimmed = raw.trim().to_string();
-        if trimmed.is_empty() {
-            return Err(AppError::BadRequest(format!(
-                "{field} cannot be empty when provided"
-            )));
-        }
-        if trimmed.len() > max_len {
-            return Err(AppError::BadRequest(format!(
-                "{field} is too long (max {max_len} characters)"
-            )));
-        }
-        return Ok(Some(trimmed));
-    }
-    Ok(None)
 }
 
 fn forwarded_ip(headers: &HeaderMap) -> Option<String> {
@@ -487,8 +425,14 @@ pub async fn get_funnel_results(
     )
     .await?;
 
-    let (start_date, end_date) =
-        parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+    let today = chrono::Utc::now().date_naive();
+    let (start_date, end_date) = parse_defaulted_date_range_strict(
+        query.start_date.as_deref(),
+        query.end_date.as_deref(),
+        today,
+        DEFAULT_RESULTS_RANGE_DAYS - 1,
+    )?;
+    validate_date_span(start_date, end_date, MAX_RESULTS_RANGE_DAYS, "date range")?;
     let filter_country = normalize_optional_filter("filter_country", query.filter_country, 64)?;
     let filter_page = normalize_optional_filter("filter_page", query.filter_page, 512)?;
     let filter_referrer = normalize_optional_filter("filter_referrer", query.filter_referrer, 512)?;
@@ -512,7 +456,7 @@ pub async fn get_funnel_results(
     let filter = AnalyticsFilter {
         start_date,
         end_date,
-        timezone: normalize_timezone(query.timezone.as_deref())?,
+        timezone: normalize_timezone_non_empty(query.timezone.as_deref())?,
         filter_country,
         filter_page,
         filter_referrer,

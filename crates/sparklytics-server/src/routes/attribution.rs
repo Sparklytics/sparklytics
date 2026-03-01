@@ -5,13 +5,16 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 
 use sparklytics_core::analytics::{AnalyticsFilter, AttributionModel, AttributionQuery};
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::query::{parse_defaulted_date_range_strict, today_for_optional_timezone},
+    state::AppState,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct AttributionRequestQuery {
@@ -34,45 +37,6 @@ pub struct AttributionRequestQuery {
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
     pub include_bots: Option<bool>,
-}
-
-fn parse_date_range(
-    start_date: Option<&str>,
-    end_date: Option<&str>,
-    timezone: Option<&str>,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let today = match timezone {
-        None => chrono::Utc::now().date_naive(),
-        Some(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                chrono::Utc::now().date_naive()
-            } else {
-                let tz = trimmed
-                    .parse::<chrono_tz::Tz>()
-                    .map_err(|_| AppError::BadRequest("invalid timezone".to_string()))?;
-                chrono::Utc::now().with_timezone(&tz).date_naive()
-            }
-        }
-    };
-    let parse = |value: Option<&str>, field: &str| -> Result<Option<NaiveDate>, AppError> {
-        value
-            .map(|raw| {
-                NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d").map_err(|_| {
-                    AppError::BadRequest(format!("invalid {field} (expected YYYY-MM-DD)"))
-                })
-            })
-            .transpose()
-    };
-    let start =
-        parse(start_date, "start_date")?.unwrap_or_else(|| today - chrono::Duration::days(6));
-    let end = parse(end_date, "end_date")?.unwrap_or(today);
-    if end < start {
-        return Err(AppError::BadRequest(
-            "end_date must be on or after start_date".to_string(),
-        ));
-    }
-    Ok((start, end))
 }
 
 fn parse_model(raw: Option<&str>) -> Result<AttributionModel, AppError> {
@@ -100,10 +64,12 @@ fn build_filter(
                 .map_err(|_| AppError::BadRequest("invalid timezone".to_string()))
         })
         .transpose()?;
-    let (start_date, end_date) = parse_date_range(
+    let today = today_for_optional_timezone(normalized_timezone.as_deref())?;
+    let (start_date, end_date) = parse_defaulted_date_range_strict(
         query.start_date.as_deref(),
         query.end_date.as_deref(),
-        normalized_timezone.as_deref(),
+        today,
+        6,
     )?;
     let model = parse_model(query.model.as_deref())?;
 
@@ -205,7 +171,12 @@ mod tests {
 
     #[test]
     fn parse_date_range_rejects_invalid_start_date() {
-        let result = parse_date_range(Some("2026-13-01"), Some("2026-02-20"), None);
+        let result = parse_defaulted_date_range_strict(
+            Some("2026-13-01"),
+            Some("2026-02-20"),
+            chrono::Utc::now().date_naive(),
+            6,
+        );
         assert!(result.is_err());
     }
 }

@@ -27,6 +27,7 @@ fn base_filter(day: NaiveDate) -> AnalyticsFilter {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_event(
     db: &DuckDbBackend,
     website_id: &str,

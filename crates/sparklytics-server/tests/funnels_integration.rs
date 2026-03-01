@@ -165,6 +165,7 @@ async fn seed_funnel_events(state: &AppState, website_id: &str, day: chrono::Nai
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_event_row(
     state: &AppState,
     website_id: &str,

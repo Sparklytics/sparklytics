@@ -99,6 +99,33 @@ struct CachedExportResponse {
     expires_at: Instant,
 }
 
+#[derive(Debug, Clone)]
+struct RuntimeTuning {
+    ingest_queue_max_events: usize,
+    ingest_drain_max_events: usize,
+    ingest_drain_max_batches: usize,
+    ingest_retry_after_seconds: u64,
+    ingest_retry_base_ms: u64,
+    ingest_retry_max_ms: u64,
+    session_cache_max_entries: usize,
+    rate_limiter_max_entries: usize,
+    acquisition_cache_max_entries: usize,
+    acquisition_cache_ttl_seconds: u64,
+    collect_cache_max_entries: usize,
+    collect_cache_ttl_seconds: u64,
+    export_cache_max_entries: usize,
+    export_cache_ttl_seconds: u64,
+    export_cache_max_bytes: usize,
+}
+
+#[derive(Debug, Clone)]
+struct IngestWalInit {
+    log_path: PathBuf,
+    cursor_path: PathBuf,
+    next_offset: u64,
+    cursor_offset: u64,
+}
+
 /// Shared application state injected into every Axum handler via
 /// [`axum::extract::State`].
 pub struct AppState {
@@ -176,7 +203,6 @@ pub struct AppState {
     ingest_wal_cursor_offset: Arc<AtomicU64>,
     session_cache: Arc<Mutex<HashMap<(String, String), CachedSession>>>,
     session_cache_max_entries: usize,
-    session_cache_ttl: chrono::Duration,
     ingest_worker_running: Arc<AtomicBool>,
     ingest_drain_lock: Arc<Mutex<()>>,
 }
@@ -198,14 +224,6 @@ impl AppState {
             .unwrap_or(default)
     }
 
-    fn env_i64(name: &str, default: i64) -> i64 {
-        std::env::var(name)
-            .ok()
-            .and_then(|v| v.parse::<i64>().ok())
-            .filter(|v| *v > 0)
-            .unwrap_or(default)
-    }
-
     fn env_bool(name: &str, default: bool) -> bool {
         std::env::var(name)
             .ok()
@@ -216,6 +234,117 @@ impl AppState {
                     || trimmed.eq_ignore_ascii_case("yes")
             })
             .unwrap_or(default)
+    }
+
+    fn runtime_tuning() -> RuntimeTuning {
+        RuntimeTuning {
+            ingest_queue_max_events: Self::env_usize(
+                "SPARKLYTICS_INGEST_QUEUE_MAX_EVENTS",
+                DEFAULT_INGEST_QUEUE_MAX_EVENTS,
+            ),
+            ingest_drain_max_events: Self::env_usize(
+                "SPARKLYTICS_INGEST_DRAIN_MAX_EVENTS",
+                DEFAULT_INGEST_DRAIN_MAX_EVENTS,
+            ),
+            ingest_drain_max_batches: Self::env_usize(
+                "SPARKLYTICS_INGEST_DRAIN_MAX_BATCHES",
+                DEFAULT_INGEST_DRAIN_MAX_BATCHES,
+            ),
+            ingest_retry_after_seconds: Self::env_u64(
+                "SPARKLYTICS_INGEST_RETRY_AFTER_SECONDS",
+                DEFAULT_INGEST_RETRY_AFTER_SECONDS,
+            ),
+            ingest_retry_base_ms: Self::env_u64(
+                "SPARKLYTICS_INGEST_RETRY_BASE_MS",
+                DEFAULT_INGEST_RETRY_BASE_MS,
+            ),
+            ingest_retry_max_ms: Self::env_u64(
+                "SPARKLYTICS_INGEST_RETRY_MAX_MS",
+                DEFAULT_INGEST_RETRY_MAX_MS,
+            ),
+            session_cache_max_entries: Self::env_usize(
+                "SPARKLYTICS_SESSION_CACHE_MAX_ENTRIES",
+                DEFAULT_SESSION_CACHE_MAX_ENTRIES,
+            ),
+            rate_limiter_max_entries: Self::env_usize(
+                "SPARKLYTICS_RATE_LIMIT_MAX_KEYS",
+                DEFAULT_RATE_LIMIT_MAX_KEYS,
+            ),
+            acquisition_cache_max_entries: Self::env_usize(
+                "SPARKLYTICS_ACQUISITION_CACHE_MAX_ENTRIES",
+                DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES,
+            ),
+            acquisition_cache_ttl_seconds: Self::env_u64(
+                "SPARKLYTICS_ACQUISITION_CACHE_TTL_SECONDS",
+                DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
+            ),
+            collect_cache_max_entries: Self::env_usize(
+                "SPARKLYTICS_COLLECT_CACHE_MAX_ENTRIES",
+                DEFAULT_COLLECT_CACHE_MAX_ENTRIES,
+            ),
+            collect_cache_ttl_seconds: Self::env_u64(
+                "SPARKLYTICS_COLLECT_CACHE_TTL_SECONDS",
+                DEFAULT_COLLECT_CACHE_TTL_SECONDS,
+            ),
+            export_cache_max_entries: Self::env_usize(
+                "SPARKLYTICS_EXPORT_CACHE_MAX_ENTRIES",
+                DEFAULT_EXPORT_CACHE_MAX_ENTRIES,
+            ),
+            export_cache_ttl_seconds: Self::env_u64(
+                "SPARKLYTICS_EXPORT_CACHE_TTL_SECONDS",
+                DEFAULT_EXPORT_CACHE_TTL_SECONDS,
+            ),
+            export_cache_max_bytes: Self::env_usize(
+                "SPARKLYTICS_EXPORT_CACHE_MAX_BYTES",
+                DEFAULT_EXPORT_CACHE_MAX_BYTES,
+            ),
+        }
+    }
+
+    fn prepare_ingest_wal(data_dir: &str) -> IngestWalInit {
+        let ingest_wal_dir = PathBuf::from(data_dir).join("ingest-wal");
+        if let Err(e) = std::fs::create_dir_all(&ingest_wal_dir) {
+            warn!(error = %e, path = %ingest_wal_dir.display(), "Failed to create ingest WAL directory");
+        }
+
+        let log_path = ingest_wal_dir.join(INGEST_WAL_LOG_FILE);
+        let cursor_path = ingest_wal_dir.join(INGEST_WAL_CURSOR_FILE);
+
+        if let Err(e) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            warn!(
+                error = %e,
+                path = %log_path.display(),
+                "Failed to initialize ingest WAL log file"
+            );
+        }
+
+        if !cursor_path.exists() {
+            if let Err(e) = std::fs::write(&cursor_path, "0") {
+                warn!(
+                    error = %e,
+                    path = %cursor_path.display(),
+                    "Failed to initialize ingest WAL cursor file"
+                );
+            }
+        }
+
+        let next_offset = std::fs::metadata(&log_path).map(|m| m.len()).unwrap_or(0);
+        let cursor_offset = std::fs::read_to_string(&cursor_path)
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .unwrap_or(0)
+            .min(next_offset);
+
+        IngestWalInit {
+            log_path,
+            cursor_path,
+            next_offset,
+            cursor_offset,
+        }
     }
 
     fn hash_user_agent(user_agent: &str) -> u64 {
@@ -260,105 +389,8 @@ impl AppState {
 
     /// Constructor for self-hosted mode.
     pub fn new(db: DuckDbBackend, config: Config) -> Self {
-        let ingest_wal_dir = PathBuf::from(&config.data_dir).join("ingest-wal");
-        if let Err(e) = std::fs::create_dir_all(&ingest_wal_dir) {
-            warn!(error = %e, path = %ingest_wal_dir.display(), "Failed to create ingest WAL directory");
-        }
-        let ingest_queue_max_events = Self::env_usize(
-            "SPARKLYTICS_INGEST_QUEUE_MAX_EVENTS",
-            DEFAULT_INGEST_QUEUE_MAX_EVENTS,
-        );
-        let ingest_drain_max_events = Self::env_usize(
-            "SPARKLYTICS_INGEST_DRAIN_MAX_EVENTS",
-            DEFAULT_INGEST_DRAIN_MAX_EVENTS,
-        );
-        let ingest_drain_max_batches = Self::env_usize(
-            "SPARKLYTICS_INGEST_DRAIN_MAX_BATCHES",
-            DEFAULT_INGEST_DRAIN_MAX_BATCHES,
-        );
-        let ingest_retry_after_seconds = Self::env_u64(
-            "SPARKLYTICS_INGEST_RETRY_AFTER_SECONDS",
-            DEFAULT_INGEST_RETRY_AFTER_SECONDS,
-        );
-        let ingest_retry_base_ms = Self::env_u64(
-            "SPARKLYTICS_INGEST_RETRY_BASE_MS",
-            DEFAULT_INGEST_RETRY_BASE_MS,
-        );
-        let ingest_retry_max_ms = Self::env_u64(
-            "SPARKLYTICS_INGEST_RETRY_MAX_MS",
-            DEFAULT_INGEST_RETRY_MAX_MS,
-        );
-        let session_cache_max_entries = Self::env_usize(
-            "SPARKLYTICS_SESSION_CACHE_MAX_ENTRIES",
-            DEFAULT_SESSION_CACHE_MAX_ENTRIES,
-        );
-        let session_cache_ttl_seconds = Self::env_i64(
-            "SPARKLYTICS_SESSION_CACHE_TTL_SECONDS",
-            DEFAULT_SESSION_CACHE_TTL_SECONDS,
-        );
-        let rate_limiter_max_entries = Self::env_usize(
-            "SPARKLYTICS_RATE_LIMIT_MAX_KEYS",
-            DEFAULT_RATE_LIMIT_MAX_KEYS,
-        );
-        let acquisition_cache_max_entries = Self::env_usize(
-            "SPARKLYTICS_ACQUISITION_CACHE_MAX_ENTRIES",
-            DEFAULT_ACQUISITION_CACHE_MAX_ENTRIES,
-        );
-        let acquisition_cache_ttl_seconds = Self::env_u64(
-            "SPARKLYTICS_ACQUISITION_CACHE_TTL_SECONDS",
-            DEFAULT_ACQUISITION_CACHE_TTL_SECONDS,
-        );
-        let collect_cache_max_entries = Self::env_usize(
-            "SPARKLYTICS_COLLECT_CACHE_MAX_ENTRIES",
-            DEFAULT_COLLECT_CACHE_MAX_ENTRIES,
-        );
-        let collect_cache_ttl_seconds = Self::env_u64(
-            "SPARKLYTICS_COLLECT_CACHE_TTL_SECONDS",
-            DEFAULT_COLLECT_CACHE_TTL_SECONDS,
-        );
-        let export_cache_max_entries = Self::env_usize(
-            "SPARKLYTICS_EXPORT_CACHE_MAX_ENTRIES",
-            DEFAULT_EXPORT_CACHE_MAX_ENTRIES,
-        );
-        let export_cache_ttl_seconds = Self::env_u64(
-            "SPARKLYTICS_EXPORT_CACHE_TTL_SECONDS",
-            DEFAULT_EXPORT_CACHE_TTL_SECONDS,
-        );
-        let export_cache_max_bytes = Self::env_usize(
-            "SPARKLYTICS_EXPORT_CACHE_MAX_BYTES",
-            DEFAULT_EXPORT_CACHE_MAX_BYTES,
-        );
-        let ingest_wal_log_path = ingest_wal_dir.join(INGEST_WAL_LOG_FILE);
-        let ingest_wal_cursor_path = ingest_wal_dir.join(INGEST_WAL_CURSOR_FILE);
-
-        if let Err(e) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&ingest_wal_log_path)
-        {
-            warn!(
-                error = %e,
-                path = %ingest_wal_log_path.display(),
-                "Failed to initialize ingest WAL log file"
-            );
-        }
-        if !ingest_wal_cursor_path.exists() {
-            if let Err(e) = std::fs::write(&ingest_wal_cursor_path, "0") {
-                warn!(
-                    error = %e,
-                    path = %ingest_wal_cursor_path.display(),
-                    "Failed to initialize ingest WAL cursor file"
-                );
-            }
-        }
-        let ingest_wal_next_offset = std::fs::metadata(&ingest_wal_log_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
-        let ingest_wal_cursor_offset = std::fs::read_to_string(&ingest_wal_cursor_path)
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .unwrap_or(0)
-            .min(ingest_wal_next_offset);
+        let tuning = Self::runtime_tuning();
+        let ingest_wal = Self::prepare_ingest_wal(&config.data_dir);
 
         let db_path = format!("{}/sparklytics.db", config.data_dir);
         let db = Arc::new(db);
@@ -392,21 +424,21 @@ impl AppState {
             buffer: Arc::new(Mutex::new(Vec::new())),
             website_cache: Arc::new(RwLock::new(HashSet::new())),
             rate_limiter: Arc::new(Mutex::new(HashMap::new())),
-            rate_limiter_max_entries,
+            rate_limiter_max_entries: tuning.rate_limiter_max_entries,
             campaign_link_cache: Arc::new(Mutex::new(HashMap::new())),
             tracking_pixel_cache: Arc::new(Mutex::new(HashMap::new())),
-            acquisition_cache_max_entries,
-            acquisition_cache_ttl: Duration::from_secs(acquisition_cache_ttl_seconds),
+            acquisition_cache_max_entries: tuning.acquisition_cache_max_entries,
+            acquisition_cache_ttl: Duration::from_secs(tuning.acquisition_cache_ttl_seconds),
             website_metadata_cache: Arc::new(Mutex::new(HashMap::new())),
             bot_policy_cache: Arc::new(Mutex::new(HashMap::new())),
             bot_override_cache: Arc::new(Mutex::new(HashMap::new())),
-            collect_cache_max_entries,
-            collect_cache_ttl: Duration::from_secs(collect_cache_ttl_seconds),
+            collect_cache_max_entries: tuning.collect_cache_max_entries,
+            collect_cache_ttl: Duration::from_secs(tuning.collect_cache_ttl_seconds),
             export_cache: Arc::new(Mutex::new(HashMap::new())),
             export_cache_compute_lock: Arc::new(Mutex::new(())),
-            export_cache_max_entries,
-            export_cache_ttl: Duration::from_secs(export_cache_ttl_seconds),
-            export_cache_max_bytes,
+            export_cache_max_entries: tuning.export_cache_max_entries,
+            export_cache_ttl: Duration::from_secs(tuning.export_cache_ttl_seconds),
+            export_cache_max_bytes: tuning.export_cache_max_bytes,
             billing_gate: Arc::new(NullBillingGate),
             export_semaphore: Arc::new(Semaphore::new(1)),
             funnel_results_semaphore: Arc::new(Semaphore::new(1)),
@@ -415,20 +447,19 @@ impl AppState {
             flush_in_progress: Arc::new(AtomicBool::new(false)),
             ingest_queue: Arc::new(Mutex::new(VecDeque::new())),
             ingest_queue_events: Arc::new(AtomicUsize::new(0)),
-            ingest_queue_max_events,
-            ingest_drain_max_events,
-            ingest_drain_max_batches,
-            ingest_retry_after_seconds,
-            ingest_retry_base_ms,
-            ingest_retry_max_ms,
-            ingest_wal_log_path,
-            ingest_wal_cursor_path,
+            ingest_queue_max_events: tuning.ingest_queue_max_events,
+            ingest_drain_max_events: tuning.ingest_drain_max_events,
+            ingest_drain_max_batches: tuning.ingest_drain_max_batches,
+            ingest_retry_after_seconds: tuning.ingest_retry_after_seconds,
+            ingest_retry_base_ms: tuning.ingest_retry_base_ms,
+            ingest_retry_max_ms: tuning.ingest_retry_max_ms,
+            ingest_wal_log_path: ingest_wal.log_path,
+            ingest_wal_cursor_path: ingest_wal.cursor_path,
             ingest_wal_append_lock: Arc::new(Mutex::new(())),
-            ingest_wal_next_offset: Arc::new(AtomicU64::new(ingest_wal_next_offset)),
-            ingest_wal_cursor_offset: Arc::new(AtomicU64::new(ingest_wal_cursor_offset)),
+            ingest_wal_next_offset: Arc::new(AtomicU64::new(ingest_wal.next_offset)),
+            ingest_wal_cursor_offset: Arc::new(AtomicU64::new(ingest_wal.cursor_offset)),
             session_cache: Arc::new(Mutex::new(HashMap::new())),
-            session_cache_max_entries,
-            session_cache_ttl: chrono::Duration::seconds(session_cache_ttl_seconds),
+            session_cache_max_entries: tuning.session_cache_max_entries,
             ingest_worker_running: Arc::new(AtomicBool::new(false)),
             ingest_drain_lock: Arc::new(Mutex::new(())),
         }
@@ -725,9 +756,8 @@ impl AppState {
         let mut cache = self.session_cache.lock().await;
         let entry = cache.get_mut(&key)?;
 
-        if at
-            .signed_duration_since(entry.last_seen_at)
-            .gt(&self.session_cache_ttl)
+        if at.signed_duration_since(entry.last_seen_at).num_seconds()
+            > DEFAULT_SESSION_CACHE_TTL_SECONDS
         {
             cache.remove(&key);
             return None;
@@ -753,7 +783,8 @@ impl AppState {
             cache.retain(|_, v| {
                 last_seen_at
                     .signed_duration_since(v.last_seen_at)
-                    .le(&self.session_cache_ttl)
+                    .num_seconds()
+                    <= DEFAULT_SESSION_CACHE_TTL_SECONDS
             });
             while cache.len() >= self.session_cache_max_entries {
                 let Some(evict_key) = cache.keys().next().cloned() else {

@@ -5,13 +5,18 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 
 use sparklytics_core::analytics::{AnalyticsFilter, RetentionGranularity, RetentionQuery};
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::query::{
+        normalize_optional_filter, normalize_timezone_non_empty, parse_required_date_range,
+    },
+    state::AppState,
+};
 
 const RETENTION_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 const RETENTION_QUERY_TIMEOUT_RETRY_AFTER_SECONDS: u64 = 2;
@@ -37,69 +42,6 @@ pub struct RetentionParams {
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
     pub include_bots: Option<bool>,
-}
-
-fn parse_date_range(
-    start_date: Option<&str>,
-    end_date: Option<&str>,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let Some(start_raw) = start_date else {
-        return Err(AppError::BadRequest("start_date is required".to_string()));
-    };
-    let Some(end_raw) = end_date else {
-        return Err(AppError::BadRequest("end_date is required".to_string()));
-    };
-
-    let start = NaiveDate::parse_from_str(start_raw.trim(), "%Y-%m-%d").map_err(|_| {
-        AppError::BadRequest("invalid start_date (expected YYYY-MM-DD)".to_string())
-    })?;
-    let end = NaiveDate::parse_from_str(end_raw.trim(), "%Y-%m-%d")
-        .map_err(|_| AppError::BadRequest("invalid end_date (expected YYYY-MM-DD)".to_string()))?;
-
-    if end < start {
-        return Err(AppError::BadRequest(
-            "end_date must be on or after start_date".to_string(),
-        ));
-    }
-
-    Ok((start, end))
-}
-
-fn normalize_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError> {
-    match timezone {
-        Some(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Err(AppError::BadRequest(
-                    "timezone cannot be empty when provided".to_string(),
-                ));
-            }
-            Ok(Some(trimmed.to_string()))
-        }
-        None => Ok(None),
-    }
-}
-
-fn normalize_optional_filter(
-    field: &str,
-    value: Option<String>,
-    max_len: usize,
-) -> Result<Option<String>, AppError> {
-    if let Some(raw) = value {
-        let trimmed = raw.trim().to_string();
-        if trimmed.is_empty() {
-            return Err(AppError::BadRequest(format!(
-                "{field} cannot be empty when provided"
-            )));
-        }
-        if trimmed.len() > max_len {
-            return Err(AppError::BadRequest(format!(
-                "{field} is too long (max {max_len} characters)"
-            )));
-        }
-        return Ok(Some(trimmed));
-    }
-    Ok(None)
 }
 
 fn parse_granularity(raw: Option<&str>) -> Result<RetentionGranularity, AppError> {
@@ -173,7 +115,7 @@ pub async fn get_retention(
     validate_max_periods(&granularity, max_periods)?;
 
     let (start_date, end_date) =
-        parse_date_range(params.start_date.as_deref(), params.end_date.as_deref())?;
+        parse_required_date_range(params.start_date.as_deref(), params.end_date.as_deref())?;
     let include_bots = params
         .include_bots
         .unwrap_or(state.default_include_bots(&website_id).await);
@@ -181,7 +123,7 @@ pub async fn get_retention(
     let filter = AnalyticsFilter {
         start_date,
         end_date,
-        timezone: normalize_timezone(params.timezone.as_deref())?,
+        timezone: normalize_timezone_non_empty(params.timezone.as_deref())?,
         filter_country: normalize_optional_filter("filter_country", params.filter_country, 64)?,
         filter_page: normalize_optional_filter("filter_page", params.filter_page, 512)?,
         filter_referrer: normalize_optional_filter("filter_referrer", params.filter_referrer, 512)?,

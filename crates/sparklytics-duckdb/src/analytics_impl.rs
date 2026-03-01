@@ -9,12 +9,12 @@ use sparklytics_core::analytics::{
     AttributionResponse, CampaignLink, ComparisonRange, CreateCampaignLinkRequest,
     CreateFunnelRequest, CreateGoalRequest, CreateReportRequest, CreateTrackingPixelRequest,
     EventNamesResult, EventPropertiesResult, ExportRow, Funnel, FunnelResults, FunnelSummary, Goal,
-    GoalStats, JourneyQuery, JourneyResponse, LinkStatsResponse, MetricRow, MetricsPage,
-    PixelStatsResponse, RealtimeEvent, RealtimePagination, RealtimeResult, ReportPayload,
-    ReportType, RetentionQuery, RetentionResponse, RevenueSummary, SavedReport, SavedReportSummary,
-    SessionDetailResponse, SessionsQuery, SessionsResponse, StatsResult, TimeseriesResult,
-    TrackingPixel, UpdateCampaignLinkRequest, UpdateFunnelRequest, UpdateGoalRequest,
-    UpdateReportRequest, UpdateTrackingPixelRequest,
+    GoalStats, JourneyQuery, JourneyResponse, LinkStatsResponse, MetricsPage, PixelStatsResponse,
+    RealtimeEvent, RealtimePagination, RealtimeResult, ReportPayload, ReportType, RetentionQuery,
+    RetentionResponse, RevenueSummary, SavedReport, SavedReportSummary, SessionDetailResponse,
+    SessionsQuery, SessionsResponse, StatsResult, TimeseriesResult, TrackingPixel,
+    UpdateCampaignLinkRequest, UpdateFunnelRequest, UpdateGoalRequest, UpdateReportRequest,
+    UpdateTrackingPixelRequest,
 };
 use sparklytics_core::event::Event;
 
@@ -40,6 +40,38 @@ fn stddev(values: &[f64], mean_value: f64) -> Option<f64> {
         .sum::<f64>()
         / values.len() as f64;
     Some(variance.sqrt())
+}
+
+fn map_realtime_event(event: crate::queries::realtime::RealtimeEvent) -> RealtimeEvent {
+    RealtimeEvent {
+        event_type: event.event_type,
+        url: event.url,
+        referrer_domain: event.referrer_domain,
+        country: event.country,
+        browser: event.browser,
+        device_type: event.device_type,
+        ts: event.ts,
+    }
+}
+
+fn map_export_row(row: crate::share::ExportRow) -> ExportRow {
+    ExportRow {
+        id: row.id,
+        website_id: row.website_id,
+        event_type: row.event_type,
+        url: row.url,
+        referrer_domain: row.referrer_domain,
+        event_name: row.event_name,
+        country: row.country,
+        browser: row.browser,
+        os: row.os,
+        device_type: row.device_type,
+        language: row.language,
+        utm_source: row.utm_source,
+        utm_medium: row.utm_medium,
+        utm_campaign: row.utm_campaign,
+        created_at: row.created_at,
+    }
 }
 
 #[async_trait]
@@ -144,21 +176,7 @@ impl AnalyticsBackend for DuckDbBackend {
         )
         .await?;
         Ok(MetricsPage {
-            rows: result
-                .rows
-                .into_iter()
-                .map(|r| MetricRow {
-                    value: r.value,
-                    visitors: r.visitors,
-                    pageviews: r.pageviews,
-                    prev_visitors: r.prev_visitors,
-                    prev_pageviews: r.prev_pageviews,
-                    delta_visitors_abs: r.delta_visitors_abs,
-                    delta_visitors_pct: r.delta_visitors_pct,
-                    bounce_rate: r.bounce_rate,
-                    avg_duration_seconds: r.avg_duration_seconds,
-                })
-                .collect(),
+            rows: result.rows,
             total: pagination.total,
             compare: result.compare,
         })
@@ -177,15 +195,7 @@ impl AnalyticsBackend for DuckDbBackend {
             recent_events: r
                 .recent_events
                 .into_iter()
-                .map(|e| RealtimeEvent {
-                    event_type: e.event_type,
-                    url: e.url,
-                    referrer_domain: e.referrer_domain,
-                    country: e.country,
-                    browser: e.browser,
-                    device_type: e.device_type,
-                    ts: e.ts,
-                })
+                .map(map_realtime_event)
                 .collect(),
             pagination: RealtimePagination {
                 limit: r.pagination.limit,
@@ -202,26 +212,7 @@ impl AnalyticsBackend for DuckDbBackend {
         end: NaiveDate,
     ) -> anyhow::Result<Vec<ExportRow>> {
         let rows = self.export_events_raw(website_id, start, end).await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| ExportRow {
-                id: r.id,
-                website_id: r.website_id,
-                event_type: r.event_type,
-                url: r.url,
-                referrer_domain: r.referrer_domain,
-                event_name: r.event_name,
-                country: r.country,
-                browser: r.browser,
-                os: r.os,
-                device_type: r.device_type,
-                language: r.language,
-                utm_source: r.utm_source,
-                utm_medium: r.utm_medium,
-                utm_campaign: r.utm_campaign,
-                created_at: r.created_at,
-            })
-            .collect())
+        Ok(rows.into_iter().map(map_export_row).collect())
     }
 
     async fn get_event_names(

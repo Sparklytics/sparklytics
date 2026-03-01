@@ -5,13 +5,18 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 
 use sparklytics_core::analytics::{AnalyticsFilter, AnchorType, JourneyDirection, JourneyQuery};
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    routes::query::{
+        normalize_optional_filter, normalize_timezone_non_empty, parse_required_date_range,
+    },
+    state::AppState,
+};
 
 const DEFAULT_DEPTH: u32 = 3;
 
@@ -39,69 +44,6 @@ pub struct JourneyQueryParams {
     pub filter_city: Option<String>,
     pub filter_hostname: Option<String>,
     pub include_bots: Option<bool>,
-}
-
-fn parse_date_range(
-    start_date: Option<&str>,
-    end_date: Option<&str>,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
-    let Some(start_raw) = start_date else {
-        return Err(AppError::BadRequest("start_date is required".to_string()));
-    };
-    let Some(end_raw) = end_date else {
-        return Err(AppError::BadRequest("end_date is required".to_string()));
-    };
-
-    let start = NaiveDate::parse_from_str(start_raw.trim(), "%Y-%m-%d").map_err(|_| {
-        AppError::BadRequest("invalid start_date (expected YYYY-MM-DD)".to_string())
-    })?;
-    let end = NaiveDate::parse_from_str(end_raw.trim(), "%Y-%m-%d")
-        .map_err(|_| AppError::BadRequest("invalid end_date (expected YYYY-MM-DD)".to_string()))?;
-
-    if end < start {
-        return Err(AppError::BadRequest(
-            "end_date must be on or after start_date".to_string(),
-        ));
-    }
-
-    Ok((start, end))
-}
-
-fn normalize_timezone(timezone: Option<&str>) -> Result<Option<String>, AppError> {
-    match timezone {
-        Some(raw) => {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                return Err(AppError::BadRequest(
-                    "timezone cannot be empty when provided".to_string(),
-                ));
-            }
-            Ok(Some(trimmed.to_string()))
-        }
-        None => Ok(None),
-    }
-}
-
-fn normalize_optional_filter(
-    field: &str,
-    value: Option<String>,
-    max_len: usize,
-) -> Result<Option<String>, AppError> {
-    if let Some(raw) = value {
-        let trimmed = raw.trim().to_string();
-        if trimmed.is_empty() {
-            return Err(AppError::BadRequest(format!(
-                "{field} cannot be empty when provided"
-            )));
-        }
-        if trimmed.len() > max_len {
-            return Err(AppError::BadRequest(format!(
-                "{field} is too long (max {max_len} characters)"
-            )));
-        }
-        return Ok(Some(trimmed));
-    }
-    Ok(None)
 }
 
 fn parse_anchor_type(raw: Option<&str>) -> Result<AnchorType, AppError> {
@@ -159,7 +101,7 @@ pub async fn get_journey(
     }
 
     let (start_date, end_date) =
-        parse_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
+        parse_required_date_range(query.start_date.as_deref(), query.end_date.as_deref())?;
     let include_bots = query
         .include_bots
         .unwrap_or(state.default_include_bots(&website_id).await);
@@ -167,7 +109,7 @@ pub async fn get_journey(
     let filter = AnalyticsFilter {
         start_date,
         end_date,
-        timezone: normalize_timezone(query.timezone.as_deref())?,
+        timezone: normalize_timezone_non_empty(query.timezone.as_deref())?,
         filter_country: normalize_optional_filter("filter_country", query.filter_country, 64)?,
         filter_page: normalize_optional_filter("filter_page", query.filter_page, 512)?,
         filter_referrer: normalize_optional_filter("filter_referrer", query.filter_referrer, 512)?,
