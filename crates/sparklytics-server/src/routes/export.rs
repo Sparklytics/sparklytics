@@ -3,13 +3,16 @@ use std::sync::Arc;
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
+
+use sparklytics_core::config::AppMode;
 
 use crate::{error::AppError, state::AppState};
 
@@ -213,4 +216,72 @@ pub async fn usage_not_found() -> impl IntoResponse {
             }
         })),
     )
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageJwtOrgClaim {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageJwtPayload {
+    o: Option<UsageJwtOrgClaim>,
+}
+
+fn extract_tenant_id_from_bearer(headers: &HeaderMap) -> Result<String, AppError> {
+    let auth = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(AppError::Unauthorized)?;
+    if !auth.starts_with("Bearer ") {
+        return Err(AppError::Unauthorized);
+    }
+
+    let token = &auth[7..];
+    let segments: Vec<&str> = token.split('.').collect();
+    if segments.len() != 3 {
+        return Err(AppError::Unauthorized);
+    }
+    let payload = URL_SAFE_NO_PAD
+        .decode(segments[1])
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<UsageJwtPayload>(&bytes).ok())
+        .ok_or(AppError::Unauthorized)?;
+    payload
+        .o
+        .map(|org| org.id)
+        .ok_or(AppError::OrganizationContextRequired)
+}
+
+/// `GET /api/usage` — tenant usage summary (cloud mode only).
+pub async fn get_usage(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    if state.config.mode != AppMode::Cloud {
+        return Ok(usage_not_found().await.into_response());
+    }
+
+    let tenant_id = extract_tenant_id_from_bearer(&headers)?;
+    let usage = state
+        .billing_gate
+        .get_tenant_monthly_usage(&tenant_id, None)
+        .await
+        .map_err(AppError::Internal)?;
+    let effective = state
+        .billing_gate
+        .get_tenant_effective_limits(&tenant_id)
+        .await
+        .map_err(AppError::Internal)?;
+
+    Ok(Json(json!({
+        "data": {
+            "month": usage.month,
+            "event_count": usage.event_count,
+            "event_limit": usage.event_limit,
+            "percent_used": usage.percent_used,
+            "plan": effective.plan,
+        }
+    }))
+    .into_response())
 }

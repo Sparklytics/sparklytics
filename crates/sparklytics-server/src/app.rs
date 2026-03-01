@@ -412,6 +412,11 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::realtime::get_realtime),
                 )
                 .route(
+                    "/api/websites/{id}/ingest-limits",
+                    get(routes::ingest_limits::get_ingest_limits)
+                        .put(routes::ingest_limits::update_ingest_limits),
+                )
+                .route(
                     "/api/websites/{id}/share",
                     post(routes::share::enable_sharing).delete(routes::share::disable_sharing),
                 )
@@ -419,7 +424,24 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     "/api/websites/{id}/export",
                     get(routes::export::export_events),
                 )
-                .route("/api/usage", get(routes::export::usage_not_found))
+                .route(
+                    "/api/admin/limits/plans",
+                    get(routes::admin_limits::list_plan_limits),
+                )
+                .route(
+                    "/api/admin/limits/plans/{plan}",
+                    put(routes::admin_limits::update_plan_limit),
+                )
+                .route(
+                    "/api/admin/limits/tenants/{tenant_id}",
+                    get(routes::admin_limits::get_tenant_limits)
+                        .put(routes::admin_limits::update_tenant_limits),
+                )
+                .route(
+                    "/api/admin/usage/tenants/{tenant_id}",
+                    get(routes::admin_limits::get_tenant_usage),
+                )
+                .route("/api/usage", get(routes::export::get_usage))
                 .layer(query_cors);
             app = app.merge(analytics);
         }
@@ -429,6 +451,31 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route("/api/auth/status", get(auth::handlers::auth_status))
                 .route("/api/auth/setup", post(auth::handlers::auth_setup))
                 .route("/api/auth/login", post(auth::handlers::auth_login));
+
+            // Cloud bearer-token routes use their own internal authz checks.
+            // Keep these outside cookie/API-key middleware so Clerk Bearer tokens
+            // can reach the handlers.
+            let cloud_token_routes = Router::new()
+                .route(
+                    "/api/admin/limits/plans",
+                    get(routes::admin_limits::list_plan_limits),
+                )
+                .route(
+                    "/api/admin/limits/plans/{plan}",
+                    put(routes::admin_limits::update_plan_limit),
+                )
+                .route(
+                    "/api/admin/limits/tenants/{tenant_id}",
+                    get(routes::admin_limits::get_tenant_limits)
+                        .put(routes::admin_limits::update_tenant_limits),
+                )
+                .route(
+                    "/api/admin/usage/tenants/{tenant_id}",
+                    get(routes::admin_limits::get_tenant_usage),
+                )
+                .route("/api/usage", get(routes::export::get_usage))
+                .layer(restricted_cors(&state.config.cors_origins));
+            app = app.merge(cloud_token_routes);
 
             // Protected routes (cookie or API key) — enforce CORS origins.
             let auth_state = Arc::clone(&state);
@@ -633,6 +680,11 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     get(routes::realtime::get_realtime),
                 )
                 .route(
+                    "/api/websites/{id}/ingest-limits",
+                    get(routes::ingest_limits::get_ingest_limits)
+                        .put(routes::ingest_limits::update_ingest_limits),
+                )
+                .route(
                     "/api/websites/{id}/share",
                     post(routes::share::enable_sharing).delete(routes::share::disable_sharing),
                 )
@@ -640,7 +692,6 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     "/api/websites/{id}/export",
                     get(routes::export::export_events),
                 )
-                .route("/api/usage", get(routes::export::usage_not_found))
                 .layer(query_cors)
                 .layer(middleware::from_fn(move |req: Request, next: Next| {
                     let s = auth_state.clone();

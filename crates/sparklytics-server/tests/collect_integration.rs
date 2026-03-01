@@ -9,7 +9,7 @@ use tokio::time::{sleep, Duration, Instant};
 use tower::ServiceExt;
 
 use async_trait::async_trait;
-use sparklytics_core::billing::{BillingGate, BillingOutcome};
+use sparklytics_core::billing::{BillingAdmission, BillingGate, BillingLimitReason};
 use sparklytics_core::config::{AppMode, AuthMode, Config};
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
@@ -49,22 +49,29 @@ async fn setup() -> (Arc<AppState>, axum::Router) {
 }
 
 struct MockBillingGate {
-    outcome: BillingOutcome,
+    admission: BillingAdmission,
     seen_tenants: Arc<StdMutex<Vec<String>>>,
 }
 
 #[async_trait]
 impl BillingGate for MockBillingGate {
-    async fn check(&self, tenant_id: &str) -> BillingOutcome {
+    async fn admit_events(&self, tenant_id: &str, requested_events: usize) -> BillingAdmission {
         let mut seen = self.seen_tenants.lock().expect("lock seen tenants");
         seen.push(tenant_id.to_string());
-        self.outcome.clone()
+
+        let mut admission = self.admission.clone();
+        if admission.reason.is_none() {
+            admission.allowed_events = requested_events;
+        } else {
+            admission.allowed_events = admission.allowed_events.min(requested_events);
+        }
+        admission
     }
 }
 
 async fn setup_cloud(
     website_tenant_id: Option<&str>,
-    billing_outcome: BillingOutcome,
+    billing_admission: BillingAdmission,
 ) -> (Arc<AppState>, axum::Router, Arc<StdMutex<Vec<String>>>) {
     let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
     db.seed_website("site_test", "example.com")
@@ -83,7 +90,7 @@ async fn setup_cloud(
 
     let seen_tenants = Arc::new(StdMutex::new(Vec::new()));
     let billing_gate = Arc::new(MockBillingGate {
-        outcome: billing_outcome,
+        admission: billing_admission,
         seen_tenants: Arc::clone(&seen_tenants),
     });
     let mut state = AppState::new(db, config);
@@ -129,6 +136,15 @@ async fn event_count(state: &AppState, website_id: &str) -> i64 {
         row.get(0)
     })
     .expect("count events")
+}
+
+fn header_usize(response: &axum::http::Response<Body>, name: &str) -> usize {
+    response
+        .headers()
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<usize>().ok())
+        .expect("numeric ingest header")
 }
 
 // ============================================================
@@ -751,7 +767,8 @@ async fn test_tenant_id_null_in_self_hosted() {
 // ============================================================
 #[tokio::test]
 async fn test_cloud_collect_assigns_tenant_and_checks_billing() {
-    let (state, app, seen_tenants) = setup_cloud(Some("org_acme"), BillingOutcome::Allowed).await;
+    let (state, app, seen_tenants) =
+        setup_cloud(Some("org_acme"), BillingAdmission::allow_all(1)).await;
 
     let body = json!({
         "website_id": "site_test",
@@ -786,7 +803,7 @@ async fn test_cloud_collect_assigns_tenant_and_checks_billing() {
 // ============================================================
 #[tokio::test]
 async fn test_cloud_collect_rejects_missing_website_tenant() {
-    let (_state, app, seen_tenants) = setup_cloud(None, BillingOutcome::Allowed).await;
+    let (_state, app, seen_tenants) = setup_cloud(None, BillingAdmission::allow_all(1)).await;
 
     let body = json!({
         "website_id": "site_test",
@@ -811,8 +828,11 @@ async fn test_cloud_collect_rejects_missing_website_tenant() {
 // ============================================================
 #[tokio::test]
 async fn test_cloud_collect_plan_limit_exceeded() {
-    let (_state, app, seen_tenants) =
-        setup_cloud(Some("org_acme"), BillingOutcome::LimitExceeded).await;
+    let (_state, app, seen_tenants) = setup_cloud(
+        Some("org_acme"),
+        BillingAdmission::limited(0, BillingLimitReason::MonthlyLimit),
+    )
+    .await;
 
     let body = json!({
         "website_id": "site_test",
@@ -823,9 +843,30 @@ async fn test_cloud_collect_plan_limit_exceeded() {
         .oneshot(collect_request(&body.to_string()))
         .await
         .expect("request");
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        response
+            .headers()
+            .get("x-sparklytics-ingest-accepted-events")
+            .and_then(|value| value.to_str().ok()),
+        Some("0")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("x-sparklytics-ingest-dropped-events")
+            .and_then(|value| value.to_str().ok()),
+        Some("1")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("x-sparklytics-ingest-drop-reason")
+            .and_then(|value| value.to_str().ok()),
+        Some("monthly_limit")
+    );
     let json = json_body(response).await;
-    assert_eq!(json["error"]["code"], "plan_limit_exceeded");
+    assert_eq!(json, json!({ "ok": true }));
     let seen = seen_tenants.lock().expect("lock seen tenants").clone();
     assert_eq!(seen, vec!["org_acme".to_string()]);
 }
@@ -835,7 +876,8 @@ async fn test_cloud_collect_plan_limit_exceeded() {
 // ============================================================
 #[tokio::test]
 async fn test_cloud_collect_rejects_mixed_tenant_batch() {
-    let (state, app, seen_tenants) = setup_cloud(Some("org_acme"), BillingOutcome::Allowed).await;
+    let (state, app, seen_tenants) =
+        setup_cloud(Some("org_acme"), BillingAdmission::allow_all(1)).await;
     state
         .db
         .seed_website("site_other", "other.example.com")
@@ -877,4 +919,227 @@ async fn test_cloud_collect_rejects_mixed_tenant_batch() {
         seen_tenants.lock().expect("lock seen tenants").is_empty(),
         "billing gate must not run for invalid mixed-tenant batches"
     );
+}
+
+#[tokio::test]
+async fn test_collect_self_hosted_peak_rate_soft_drop_headers() {
+    let (state, app) = setup().await;
+    {
+        let conn = state.db.conn_for_test().await;
+        conn.execute(
+            "UPDATE websites SET ingest_peak_eps = ?1 WHERE id = ?2",
+            sparklytics_duckdb::duckdb::params![1i64, "site_test"],
+        )
+        .expect("set custom peak eps");
+    }
+
+    let first_events: Vec<Value> = (0..50)
+        .map(|i| {
+            json!({
+                "website_id": "site_test",
+                "type": "pageview",
+                "url": format!("/first/{i}")
+            })
+        })
+        .collect();
+    let first = app
+        .clone()
+        .oneshot(collect_request(
+            &serde_json::to_string(&first_events).expect("serialize first"),
+        ))
+        .await
+        .expect("first request");
+    assert_eq!(first.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        first
+            .headers()
+            .get("x-sparklytics-ingest-drop-reason")
+            .and_then(|v| v.to_str().ok()),
+        None
+    );
+
+    let second_events: Vec<Value> = (0..50)
+        .map(|i| {
+            json!({
+                "website_id": "site_test",
+                "type": "pageview",
+                "url": format!("/second/{i}")
+            })
+        })
+        .collect();
+    let second = app
+        .oneshot(collect_request(
+            &serde_json::to_string(&second_events).expect("serialize second"),
+        ))
+        .await
+        .expect("second request");
+    assert_eq!(second.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        second
+            .headers()
+            .get("x-sparklytics-ingest-drop-reason")
+            .and_then(|v| v.to_str().ok()),
+        Some("peak_rate")
+    );
+    assert_eq!(
+        header_usize(&second, "x-sparklytics-ingest-accepted-events"),
+        10
+    );
+    assert_eq!(
+        header_usize(&second, "x-sparklytics-ingest-dropped-events"),
+        40
+    );
+
+    let total = event_count(&state, "site_test").await;
+    assert_eq!(total, 60);
+}
+
+#[tokio::test]
+async fn test_collect_self_hosted_queue_overflow_headers() {
+    let (state, app) = setup().await;
+    {
+        let conn = state.db.conn_for_test().await;
+        conn.execute(
+            "UPDATE websites SET ingest_queue_max_events = ?1 WHERE id = ?2",
+            sparklytics_duckdb::duckdb::params![1i64, "site_test"],
+        )
+        .expect("set custom queue cap");
+    }
+
+    let body = json!([
+        { "website_id": "site_test", "type": "pageview", "url": "/q1" },
+        { "website_id": "site_test", "type": "pageview", "url": "/q2" },
+        { "website_id": "site_test", "type": "pageview", "url": "/q3" }
+    ]);
+
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        response
+            .headers()
+            .get("x-sparklytics-ingest-drop-reason")
+            .and_then(|v| v.to_str().ok()),
+        Some("queue_overflow")
+    );
+    assert_eq!(
+        header_usize(&response, "x-sparklytics-ingest-accepted-events"),
+        1
+    );
+    assert_eq!(
+        header_usize(&response, "x-sparklytics-ingest-dropped-events"),
+        2
+    );
+
+    let total = event_count(&state, "site_test").await;
+    assert_eq!(total, 1);
+}
+
+#[tokio::test]
+async fn test_ingest_limits_get_put_clear_cycle() {
+    let (_state, app) = setup().await;
+
+    let initial = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/websites/site_test/ingest-limits")
+                .body(Body::empty())
+                .expect("build get request"),
+        )
+        .await
+        .expect("get ingest limits");
+    assert_eq!(initial.status(), StatusCode::OK);
+    let initial_json = json_body(initial).await;
+    assert_eq!(
+        initial_json["data"]["source"]["peak_events_per_sec"],
+        "default"
+    );
+    assert_eq!(
+        initial_json["data"]["source"]["queue_max_events"],
+        "default"
+    );
+
+    let updated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/websites/site_test/ingest-limits")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "peak_events_per_sec": 321,
+                        "queue_max_events": 654
+                    })
+                    .to_string(),
+                ))
+                .expect("build put request"),
+        )
+        .await
+        .expect("put ingest limits");
+    assert_eq!(updated.status(), StatusCode::OK);
+    let updated_json = json_body(updated).await;
+    assert_eq!(
+        updated_json["data"]["source"]["peak_events_per_sec"],
+        "custom"
+    );
+    assert_eq!(updated_json["data"]["source"]["queue_max_events"], "custom");
+    assert_eq!(updated_json["data"]["peak_events_per_sec"], 321);
+    assert_eq!(updated_json["data"]["queue_max_events"], 654);
+
+    let cleared = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/websites/site_test/ingest-limits")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "peak_events_per_sec": null,
+                        "queue_max_events": null
+                    })
+                    .to_string(),
+                ))
+                .expect("build clear request"),
+        )
+        .await
+        .expect("clear ingest limits");
+    assert_eq!(cleared.status(), StatusCode::OK);
+    let cleared_json = json_body(cleared).await;
+    assert_eq!(
+        cleared_json["data"]["source"]["peak_events_per_sec"],
+        "default"
+    );
+    assert_eq!(
+        cleared_json["data"]["source"]["queue_max_events"],
+        "default"
+    );
+}
+
+#[tokio::test]
+async fn test_ingest_limits_reject_non_positive_values() {
+    let (_state, app) = setup().await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/websites/site_test/ingest-limits")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "peak_events_per_sec": 0
+                    })
+                    .to_string(),
+                ))
+                .expect("build invalid put request"),
+        )
+        .await
+        .expect("invalid request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

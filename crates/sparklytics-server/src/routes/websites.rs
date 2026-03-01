@@ -156,6 +156,8 @@ pub async fn update_website(
                 name: req.name,
                 domain: req.domain,
                 timezone: req.timezone,
+                ingest_peak_eps: None,
+                ingest_queue_max_events: None,
             },
         )
         .await
