@@ -241,6 +241,40 @@ async fn test_shared_pageviews_reject_reversed_date_range() {
 }
 
 // ============================================================
+// BDD: Shared stats reject oversized date range
+// ============================================================
+#[tokio::test]
+async fn test_shared_stats_reject_oversized_date_range() {
+    let (_state, app) = setup().await;
+    let website_id = create_website(&app).await;
+
+    let enable_req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/websites/{website_id}/share"))
+        .body(Body::empty())
+        .expect("build request");
+    let enable_res = app.clone().oneshot(enable_req).await.expect("request");
+    assert_eq!(enable_res.status(), StatusCode::CREATED);
+    let enable_json = json_body(enable_res).await;
+    let share_id = enable_json["data"]["share_id"]
+        .as_str()
+        .expect("share_id")
+        .to_string();
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/share/{share_id}/stats?start_date=2025-01-01&end_date=2025-12-31"
+        ))
+        .body(Body::empty())
+        .expect("build request");
+    let resp = app.clone().oneshot(req).await.expect("request");
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let json = json_body(resp).await;
+    assert_eq!(json["error"]["code"], "validation_error");
+}
+
+// ============================================================
 // BDD: Unknown share_id returns 404
 // ============================================================
 #[tokio::test]

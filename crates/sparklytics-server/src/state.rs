@@ -108,7 +108,6 @@ struct RuntimeTuning {
     ingest_retry_base_ms: u64,
     ingest_retry_max_ms: u64,
     session_cache_max_entries: usize,
-    session_cache_ttl_seconds: i64,
     rate_limiter_max_entries: usize,
     acquisition_cache_max_entries: usize,
     acquisition_cache_ttl_seconds: u64,
@@ -204,7 +203,6 @@ pub struct AppState {
     ingest_wal_cursor_offset: Arc<AtomicU64>,
     session_cache: Arc<Mutex<HashMap<(String, String), CachedSession>>>,
     session_cache_max_entries: usize,
-    session_cache_ttl: chrono::Duration,
     ingest_worker_running: Arc<AtomicBool>,
     ingest_drain_lock: Arc<Mutex<()>>,
 }
@@ -222,14 +220,6 @@ impl AppState {
         std::env::var(name)
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
-            .filter(|v| *v > 0)
-            .unwrap_or(default)
-    }
-
-    fn env_i64(name: &str, default: i64) -> i64 {
-        std::env::var(name)
-            .ok()
-            .and_then(|v| v.parse::<i64>().ok())
             .filter(|v| *v > 0)
             .unwrap_or(default)
     }
@@ -275,10 +265,6 @@ impl AppState {
             session_cache_max_entries: Self::env_usize(
                 "SPARKLYTICS_SESSION_CACHE_MAX_ENTRIES",
                 DEFAULT_SESSION_CACHE_MAX_ENTRIES,
-            ),
-            session_cache_ttl_seconds: Self::env_i64(
-                "SPARKLYTICS_SESSION_CACHE_TTL_SECONDS",
-                DEFAULT_SESSION_CACHE_TTL_SECONDS,
             ),
             rate_limiter_max_entries: Self::env_usize(
                 "SPARKLYTICS_RATE_LIMIT_MAX_KEYS",
@@ -474,7 +460,6 @@ impl AppState {
             ingest_wal_cursor_offset: Arc::new(AtomicU64::new(ingest_wal.cursor_offset)),
             session_cache: Arc::new(Mutex::new(HashMap::new())),
             session_cache_max_entries: tuning.session_cache_max_entries,
-            session_cache_ttl: chrono::Duration::seconds(tuning.session_cache_ttl_seconds),
             ingest_worker_running: Arc::new(AtomicBool::new(false)),
             ingest_drain_lock: Arc::new(Mutex::new(())),
         }
@@ -771,9 +756,8 @@ impl AppState {
         let mut cache = self.session_cache.lock().await;
         let entry = cache.get_mut(&key)?;
 
-        if at
-            .signed_duration_since(entry.last_seen_at)
-            .gt(&self.session_cache_ttl)
+        if at.signed_duration_since(entry.last_seen_at).num_seconds()
+            > DEFAULT_SESSION_CACHE_TTL_SECONDS
         {
             cache.remove(&key);
             return None;
@@ -799,7 +783,8 @@ impl AppState {
             cache.retain(|_, v| {
                 last_seen_at
                     .signed_duration_since(v.last_seen_at)
-                    .le(&self.session_cache_ttl)
+                    .num_seconds()
+                    <= DEFAULT_SESSION_CACHE_TTL_SECONDS
             });
             while cache.len() >= self.session_cache_max_entries {
                 let Some(evict_key) = cache.keys().next().cloned() else {

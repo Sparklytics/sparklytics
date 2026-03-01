@@ -11,10 +11,15 @@ use serde::Deserialize;
 use serde_json::json;
 use sparklytics_core::analytics::AnalyticsFilter;
 
-use crate::{error::AppError, routes::query::parse_defaulted_date_range_lenient, state::AppState};
+use crate::{
+    error::AppError,
+    routes::query::{parse_defaulted_date_range_lenient, validate_date_span},
+    state::AppState,
+};
 
 /// Rate limit for public share endpoints: 30 req/min per IP.
 const SHARE_RATE_LIMIT: usize = 30;
+const MAX_SHARE_SPAN_DAYS: i64 = 90;
 
 // ---------------------------------------------------------------------------
 // Query param structs (date range only — no filter params on public share)
@@ -54,7 +59,14 @@ fn parse_dates(
     start: Option<&str>,
     end: Option<&str>,
 ) -> Result<(chrono::NaiveDate, chrono::NaiveDate), AppError> {
-    parse_defaulted_date_range_lenient(start, end, 6)
+    let (start_date, end_date) = parse_defaulted_date_range_lenient(start, end, 6)?;
+    validate_date_span(
+        start_date,
+        end_date,
+        MAX_SHARE_SPAN_DAYS,
+        "share date range",
+    )?;
+    Ok((start_date, end_date))
 }
 
 fn share_filter(

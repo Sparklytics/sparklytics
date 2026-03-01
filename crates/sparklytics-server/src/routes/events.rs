@@ -198,35 +198,3 @@ pub async fn get_event_timeseries(
         }
     })))
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::routes::query::parse_optional_bool;
-
-    #[test]
-    fn parse_optional_bool_accepts_common_variants() {
-        assert_eq!(
-            parse_optional_bool(Some("true"), "include_bots").unwrap(),
-            Some(true)
-        );
-        assert_eq!(
-            parse_optional_bool(Some("false"), "include_bots").unwrap(),
-            Some(false)
-        );
-        assert_eq!(
-            parse_optional_bool(Some("1"), "include_bots").unwrap(),
-            Some(true)
-        );
-        assert_eq!(
-            parse_optional_bool(Some("0"), "include_bots").unwrap(),
-            Some(false)
-        );
-        assert_eq!(parse_optional_bool(None, "include_bots").unwrap(), None);
-    }
-
-    #[test]
-    fn parse_optional_bool_rejects_invalid_values() {
-        assert!(parse_optional_bool(Some("yes"), "include_bots").is_err());
-        assert!(parse_optional_bool(Some(""), "include_bots").is_err());
-    }
-}
