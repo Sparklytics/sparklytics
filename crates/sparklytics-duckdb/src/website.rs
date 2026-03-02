@@ -34,7 +34,7 @@ impl DuckDbBackend {
 
         // Read back the created row to get timestamps.
         let mut stmt = conn.prepare(
-            "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+            "SELECT id, tenant_id, name, domain, timezone, ingest_peak_eps, ingest_queue_max_events, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
              FROM websites WHERE id = ?1",
         )?;
         let website = stmt.query_row(duckdb::params![id], |row| {
@@ -44,9 +44,11 @@ impl DuckDbBackend {
                 name: row.get(2)?,
                 domain: row.get(3)?,
                 timezone: row.get(4)?,
-                share_id: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                ingest_peak_eps: row.get(5)?,
+                ingest_queue_max_events: row.get(6)?,
+                share_id: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })?;
 
@@ -69,7 +71,7 @@ impl DuckDbBackend {
             cursor
         {
             (
-                "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+                "SELECT id, tenant_id, name, domain, timezone, ingest_peak_eps, ingest_queue_max_events, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
                  FROM websites WHERE id > ?1 ORDER BY id LIMIT ?2"
                     .to_string(),
                 vec![
@@ -79,7 +81,7 @@ impl DuckDbBackend {
             )
         } else {
             (
-                "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+                "SELECT id, tenant_id, name, domain, timezone, ingest_peak_eps, ingest_queue_max_events, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
                  FROM websites ORDER BY id LIMIT ?1"
                     .to_string(),
                 vec![Box::new(limit) as Box<dyn duckdb::types::ToSql>],
@@ -96,9 +98,11 @@ impl DuckDbBackend {
                 name: row.get(2)?,
                 domain: row.get(3)?,
                 timezone: row.get(4)?,
-                share_id: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                ingest_peak_eps: row.get(5)?,
+                ingest_queue_max_events: row.get(6)?,
+                share_id: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })?;
 
@@ -122,7 +126,7 @@ impl DuckDbBackend {
     pub async fn get_website(&self, id: &str) -> Result<Option<Website>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+            "SELECT id, tenant_id, name, domain, timezone, ingest_peak_eps, ingest_queue_max_events, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
              FROM websites WHERE id = ?1",
         )?;
         let result = stmt
@@ -133,9 +137,11 @@ impl DuckDbBackend {
                     name: row.get(2)?,
                     domain: row.get(3)?,
                     timezone: row.get(4)?,
-                    share_id: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    ingest_peak_eps: row.get(5)?,
+                    ingest_queue_max_events: row.get(6)?,
+                    share_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             })
             .ok();
@@ -175,11 +181,23 @@ impl DuckDbBackend {
                 duckdb::params![timezone, id],
             )?;
         }
+        if let Some(ingest_peak_eps) = params.ingest_peak_eps {
+            conn.execute(
+                "UPDATE websites SET ingest_peak_eps = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+                duckdb::params![ingest_peak_eps, id],
+            )?;
+        }
+        if let Some(ingest_queue_max_events) = params.ingest_queue_max_events {
+            conn.execute(
+                "UPDATE websites SET ingest_queue_max_events = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+                duckdb::params![ingest_queue_max_events, id],
+            )?;
+        }
 
         // Read back updated row.
         let website = conn
             .prepare(
-                "SELECT id, tenant_id, name, domain, timezone, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
+                "SELECT id, tenant_id, name, domain, timezone, ingest_peak_eps, ingest_queue_max_events, share_id, CAST(created_at AS VARCHAR), CAST(updated_at AS VARCHAR) \
                  FROM websites WHERE id = ?1",
             )?
             .query_row(duckdb::params![id], |row| {
@@ -189,9 +207,11 @@ impl DuckDbBackend {
                     name: row.get(2)?,
                     domain: row.get(3)?,
                     timezone: row.get(4)?,
-                    share_id: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    ingest_peak_eps: row.get(5)?,
+                    ingest_queue_max_events: row.get(6)?,
+                    share_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             })?;
 

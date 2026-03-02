@@ -57,10 +57,14 @@ CREATE TABLE IF NOT EXISTS websites (
     name            VARCHAR NOT NULL,
     domain          VARCHAR NOT NULL,
     timezone        VARCHAR(64) NOT NULL DEFAULT 'UTC',  -- IANA timezone string
+    ingest_peak_eps INTEGER,                       -- Optional per-website peak ingest limit (events/sec)
+    ingest_queue_max_events INTEGER,               -- Optional per-website queue cap (events)
     share_id        VARCHAR(50) UNIQUE,            -- V1.1: public read-only link (NULL until enabled)
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Track last modification
 );
+ALTER TABLE websites ADD COLUMN IF NOT EXISTS ingest_peak_eps INTEGER;
+ALTER TABLE websites ADD COLUMN IF NOT EXISTS ingest_queue_max_events INTEGER;
 CREATE INDEX IF NOT EXISTS idx_websites_tenant   ON websites(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_websites_share_id ON websites(share_id);
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 use sparklytics_core::{
     analytics::{AnalyticsBackend, AnalyticsFilter},
-    billing::{BillingGate, BillingOutcome, NullBillingGate},
+    billing::{BillingGate, NullBillingGate},
     event::Event,
 };
 use sparklytics_duckdb::DuckDbBackend;
@@ -489,5 +489,7 @@ async fn test_custom_event_timeseries_zero_fills_buckets() {
 #[tokio::test]
 async fn test_billing_gate_moved_to_core() {
     let gate = NullBillingGate;
-    assert_eq!(gate.check("org_any").await, BillingOutcome::Allowed);
+    let admission = gate.admit_events("org_any", 42).await;
+    assert_eq!(admission.allowed_events, 42);
+    assert!(admission.reason.is_none());
 }
