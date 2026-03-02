@@ -692,7 +692,11 @@ impl AppState {
             offset = payload_end;
         }
 
-        if !truncate_tail && offset < wal_bytes.len() {
+        if !truncate_tail
+            && replay_upper_bound == wal_len
+            && offset < wal_bytes.len()
+            && wal_bytes.len().saturating_sub(offset) < 4
+        {
             warn!(
                 offset,
                 wal_len = wal_bytes.len(),
@@ -1966,13 +1970,13 @@ impl AppState {
                             max_retries = self.ingest_retry_max_attempts,
                             batch_count = batches.len(),
                             event_count = total_events,
-                            "Ingest queue persist hit max retries, moving batch to queue tail"
+                            "Ingest queue persist hit max retries, keeping batch at queue head with max backoff"
                         );
                         {
                             let mut queue = self.ingest_queue.lock().await;
-                            for mut batch in batches.drain(..) {
+                            for mut batch in batches.drain(..).rev() {
                                 batch.retries = next_retry_attempt;
-                                queue.push_back(batch);
+                                queue.push_front(batch);
                             }
                         }
                         tokio::time::sleep(std::time::Duration::from_millis(
