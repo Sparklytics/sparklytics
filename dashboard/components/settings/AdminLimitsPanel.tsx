@@ -14,6 +14,7 @@ import {
 export function AdminLimitsPanel() {
   const planLimits = usePlanLimits(true);
   const updatePlanLimit = useUpdatePlanLimit();
+  const [tenantInputId, setTenantInputId] = useState('');
   const [tenantId, setTenantId] = useState('');
   const [month, setMonth] = useState('');
   const tenantLimits = useTenantLimits(tenantId, !!tenantId);
@@ -156,12 +157,23 @@ export function AdminLimitsPanel() {
         <h3 className="text-xs font-semibold text-ink uppercase tracking-[0.08em]">Tenant override</h3>
         <label className="block">
           <span className="text-xs text-ink-2 mb-1 block">Tenant ID</span>
-          <input
-            value={tenantId}
-            onChange={(e) => setTenantId(e.target.value.trim())}
-            placeholder="org_..."
-            className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink"
-          />
+          <div className="flex gap-2">
+            <input
+              value={tenantInputId}
+              onChange={(e) => setTenantInputId(e.target.value)}
+              placeholder="org_..."
+              className="flex-1 bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs"
+              disabled={!tenantInputId.trim()}
+              onClick={() => setTenantId(tenantInputId.trim())}
+            >
+              Load tenant
+            </Button>
+          </div>
         </label>
         <label className="block">
           <span className="text-xs text-ink-2 mb-1 block">Month (optional, YYYY-MM)</span>

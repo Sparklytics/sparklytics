@@ -18,6 +18,7 @@ import {
   useUpdateWebsiteIngestLimits,
 } from '@/hooks/useWebsites';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 import { TIMEZONE_GROUPS } from '@/lib/timezones';
 
 function navigate(path: string) {
@@ -32,6 +33,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
   const ingestLimitsQuery = useWebsiteIngestLimits(websiteId);
   const updateIngestLimits = useUpdateWebsiteIngestLimits(websiteId);
   const { data: authStatus } = useAuth();
+  const { toast } = useToast();
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [timezone, setTimezone] = useState('UTC');
@@ -43,6 +45,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
   const [customQueue, setCustomQueue] = useState(false);
   const [ingestionDraftDirty, setIngestionDraftDirty] = useState(false);
   const [ingestionDraftWebsiteId, setIngestionDraftWebsiteId] = useState<string | null>(null);
+  const [ingestionValidationError, setIngestionValidationError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const website = websiteData?.data;
@@ -75,6 +78,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
     setCustomPeak(false);
     setCustomQueue(false);
     setIngestionDraftDirty(false);
+    setIngestionValidationError(null);
     setIngestionDraftWebsiteId(websiteId);
   }, [ingestionDraftWebsiteId, websiteId]);
 
@@ -102,11 +106,16 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
     const parsedPeak = Number(peakEventsPerSec);
     const parsedQueue = Number(queueMaxEvents);
     if (customPeak && (!Number.isInteger(parsedPeak) || parsedPeak <= 0)) {
+      setIngestionValidationError('Peak events/sec must be a positive integer.');
+      toast({ title: 'Invalid peak events/sec', variant: 'destructive' });
       return;
     }
     if (customQueue && (!Number.isInteger(parsedQueue) || parsedQueue <= 0)) {
+      setIngestionValidationError('Queue max events must be a positive integer.');
+      toast({ title: 'Invalid queue max events', variant: 'destructive' });
       return;
     }
+    setIngestionValidationError(null);
     await updateIngestLimits.mutateAsync({
       peak_events_per_sec: customPeak ? parsedPeak : null,
       queue_max_events: customQueue ? parsedQueue : null,
@@ -224,6 +233,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               onChange={(e) => {
                 setCustomPeak(e.target.checked);
                 setIngestionDraftDirty(true);
+                setIngestionValidationError(null);
               }}
             />
             Use custom peak limit
@@ -238,8 +248,9 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               onChange={(e) => {
                 setPeakEventsPerSec(e.target.value);
                 setIngestionDraftDirty(true);
+                setIngestionValidationError(null);
               }}
-              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-60"
+              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-60"
             />
           </label>
 
@@ -250,6 +261,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               onChange={(e) => {
                 setCustomQueue(e.target.checked);
                 setIngestionDraftDirty(true);
+                setIngestionValidationError(null);
               }}
             />
             Use custom queue cap
@@ -264,10 +276,14 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               onChange={(e) => {
                 setQueueMaxEvents(e.target.value);
                 setIngestionDraftDirty(true);
+                setIngestionValidationError(null);
               }}
-              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-60"
+              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-60"
             />
           </label>
+          {ingestionValidationError && (
+            <p className="text-xs text-down">{ingestionValidationError}</p>
+          )}
 
           <Button
             size="sm"

@@ -1943,6 +1943,8 @@ impl AppState {
                     self.persist_ingest_wal_cursor(wal_end_offset).await;
                     self.maybe_compact_ingest_wal().await;
                     for (tenant_id, count) in tenant_counts {
+                        // TODO(accounting): Failed usage sync can create permanent drift.
+                        // Add a durable retry queue for record_persisted_events failures.
                         if let Err(err) = self
                             .billing_gate
                             .record_persisted_events(&tenant_id, count)
