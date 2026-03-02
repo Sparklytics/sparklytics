@@ -7,19 +7,14 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{Datelike, NaiveDate};
 use serde::{de::Error as _, Deserialize, Deserializer};
 use serde_json::json;
 
 use sparklytics_core::config::AppMode;
 
+use super::bearer_jwt::verify_and_decode_bearer_claims;
 use crate::{error::AppError, state::AppState};
-
-#[derive(Debug, Deserialize)]
-struct JwtPayload {
-    sub: Option<String>,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct UpdatePlanLimitRequest {
@@ -57,35 +52,21 @@ fn platform_admin_ids() -> &'static HashSet<String> {
     })
 }
 
-fn extract_bearer_subject(headers: &HeaderMap) -> Result<String, AppError> {
-    let auth = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .ok_or(AppError::Unauthorized)?;
-    if !auth.starts_with("Bearer ") {
-        return Err(AppError::Unauthorized);
-    }
-
-    let token = &auth[7..];
-    let segments: Vec<&str> = token.split('.').collect();
-    if segments.len() != 3 {
-        return Err(AppError::Unauthorized);
-    }
-
-    let payload = URL_SAFE_NO_PAD
-        .decode(segments[1])
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<JwtPayload>(&bytes).ok())
-        .ok_or(AppError::Unauthorized)?;
-    payload.sub.ok_or(AppError::Unauthorized)
+async fn extract_bearer_subject(headers: &HeaderMap) -> Result<String, AppError> {
+    let claims = verify_and_decode_bearer_claims(headers).await?;
+    claims
+        .get("sub")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .ok_or(AppError::Unauthorized)
 }
 
-fn require_platform_admin(state: &AppState, headers: &HeaderMap) -> Result<String, AppError> {
+async fn require_platform_admin(state: &AppState, headers: &HeaderMap) -> Result<String, AppError> {
     if state.config.mode != AppMode::Cloud {
         return Err(AppError::NotFound("Not found".to_string()));
     }
 
-    let subject = extract_bearer_subject(headers)?;
+    let subject = extract_bearer_subject(headers).await?;
     let admins = platform_admin_ids();
     if admins.is_empty() || !admins.contains(&subject) {
         return Err(AppError::Forbidden);
@@ -132,7 +113,7 @@ pub async fn list_plan_limits(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let _ = require_platform_admin(&state, &headers)?;
+    let _ = require_platform_admin(&state, &headers).await?;
     let plans = state
         .billing_gate
         .list_plan_limits()
@@ -148,7 +129,7 @@ pub async fn update_plan_limit(
     Path(plan): Path<String>,
     Json(body): Json<UpdatePlanLimitRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let _ = require_platform_admin(&state, &headers)?;
+    let _ = require_platform_admin(&state, &headers).await?;
     if body.peak_events_per_sec == 0 {
         return Err(AppError::BadRequest(
             "peak_events_per_sec must be > 0".to_string(),
@@ -174,7 +155,7 @@ pub async fn get_tenant_limits(
     headers: HeaderMap,
     Path(tenant_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let _ = require_platform_admin(&state, &headers)?;
+    let _ = require_platform_admin(&state, &headers).await?;
     let effective = state
         .billing_gate
         .get_tenant_effective_limits(&tenant_id)
@@ -200,7 +181,7 @@ pub async fn update_tenant_limits(
     Path(tenant_id): Path<String>,
     Json(body): Json<UpdateTenantOverrideRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let updated_by = require_platform_admin(&state, &headers)?;
+    let updated_by = require_platform_admin(&state, &headers).await?;
 
     if body.clear.unwrap_or(false) {
         state
@@ -306,7 +287,7 @@ pub async fn get_tenant_usage(
     Path(tenant_id): Path<String>,
     Query(query): Query<UsageQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let _ = require_platform_admin(&state, &headers)?;
+    let _ = require_platform_admin(&state, &headers).await?;
     validate_month_query(query.month.as_deref())?;
     let usage = state
         .billing_gate

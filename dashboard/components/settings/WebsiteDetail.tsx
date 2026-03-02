@@ -35,10 +35,14 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [timezone, setTimezone] = useState('UTC');
+  const [generalDraftDirty, setGeneralDraftDirty] = useState(false);
+  const [generalDraftWebsiteId, setGeneralDraftWebsiteId] = useState<string | null>(null);
   const [peakEventsPerSec, setPeakEventsPerSec] = useState('');
   const [queueMaxEvents, setQueueMaxEvents] = useState('');
   const [customPeak, setCustomPeak] = useState(false);
   const [customQueue, setCustomQueue] = useState(false);
+  const [ingestionDraftDirty, setIngestionDraftDirty] = useState(false);
+  const [ingestionDraftWebsiteId, setIngestionDraftWebsiteId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const website = websiteData?.data;
@@ -47,24 +51,45 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
     authStatus?.mode === 'password' || authStatus?.mode === 'local';
 
   useEffect(() => {
+    if (generalDraftWebsiteId === websiteId) return;
+    setName('');
+    setDomain('');
+    setTimezone('UTC');
+    setGeneralDraftDirty(false);
+    setGeneralDraftWebsiteId(websiteId);
+  }, [generalDraftWebsiteId, websiteId]);
+
+  useEffect(() => {
     if (website) {
+      if (generalDraftDirty) return;
       setName(website.name);
       setDomain(website.domain);
       setTimezone(website.timezone);
     }
-  }, [website]);
+  }, [website, generalDraftDirty]);
+
+  useEffect(() => {
+    if (ingestionDraftWebsiteId === websiteId) return;
+    setPeakEventsPerSec('');
+    setQueueMaxEvents('');
+    setCustomPeak(false);
+    setCustomQueue(false);
+    setIngestionDraftDirty(false);
+    setIngestionDraftWebsiteId(websiteId);
+  }, [ingestionDraftWebsiteId, websiteId]);
 
   useEffect(() => {
     const limits = ingestLimitsQuery.data?.data;
-    if (!limits) return;
+    if (!limits || ingestionDraftDirty) return;
     setPeakEventsPerSec(String(limits.peak_events_per_sec));
     setQueueMaxEvents(String(limits.queue_max_events));
     setCustomPeak(limits.source.peak_events_per_sec === 'custom');
     setCustomQueue(limits.source.queue_max_events === 'custom');
-  }, [ingestLimitsQuery.data]);
+  }, [ingestLimitsQuery.data, ingestionDraftDirty]);
 
   async function handleSave() {
     await updateWebsite.mutateAsync({ name, domain, timezone });
+    setGeneralDraftDirty(false);
   }
 
   async function handleDelete() {
@@ -86,6 +111,8 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
       peak_events_per_sec: customPeak ? parsedPeak : null,
       queue_max_events: customQueue ? parsedQueue : null,
     });
+    await ingestLimitsQuery.refetch();
+    setIngestionDraftDirty(false);
   }
 
   if (isLoading) {
@@ -126,7 +153,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <span className="text-xs text-ink-2 mb-1 block">Name</span>
               <input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setGeneralDraftDirty(true);
+                }}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
             </label>
@@ -134,7 +164,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <span className="text-xs text-ink-2 mb-1 block">Domain</span>
               <input
                 value={domain}
-                onChange={(e) => setDomain(e.target.value)}
+                onChange={(e) => {
+                  setDomain(e.target.value);
+                  setGeneralDraftDirty(true);
+                }}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
             </label>
@@ -142,7 +175,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <span className="text-xs text-ink-2 mb-1 block">Timezone</span>
               <select
                 value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
+                onChange={(e) => {
+                  setTimezone(e.target.value);
+                  setGeneralDraftDirty(true);
+                }}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               >
                 {Object.entries(TIMEZONE_GROUPS).map(([group, zones]) => (
@@ -185,7 +221,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
             <input
               type="checkbox"
               checked={customPeak}
-              onChange={(e) => setCustomPeak(e.target.checked)}
+              onChange={(e) => {
+                setCustomPeak(e.target.checked);
+                setIngestionDraftDirty(true);
+              }}
             />
             Use custom peak limit
           </label>
@@ -196,7 +235,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               min={1}
               disabled={!customPeak}
               value={peakEventsPerSec}
-              onChange={(e) => setPeakEventsPerSec(e.target.value)}
+              onChange={(e) => {
+                setPeakEventsPerSec(e.target.value);
+                setIngestionDraftDirty(true);
+              }}
               className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-60"
             />
           </label>
@@ -205,7 +247,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
             <input
               type="checkbox"
               checked={customQueue}
-              onChange={(e) => setCustomQueue(e.target.checked)}
+              onChange={(e) => {
+                setCustomQueue(e.target.checked);
+                setIngestionDraftDirty(true);
+              }}
             />
             Use custom queue cap
           </label>
@@ -216,7 +261,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               min={1}
               disabled={!customQueue}
               value={queueMaxEvents}
-              onChange={(e) => setQueueMaxEvents(e.target.value)}
+              onChange={(e) => {
+                setQueueMaxEvents(e.target.value);
+                setIngestionDraftDirty(true);
+              }}
               className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-60"
             />
           </label>

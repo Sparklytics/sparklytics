@@ -1,5 +1,6 @@
 pub mod admin_limits;
 pub mod attribution;
+pub mod bearer_jwt;
 pub mod bot;
 pub mod collect;
 pub mod compare;

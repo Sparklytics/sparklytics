@@ -7,13 +7,13 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 
-use sparklytics_core::config::AppMode;
+use sparklytics_core::config::{AppMode, AuthMode};
 
+use super::bearer_jwt::verify_and_decode_bearer_claims;
 use crate::{error::AppError, state::AppState};
 
 /// Maximum date range allowed for export (90 days).
@@ -40,6 +40,10 @@ pub async fn export_events(
     Path(website_id): Path<String>,
     Query(q): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
+    if state.config.mode == AppMode::Cloud && matches!(&state.config.auth_mode, AuthMode::None) {
+        return Err(AppError::Unauthorized);
+    }
+
     if !state.is_valid_website(&website_id).await {
         return Err(AppError::NotFound("Website not found".to_string()));
     }
@@ -218,38 +222,13 @@ pub async fn usage_not_found() -> impl IntoResponse {
     )
 }
 
-#[derive(Debug, Deserialize)]
-struct UsageJwtOrgClaim {
-    id: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct UsageJwtPayload {
-    o: Option<UsageJwtOrgClaim>,
-}
-
-fn extract_tenant_id_from_bearer(headers: &HeaderMap) -> Result<String, AppError> {
-    let auth = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .ok_or(AppError::Unauthorized)?;
-    if !auth.starts_with("Bearer ") {
-        return Err(AppError::Unauthorized);
-    }
-
-    let token = &auth[7..];
-    let segments: Vec<&str> = token.split('.').collect();
-    if segments.len() != 3 {
-        return Err(AppError::Unauthorized);
-    }
-    let payload = URL_SAFE_NO_PAD
-        .decode(segments[1])
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<UsageJwtPayload>(&bytes).ok())
-        .ok_or(AppError::Unauthorized)?;
-    payload
-        .o
-        .map(|org| org.id)
+async fn extract_tenant_id_from_bearer(headers: &HeaderMap) -> Result<String, AppError> {
+    let claims = verify_and_decode_bearer_claims(headers).await?;
+    claims
+        .get("o")
+        .and_then(|org| org.get("id"))
+        .and_then(|id| id.as_str())
+        .map(str::to_string)
         .ok_or(AppError::OrganizationContextRequired)
 }
 
@@ -262,7 +241,7 @@ pub async fn get_usage(
         return Ok(usage_not_found().await.into_response());
     }
 
-    let tenant_id = extract_tenant_id_from_bearer(&headers)?;
+    let tenant_id = extract_tenant_id_from_bearer(&headers).await?;
     let usage = state
         .billing_gate
         .get_tenant_monthly_usage(&tenant_id, None)

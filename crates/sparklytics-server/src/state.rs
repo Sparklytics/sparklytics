@@ -31,6 +31,7 @@ const DEFAULT_INGEST_DRAIN_MAX_EVENTS: usize = 5_000;
 const DEFAULT_INGEST_DRAIN_MAX_BATCHES: usize = 128;
 const DEFAULT_INGEST_RETRY_BASE_MS: u64 = 200;
 const DEFAULT_INGEST_RETRY_MAX_MS: u64 = 5_000;
+const DEFAULT_INGEST_RETRY_MAX_ATTEMPTS: u8 = 8;
 const DEFAULT_SESSION_CACHE_MAX_ENTRIES: usize = 50_000;
 const DEFAULT_SESSION_CACHE_TTL_SECONDS: i64 = 1_800;
 const DEFAULT_RATE_LIMIT_MAX_KEYS: usize = 100_000;
@@ -50,16 +51,35 @@ const INGEST_WAL_CURSOR_FILE: &str = "segment.cursor";
 
 #[derive(Debug, Clone)]
 struct IngestBatch {
+    wal_start_offset: u64,
     wal_end_offset: u64,
     events: Vec<Event>,
     website_event_counts: Vec<(String, usize)>,
     retries: u8,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct IngestWalRecordOffsets {
+    start_offset: u64,
+    end_offset: u64,
+}
+
 #[derive(Debug, Clone)]
 struct CachedSession {
     session_id: String,
     last_seen_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+struct SessionResolvedEffect {
+    session_id: String,
+    additional_pageviews: u32,
+    last_seen_at: DateTime<Utc>,
+    website_id: String,
+    visitor_id: String,
+    is_bot: bool,
+    bot_score: i32,
+    bot_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +128,7 @@ struct RuntimeTuning {
     ingest_drain_max_batches: usize,
     ingest_retry_base_ms: u64,
     ingest_retry_max_ms: u64,
+    ingest_retry_max_attempts: u8,
     session_cache_max_entries: usize,
     rate_limiter_max_entries: usize,
     acquisition_cache_max_entries: usize,
@@ -208,6 +229,7 @@ pub struct AppState {
     ingest_drain_max_batches: usize,
     ingest_retry_base_ms: u64,
     ingest_retry_max_ms: u64,
+    ingest_retry_max_attempts: u8,
     ingest_wal_log_path: PathBuf,
     ingest_wal_cursor_path: PathBuf,
     ingest_wal_append_lock: Arc<Mutex<()>>,
@@ -232,6 +254,14 @@ impl AppState {
         std::env::var(name)
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(default)
+    }
+
+    fn env_u8(name: &str, default: u8) -> u8 {
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.parse::<u8>().ok())
             .filter(|v| *v > 0)
             .unwrap_or(default)
     }
@@ -269,6 +299,10 @@ impl AppState {
             ingest_retry_max_ms: Self::env_u64(
                 "SPARKLYTICS_INGEST_RETRY_MAX_MS",
                 DEFAULT_INGEST_RETRY_MAX_MS,
+            ),
+            ingest_retry_max_attempts: Self::env_u8(
+                "SPARKLYTICS_INGEST_RETRY_MAX_ATTEMPTS",
+                DEFAULT_INGEST_RETRY_MAX_ATTEMPTS,
             ),
             session_cache_max_entries: Self::env_usize(
                 "SPARKLYTICS_SESSION_CACHE_MAX_ENTRIES",
@@ -472,6 +506,7 @@ impl AppState {
             ingest_drain_max_batches: tuning.ingest_drain_max_batches,
             ingest_retry_base_ms: tuning.ingest_retry_base_ms,
             ingest_retry_max_ms: tuning.ingest_retry_max_ms,
+            ingest_retry_max_attempts: tuning.ingest_retry_max_attempts,
             ingest_wal_log_path: ingest_wal.log_path,
             ingest_wal_cursor_path: ingest_wal.cursor_path,
             ingest_wal_append_lock: Arc::new(Mutex::new(())),
@@ -534,8 +569,6 @@ impl AppState {
                     path = %self.ingest_wal_log_path.display(),
                     "Could not read ingest WAL log"
                 );
-                self.ingest_wal_next_offset.store(0, Ordering::Release);
-                self.persist_ingest_wal_cursor(0).await;
                 return false;
             }
         };
@@ -553,12 +586,23 @@ impl AppState {
             self.persist_ingest_wal_cursor(cursor).await;
         }
 
-        let mut restored_batches = 0usize;
+        let queue_front_start = {
+            let queue = self.ingest_queue.lock().await;
+            queue.front().map(|batch| batch.wal_start_offset)
+        };
+        let replay_upper_bound = queue_front_start.unwrap_or(wal_len);
+        if cursor >= replay_upper_bound {
+            return false;
+        }
+
+        let mut restored_batch_count = 0usize;
         let mut restored_events = 0usize;
+        let mut restored_batches: Vec<IngestBatch> = Vec::new();
+        let mut restored_website_counts: HashMap<String, usize> = HashMap::new();
         let mut offset = cursor as usize;
         let mut truncate_tail = false;
 
-        while offset.saturating_add(4) <= wal_bytes.len() {
+        while offset.saturating_add(4) <= wal_bytes.len() && (offset as u64) < replay_upper_bound {
             let record_len =
                 u32::from_le_bytes(wal_bytes[offset..offset + 4].try_into().unwrap()) as usize;
             let payload_start = offset + 4;
@@ -571,6 +615,9 @@ impl AppState {
                     "Ingest WAL contains a partial trailing record; truncating tail"
                 );
                 truncate_tail = true;
+                break;
+            }
+            if (payload_end as u64) > replay_upper_bound {
                 break;
             }
 
@@ -599,7 +646,10 @@ impl AppState {
             }
 
             let event_count = events.len();
-            let current = self.ingest_queue_events.load(Ordering::Acquire);
+            let current = self
+                .ingest_queue_events
+                .load(Ordering::Acquire)
+                .saturating_add(restored_events);
             if current.saturating_add(event_count) > self.ingest_queue_max_events {
                 if event_count > self.ingest_queue_max_events {
                     warn!(
@@ -621,32 +671,61 @@ impl AppState {
             }
 
             let website_event_counts = Self::count_events_by_website(&events);
-            if !website_event_counts.is_empty() {
-                let mut website_queue = self.website_ingest_queue_events.lock().await;
-                for (website_id, count) in &website_event_counts {
-                    let next = website_queue
-                        .get(website_id)
-                        .copied()
-                        .unwrap_or(0)
-                        .saturating_add(*count);
-                    website_queue.insert(website_id.clone(), next);
-                }
+            for (website_id, count) in &website_event_counts {
+                let next = restored_website_counts
+                    .get(website_id)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(*count);
+                restored_website_counts.insert(website_id.clone(), next);
             }
 
-            {
-                let mut queue = self.ingest_queue.lock().await;
-                queue.push_back(IngestBatch {
-                    wal_end_offset: payload_end as u64,
-                    events,
-                    website_event_counts,
-                    retries: 0,
-                });
-            }
-            self.ingest_queue_events
-                .fetch_add(event_count, Ordering::AcqRel);
-            restored_batches += 1;
+            restored_batches.push(IngestBatch {
+                wal_start_offset: offset as u64,
+                wal_end_offset: payload_end as u64,
+                events,
+                website_event_counts,
+                retries: 0,
+            });
+            restored_batch_count += 1;
             restored_events += event_count;
             offset = payload_end;
+        }
+
+        if !truncate_tail && offset < wal_bytes.len() {
+            warn!(
+                offset,
+                wal_len = wal_bytes.len(),
+                "Ingest WAL contains trailing bytes smaller than record header; truncating tail"
+            );
+            truncate_tail = true;
+        }
+
+        if !restored_website_counts.is_empty() {
+            let mut website_queue = self.website_ingest_queue_events.lock().await;
+            for (website_id, count) in &restored_website_counts {
+                let next = website_queue
+                    .get(website_id)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(*count);
+                website_queue.insert(website_id.clone(), next);
+            }
+        }
+
+        if !restored_batches.is_empty() {
+            let mut queue = self.ingest_queue.lock().await;
+            if queue_front_start.is_some() {
+                for batch in restored_batches.into_iter().rev() {
+                    queue.push_front(batch);
+                }
+            } else {
+                for batch in restored_batches {
+                    queue.push_back(batch);
+                }
+            }
+            self.ingest_queue_events
+                .fetch_add(restored_events, Ordering::AcqRel);
         }
 
         if truncate_tail && offset < wal_bytes.len() {
@@ -672,13 +751,13 @@ impl AppState {
         self.ingest_wal_next_offset
             .store(effective_wal_len, Ordering::Release);
 
-        if restored_batches > 0 {
+        if restored_batch_count > 0 {
             info!(
-                restored_batches,
+                restored_batches = restored_batch_count,
                 restored_events, "Restored ingest batches from WAL"
             );
         }
-        restored_batches > 0
+        restored_batch_count > 0
     }
 
     pub fn pending_session_marker() -> &'static str {
@@ -709,7 +788,11 @@ impl AppState {
         }
     }
 
-    async fn append_ingest_wal_record(&self, events: &[Event]) -> Result<u64, AppError> {
+    /// Append a single WAL record while `ingest_wal_append_lock` is already held.
+    async fn append_ingest_wal_record_locked(
+        &self,
+        events: &[Event],
+    ) -> Result<IngestWalRecordOffsets, AppError> {
         let payload = serde_json::to_vec(events).map_err(|e| AppError::Internal(e.into()))?;
         if payload.len() > u32::MAX as usize {
             return Err(AppError::Internal(anyhow::anyhow!(
@@ -722,7 +805,6 @@ impl AppState {
         record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         record.extend_from_slice(&payload);
 
-        let _append_guard = self.ingest_wal_append_lock.lock().await;
         let start_offset = self.ingest_wal_next_offset.load(Ordering::Acquire);
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
@@ -738,7 +820,10 @@ impl AppState {
         let end_offset = start_offset.saturating_add(record.len() as u64);
         self.ingest_wal_next_offset
             .store(end_offset, Ordering::Release);
-        Ok(end_offset)
+        Ok(IngestWalRecordOffsets {
+            start_offset,
+            end_offset,
+        })
     }
 
     fn reserve_ingest_capacity(&self, requested_events: usize) -> usize {
@@ -814,6 +899,19 @@ impl AppState {
             by_tenant.insert(tenant_id.to_string(), next);
         }
         by_tenant.into_iter().collect()
+    }
+
+    fn contiguous_prefix_len(cursor: u64, batches: &[IngestBatch]) -> usize {
+        let mut next_cursor = cursor;
+        let mut contiguous_len = 0usize;
+        for batch in batches {
+            if batch.wal_start_offset != next_cursor {
+                break;
+            }
+            next_cursor = batch.wal_end_offset;
+            contiguous_len = contiguous_len.saturating_add(1);
+        }
+        contiguous_len
     }
 
     async fn release_website_queue_capacity(&self, website_event_counts: &[(String, usize)]) {
@@ -1006,7 +1104,10 @@ impl AppState {
         event.session_id.is_empty() || event.session_id == SESSION_ID_PENDING
     }
 
-    async fn assign_pending_sessions(&self, events: &mut [Event]) -> anyhow::Result<()> {
+    async fn assign_pending_sessions(
+        &self,
+        events: &mut [Event],
+    ) -> anyhow::Result<Vec<SessionResolvedEffect>> {
         #[derive(Debug)]
         struct SessionAccumulator {
             session_id: String,
@@ -1077,43 +1178,26 @@ impl AppState {
             event.session_id = session_id;
         }
 
+        let mut effects = Vec::with_capacity(session_cache.len());
         for entry in session_cache.into_values() {
             let additional_pageviews = if entry.base_count_already_recorded {
                 entry.count.saturating_sub(1)
             } else {
                 entry.count
             };
-
-            if additional_pageviews > 0 {
-                self.analytics
-                    .increment_session_pageviews(
-                        &entry.session_id,
-                        additional_pageviews,
-                        entry.last_seen_at,
-                    )
-                    .await?;
-            }
-            if entry.is_bot || entry.bot_score > 0 || entry.bot_reason.is_some() {
-                self.analytics
-                    .set_session_bot_classification(
-                        &entry.session_id,
-                        entry.is_bot,
-                        entry.bot_score,
-                        entry.bot_reason.as_deref(),
-                    )
-                    .await?;
-            }
-
-            self.put_cached_session(
-                entry.website_id,
-                entry.visitor_id,
-                entry.session_id,
-                entry.last_seen_at,
-            )
-            .await;
+            effects.push(SessionResolvedEffect {
+                session_id: entry.session_id,
+                additional_pageviews,
+                last_seen_at: entry.last_seen_at,
+                website_id: entry.website_id,
+                visitor_id: entry.visitor_id,
+                is_bot: entry.is_bot,
+                bot_score: entry.bot_score,
+                bot_reason: entry.bot_reason,
+            });
         }
 
-        Ok(())
+        Ok(effects)
     }
 
     /// Check whether `ip` is within the 60 req/min rate limit.
@@ -1584,8 +1668,10 @@ impl AppState {
             });
         }
 
+        let append_guard = self.ingest_wal_append_lock.lock().await;
         let globally_accepted = self.reserve_ingest_capacity(events.len());
         if globally_accepted == 0 {
+            drop(append_guard);
             self.release_website_queue_capacity(&website_event_counts)
                 .await;
             return Ok(IngestEnqueueOutcome {
@@ -1606,8 +1692,8 @@ impl AppState {
         }
 
         let accepted_count = accepted_events.len();
-        let wal_end_offset = match self.append_ingest_wal_record(&accepted_events).await {
-            Ok(end) => end,
+        let wal_offsets = match self.append_ingest_wal_record_locked(&accepted_events).await {
+            Ok(offsets) => offsets,
             Err(e) => {
                 self.release_ingest_capacity(accepted_count);
                 self.release_website_queue_capacity(&website_event_counts)
@@ -1619,12 +1705,14 @@ impl AppState {
         {
             let mut queue = self.ingest_queue.lock().await;
             queue.push_back(IngestBatch {
-                wal_end_offset,
+                wal_start_offset: wal_offsets.start_offset,
+                wal_end_offset: wal_offsets.end_offset,
                 events: accepted_events,
                 website_event_counts,
                 retries: 0,
             });
         }
+        drop(append_guard);
         self.schedule_ingest_worker();
 
         Ok(IngestEnqueueOutcome {
@@ -1739,6 +1827,29 @@ impl AppState {
                 break;
             }
 
+            let cursor = self.ingest_wal_cursor_offset.load(Ordering::Acquire);
+            let contiguous_len = Self::contiguous_prefix_len(cursor, &batches);
+            if contiguous_len == 0 {
+                {
+                    let mut queue = self.ingest_queue.lock().await;
+                    for batch in batches.drain(..).rev() {
+                        queue.push_front(batch);
+                    }
+                }
+                if cursor < self.ingest_wal_next_offset.load(Ordering::Acquire) {
+                    self.restore_ingest_queue_from_wal_internal().await;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                continue;
+            }
+            if contiguous_len < batches.len() {
+                let mut tail = batches.split_off(contiguous_len);
+                let mut queue = self.ingest_queue.lock().await;
+                for batch in tail.drain(..).rev() {
+                    queue.push_front(batch);
+                }
+            }
+
             let total_events: usize = batches.iter().map(|b| b.events.len()).sum();
             let mut total_website_counts: HashMap<String, usize> = HashMap::new();
             for batch in &batches {
@@ -1751,16 +1862,24 @@ impl AppState {
                     total_website_counts.insert(website_id.clone(), next);
                 }
             }
+            let website_counts: Vec<(String, usize)> = total_website_counts
+                .iter()
+                .map(|(website_id, count)| (website_id.clone(), *count))
+                .collect();
             let max_retries = batches.iter().map(|b| b.retries).max().unwrap_or(0);
             let mut merged_events = Vec::with_capacity(total_events);
             for batch in &batches {
                 merged_events.extend(batch.events.iter().cloned());
             }
 
-            let mut persist_result = self.assign_pending_sessions(&mut merged_events).await;
-            if persist_result.is_ok() {
-                persist_result = self.analytics.insert_events(&merged_events).await;
-            }
+            let (session_effects, persist_result) =
+                match self.assign_pending_sessions(&mut merged_events).await {
+                    Ok(effects) => {
+                        let insert_result = self.analytics.insert_events(&merged_events).await;
+                        (effects, insert_result)
+                    }
+                    Err(e) => (Vec::new(), Err(e)),
+                };
 
             match persist_result {
                 Ok(()) => {
@@ -1769,9 +1888,53 @@ impl AppState {
                         .map(|b| b.wal_end_offset)
                         .unwrap_or_else(|| self.ingest_wal_cursor_offset.load(Ordering::Acquire));
                     let tenant_counts = Self::count_events_by_tenant(&merged_events);
+
+                    for effect in session_effects {
+                        if effect.additional_pageviews > 0 {
+                            if let Err(err) = self
+                                .analytics
+                                .increment_session_pageviews(
+                                    &effect.session_id,
+                                    effect.additional_pageviews,
+                                    effect.last_seen_at,
+                                )
+                                .await
+                            {
+                                warn!(
+                                    session_id = %effect.session_id,
+                                    error = %err,
+                                    "Failed to update session pageviews after event insert"
+                                );
+                            }
+                        }
+                        if effect.is_bot || effect.bot_score > 0 || effect.bot_reason.is_some() {
+                            if let Err(err) = self
+                                .analytics
+                                .set_session_bot_classification(
+                                    &effect.session_id,
+                                    effect.is_bot,
+                                    effect.bot_score,
+                                    effect.bot_reason.as_deref(),
+                                )
+                                .await
+                            {
+                                warn!(
+                                    session_id = %effect.session_id,
+                                    error = %err,
+                                    "Failed to update session bot classification after event insert"
+                                );
+                            }
+                        }
+                        self.put_cached_session(
+                            effect.website_id,
+                            effect.visitor_id,
+                            effect.session_id,
+                            effect.last_seen_at,
+                        )
+                        .await;
+                    }
+
                     self.release_ingest_capacity(total_events);
-                    let website_counts: Vec<(String, usize)> =
-                        total_website_counts.into_iter().collect();
                     self.release_website_queue_capacity(&website_counts).await;
                     self.persist_ingest_wal_cursor(wal_end_offset).await;
                     self.maybe_compact_ingest_wal().await;
@@ -1791,13 +1954,36 @@ impl AppState {
                     }
                 }
                 Err(e) => {
+                    let next_retry_attempt = max_retries.saturating_add(1);
                     let retry_delay_ms = (self
                         .ingest_retry_base_ms
-                        .saturating_mul(2u64.saturating_pow(max_retries.saturating_add(1) as u32)))
+                        .saturating_mul(2u64.saturating_pow(next_retry_attempt as u32)))
                     .min(self.ingest_retry_max_ms);
+                    if next_retry_attempt >= self.ingest_retry_max_attempts {
+                        error!(
+                            error = %e,
+                            retries = next_retry_attempt,
+                            max_retries = self.ingest_retry_max_attempts,
+                            batch_count = batches.len(),
+                            event_count = total_events,
+                            "Ingest queue persist hit max retries, moving batch to queue tail"
+                        );
+                        {
+                            let mut queue = self.ingest_queue.lock().await;
+                            for mut batch in batches.drain(..) {
+                                batch.retries = next_retry_attempt;
+                                queue.push_back(batch);
+                            }
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            self.ingest_retry_max_ms,
+                        ))
+                        .await;
+                        continue;
+                    }
                     error!(
                         error = %e,
-                        retries = max_retries.saturating_add(1),
+                        retries = next_retry_attempt,
                         delay_ms = retry_delay_ms,
                         batch_count = batches.len(),
                         event_count = total_events,
@@ -1806,7 +1992,7 @@ impl AppState {
                     {
                         let mut queue = self.ingest_queue.lock().await;
                         for mut batch in batches.drain(..).rev() {
-                            batch.retries = batch.retries.saturating_add(1);
+                            batch.retries = next_retry_attempt;
                             queue.push_front(batch);
                         }
                     }

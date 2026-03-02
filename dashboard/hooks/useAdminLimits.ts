@@ -23,11 +23,13 @@ export function useUpdatePlanLimit() {
         peak_events_per_sec: input.peak_events_per_sec,
         monthly_event_limit: input.monthly_event_limit,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-plan-limits'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-tenant-limits'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-tenant-usage'] });
-      queryClient.invalidateQueries({ queryKey: ['usage'] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-plan-limits'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-tenant-limits'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-tenant-usage'] }),
+        queryClient.invalidateQueries({ queryKey: ['usage'] }),
+      ]);
       toast({ title: 'Plan limits updated' });
     },
     onError: (error: Error) => {
@@ -55,9 +57,12 @@ export function useUpdateTenantLimits(tenantId: string) {
       monthly_event_limit?: number | null;
       clear?: boolean;
     }) => api.updateTenantLimits(tenantId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-tenant-limits', tenantId] });
-      queryClient.invalidateQueries({ queryKey: ['admin-tenant-usage', tenantId] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-tenant-limits', tenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-tenant-usage', tenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['usage'] }),
+      ]);
       toast({ title: 'Tenant limits updated' });
     },
     onError: (error: Error) => {
