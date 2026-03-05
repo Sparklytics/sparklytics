@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, RwLock, Semaphore};
 use tracing::{error, info, warn};
@@ -48,6 +49,7 @@ const DEFAULT_WEBSITE_INGEST_PEAK_EPS: usize = 10_000;
 const DEFAULT_WEBSITE_INGEST_QUEUE_MAX_EVENTS: usize = 100_000;
 const INGEST_WAL_LOG_FILE: &str = "segment.log";
 const INGEST_WAL_CURSOR_FILE: &str = "segment.cursor";
+const USAGE_SYNC_RETRY_FILE: &str = "retry-queue.json";
 
 #[derive(Debug, Clone)]
 struct IngestBatch {
@@ -62,6 +64,13 @@ struct IngestBatch {
 struct IngestWalRecordOffsets {
     start_offset: u64,
     end_offset: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UsageSyncRetryEntry {
+    tenant_id: String,
+    event_count: usize,
+    retries: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +159,17 @@ struct IngestWalInit {
     cursor_offset: u64,
 }
 
+#[derive(Debug, Clone)]
+struct UsageSyncRetryInit {
+    queue_path: PathBuf,
+    pending: VecDeque<UsageSyncRetryEntry>,
+}
+
+type IpRateWindow = VecDeque<Instant>;
+type EventRateWindow = VecDeque<(Instant, usize)>;
+type IpRateLimiter = HashMap<String, IpRateWindow>;
+type EventRateLimiter = HashMap<String, EventRateWindow>;
+
 #[derive(Debug, Clone, Copy)]
 pub struct IngestEnqueueOutcome {
     pub accepted_events: usize,
@@ -182,8 +202,8 @@ pub struct AppState {
     pub website_cache: Arc<RwLock<HashSet<String>>>,
 
     /// Per-IP sliding-window rate limiter for POST /api/collect.
-    rate_limiter: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
-    event_rate_limiter: Arc<Mutex<HashMap<String, VecDeque<(Instant, usize)>>>>,
+    rate_limiter: Arc<Mutex<IpRateLimiter>>,
+    event_rate_limiter: Arc<Mutex<EventRateLimiter>>,
     rate_limiter_max_entries: usize,
     campaign_link_cache: Arc<Mutex<HashMap<String, CachedCampaignLink>>>,
     tracking_pixel_cache: Arc<Mutex<HashMap<String, CachedTrackingPixel>>>,
@@ -239,6 +259,10 @@ pub struct AppState {
     session_cache_max_entries: usize,
     ingest_worker_running: Arc<AtomicBool>,
     ingest_drain_lock: Arc<Mutex<()>>,
+    usage_sync_retry_queue: Arc<Mutex<VecDeque<UsageSyncRetryEntry>>>,
+    usage_sync_retry_path: PathBuf,
+    usage_sync_retry_persist_lock: Arc<Mutex<()>>,
+    usage_sync_retry_running: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -397,6 +421,79 @@ impl AppState {
         }
     }
 
+    fn normalize_usage_sync_retry_entries(
+        entries: Vec<UsageSyncRetryEntry>,
+    ) -> VecDeque<UsageSyncRetryEntry> {
+        let mut normalized: VecDeque<UsageSyncRetryEntry> = VecDeque::new();
+        let mut positions: HashMap<String, usize> = HashMap::new();
+
+        for entry in entries {
+            if entry.tenant_id.trim().is_empty() || entry.event_count == 0 {
+                continue;
+            }
+            if let Some(existing_idx) = positions.get(&entry.tenant_id).copied() {
+                if let Some(existing) = normalized.get_mut(existing_idx) {
+                    existing.event_count = existing.event_count.saturating_add(entry.event_count);
+                    existing.retries = existing.retries.max(entry.retries);
+                }
+                continue;
+            }
+            positions.insert(entry.tenant_id.clone(), normalized.len());
+            normalized.push_back(entry);
+        }
+
+        normalized
+    }
+
+    fn prepare_usage_sync_retry(data_dir: &str) -> UsageSyncRetryInit {
+        let retry_dir = PathBuf::from(data_dir).join("usage-sync");
+        if let Err(e) = std::fs::create_dir_all(&retry_dir) {
+            warn!(
+                error = %e,
+                path = %retry_dir.display(),
+                "Failed to create usage sync retry directory"
+            );
+        }
+
+        let queue_path = retry_dir.join(USAGE_SYNC_RETRY_FILE);
+        if !queue_path.exists() && std::fs::write(&queue_path, "[]").is_err() {
+            warn!(
+                path = %queue_path.display(),
+                "Failed to initialize usage sync retry queue file"
+            );
+        }
+
+        let pending = std::fs::read(&queue_path)
+            .ok()
+            .and_then(|bytes| {
+                if bytes.is_empty() {
+                    return Some(Vec::new());
+                }
+                serde_json::from_slice::<Vec<UsageSyncRetryEntry>>(&bytes)
+                    .map_err(|e| {
+                        warn!(
+                            error = %e,
+                            path = %queue_path.display(),
+                            "Failed to parse usage sync retry queue file"
+                        );
+                        e
+                    })
+                    .ok()
+            })
+            .map(Self::normalize_usage_sync_retry_entries)
+            .unwrap_or_default();
+
+        UsageSyncRetryInit {
+            queue_path,
+            pending,
+        }
+    }
+
+    fn retry_delay_ms(base_ms: u64, max_ms: u64, attempt: u32) -> u64 {
+        let exponent = attempt.min(16);
+        base_ms.saturating_mul(1u64 << exponent).min(max_ms)
+    }
+
     fn hash_user_agent(user_agent: &str) -> u64 {
         // FNV-1a keeps the cache key compact while remaining deterministic and cheap.
         let mut hash = 14695981039346656037_u64;
@@ -441,6 +538,7 @@ impl AppState {
     pub fn new(db: DuckDbBackend, config: Config) -> Self {
         let tuning = Self::runtime_tuning();
         let ingest_wal = Self::prepare_ingest_wal(&config.data_dir);
+        let usage_sync_retry = Self::prepare_usage_sync_retry(&config.data_dir);
 
         let db_path = format!("{}/sparklytics.db", config.data_dir);
         let db = Arc::new(db);
@@ -516,6 +614,10 @@ impl AppState {
             session_cache_max_entries: tuning.session_cache_max_entries,
             ingest_worker_running: Arc::new(AtomicBool::new(false)),
             ingest_drain_lock: Arc::new(Mutex::new(())),
+            usage_sync_retry_queue: Arc::new(Mutex::new(usage_sync_retry.pending)),
+            usage_sync_retry_path: usage_sync_retry.queue_path,
+            usage_sync_retry_persist_lock: Arc::new(Mutex::new(())),
+            usage_sync_retry_running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -556,6 +658,14 @@ impl AppState {
     pub async fn restore_ingest_queue_from_wal(self: &Arc<Self>) {
         if self.restore_ingest_queue_from_wal_internal().await {
             self.schedule_ingest_worker();
+        }
+        let pending_usage_sync_retries = self.usage_sync_retry_queue.lock().await.len();
+        if pending_usage_sync_retries > 0 {
+            info!(
+                pending_usage_sync_retries,
+                "Restored usage sync retry queue from disk"
+            );
+            self.schedule_usage_sync_retry_worker();
         }
     }
 
@@ -762,6 +872,241 @@ impl AppState {
             );
         }
         restored_batch_count > 0
+    }
+
+    async fn persist_usage_sync_retry_queue_shared(
+        queue: &Arc<Mutex<VecDeque<UsageSyncRetryEntry>>>,
+        queue_path: &PathBuf,
+        persist_lock: &Arc<Mutex<()>>,
+    ) {
+        let _persist_guard = Arc::clone(persist_lock).lock_owned().await;
+        let snapshot: Vec<UsageSyncRetryEntry> = {
+            let queue = queue.lock().await;
+            queue.iter().cloned().collect()
+        };
+
+        let payload = match serde_json::to_vec(&snapshot) {
+            Ok(payload) => payload,
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    path = %queue_path.display(),
+                    "Failed to serialize usage sync retry queue"
+                );
+                return;
+            }
+        };
+
+        let tmp_path = queue_path.with_extension("tmp");
+        if let Err(err) = tokio::fs::write(&tmp_path, payload).await {
+            warn!(
+                error = %err,
+                path = %tmp_path.display(),
+                "Failed to write usage sync retry queue temp file"
+            );
+            return;
+        }
+        if let Err(err) = tokio::fs::rename(&tmp_path, queue_path).await {
+            warn!(
+                error = %err,
+                from = %tmp_path.display(),
+                to = %queue_path.display(),
+                "Failed to replace usage sync retry queue file"
+            );
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+        }
+    }
+
+    async fn persist_usage_sync_retry_queue(&self) {
+        Self::persist_usage_sync_retry_queue_shared(
+            &self.usage_sync_retry_queue,
+            &self.usage_sync_retry_path,
+            &self.usage_sync_retry_persist_lock,
+        )
+        .await;
+    }
+
+    async fn enqueue_usage_sync_retry(&self, tenant_id: &str, event_count: usize) {
+        if tenant_id.is_empty() || event_count == 0 {
+            return;
+        }
+        {
+            let mut queue = self.usage_sync_retry_queue.lock().await;
+            if let Some(existing) = queue.iter_mut().find(|entry| entry.tenant_id == tenant_id) {
+                existing.event_count = existing.event_count.saturating_add(event_count);
+                existing.retries = 0;
+            } else {
+                queue.push_back(UsageSyncRetryEntry {
+                    tenant_id: tenant_id.to_string(),
+                    event_count,
+                    retries: 0,
+                });
+            }
+        }
+        self.persist_usage_sync_retry_queue().await;
+        self.schedule_usage_sync_retry_worker();
+    }
+
+    async fn record_persisted_usage_with_retry(&self, tenant_id: &str, count: usize) {
+        if tenant_id.is_empty() || count == 0 {
+            return;
+        }
+        if let Err(err) = self
+            .billing_gate
+            .record_persisted_events(tenant_id, count)
+            .await
+        {
+            warn!(
+                tenant_id,
+                count,
+                error = %err,
+                "Failed to record persisted usage for tenant; queueing durable retry"
+            );
+            self.enqueue_usage_sync_retry(tenant_id, count).await;
+        }
+    }
+
+    fn schedule_usage_sync_retry_worker(&self) {
+        if self
+            .usage_sync_retry_running
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+
+        let queue = Arc::clone(&self.usage_sync_retry_queue);
+        let queue_path = self.usage_sync_retry_path.clone();
+        let persist_lock = Arc::clone(&self.usage_sync_retry_persist_lock);
+        let billing_gate = Arc::clone(&self.billing_gate);
+        let running = Arc::clone(&self.usage_sync_retry_running);
+        let retry_base_ms = self.ingest_retry_base_ms;
+        let retry_max_ms = self.ingest_retry_max_ms;
+
+        tokio::spawn(async move {
+            AppState::run_usage_sync_retry_worker_task(
+                queue,
+                queue_path,
+                persist_lock,
+                billing_gate,
+                running,
+                retry_base_ms,
+                retry_max_ms,
+            )
+            .await;
+        });
+    }
+
+    async fn run_usage_sync_retry_worker_task(
+        queue: Arc<Mutex<VecDeque<UsageSyncRetryEntry>>>,
+        queue_path: PathBuf,
+        persist_lock: Arc<Mutex<()>>,
+        billing_gate: Arc<dyn BillingGate>,
+        running: Arc<AtomicBool>,
+        retry_base_ms: u64,
+        retry_max_ms: u64,
+    ) {
+        loop {
+            loop {
+                let next = {
+                    let queue = queue.lock().await;
+                    queue.front().cloned()
+                };
+
+                let Some(entry) = next else {
+                    break;
+                };
+
+                match billing_gate
+                    .record_persisted_events(&entry.tenant_id, entry.event_count)
+                    .await
+                {
+                    Ok(()) => {
+                        let mut removed = false;
+                        {
+                            let mut queue = queue.lock().await;
+                            if let Some(pos) =
+                                queue.iter().position(|e| e.tenant_id == entry.tenant_id)
+                            {
+                                let mut should_remove = false;
+                                if let Some(existing) = queue.get_mut(pos) {
+                                    if existing.event_count <= entry.event_count {
+                                        should_remove = true;
+                                    } else {
+                                        existing.event_count =
+                                            existing.event_count.saturating_sub(entry.event_count);
+                                        existing.retries = 0;
+                                    }
+                                }
+                                if should_remove {
+                                    queue.remove(pos);
+                                }
+                                removed = true;
+                            }
+                        }
+                        if removed {
+                            AppState::persist_usage_sync_retry_queue_shared(
+                                &queue,
+                                &queue_path,
+                                &persist_lock,
+                            )
+                            .await;
+                        }
+                    }
+                    Err(err) => {
+                        let retry_attempt = {
+                            let mut queue = queue.lock().await;
+                            if let Some(pos) =
+                                queue.iter().position(|e| e.tenant_id == entry.tenant_id)
+                            {
+                                if let Some(existing) = queue.get_mut(pos) {
+                                    existing.retries = existing.retries.saturating_add(1);
+                                    existing.retries
+                                } else {
+                                    entry.retries.saturating_add(1)
+                                }
+                            } else {
+                                entry.retries.saturating_add(1)
+                            }
+                        };
+
+                        AppState::persist_usage_sync_retry_queue_shared(
+                            &queue,
+                            &queue_path,
+                            &persist_lock,
+                        )
+                        .await;
+
+                        let delay_ms =
+                            Self::retry_delay_ms(retry_base_ms, retry_max_ms, retry_attempt);
+                        warn!(
+                            tenant_id = %entry.tenant_id,
+                            count = entry.event_count,
+                            retries = retry_attempt,
+                            delay_ms,
+                            error = %err,
+                            "Usage sync retry failed; will retry"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                }
+            }
+
+            running.store(false, Ordering::Release);
+
+            let has_pending = {
+                let queue = queue.lock().await;
+                !queue.is_empty()
+            };
+            if has_pending
+                && running
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+            {
+                continue;
+            }
+            break;
+        }
     }
 
     pub fn pending_session_marker() -> &'static str {
@@ -1943,20 +2288,8 @@ impl AppState {
                     self.persist_ingest_wal_cursor(wal_end_offset).await;
                     self.maybe_compact_ingest_wal().await;
                     for (tenant_id, count) in tenant_counts {
-                        // TODO(accounting): Failed usage sync can create permanent drift.
-                        // Add a durable retry queue for record_persisted_events failures.
-                        if let Err(err) = self
-                            .billing_gate
-                            .record_persisted_events(&tenant_id, count)
-                            .await
-                        {
-                            warn!(
-                                tenant_id,
-                                count,
-                                error = %err,
-                                "Failed to record persisted usage for tenant"
-                            );
-                        }
+                        self.record_persisted_usage_with_retry(&tenant_id, count)
+                            .await;
                     }
                 }
                 Err(e) => {
