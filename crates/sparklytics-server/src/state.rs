@@ -1299,22 +1299,6 @@ impl AppState {
             }
             return (events, 0, website_counts);
         };
-        if website_queue_caps.is_empty() {
-            let website_counts = Self::count_events_by_website(&events);
-            if !website_counts.is_empty() {
-                let mut queue_counts = self.website_ingest_queue_events.lock().await;
-                for (website_id, count) in &website_counts {
-                    let next = queue_counts
-                        .get(website_id)
-                        .copied()
-                        .unwrap_or(0)
-                        .saturating_add(*count);
-                    queue_counts.insert(website_id.clone(), next);
-                }
-            }
-            return (events, 0, website_counts);
-        }
-
         let mut accepted = Vec::with_capacity(events.len());
         let mut dropped = 0usize;
         let mut website_event_counts: HashMap<String, usize> = HashMap::new();
@@ -2395,5 +2379,103 @@ impl AppState {
                 false
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use sparklytics_core::config::{AppMode, AuthMode, Config};
+    use sparklytics_duckdb::DuckDbBackend;
+
+    fn test_config(data_dir: &str) -> Config {
+        Config {
+            port: 0,
+            data_dir: data_dir.to_string(),
+            geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
+            auth_mode: AuthMode::None,
+            https: false,
+            retention_days: 365,
+            cors_origins: vec![],
+            session_days: 7,
+            buffer_flush_interval_ms: 5000,
+            buffer_max_size: 100,
+            mode: AppMode::SelfHosted,
+            argon2_memory_kb: 65536,
+            public_url: "http://localhost:3000".to_string(),
+            rate_limit_disable: false,
+            duckdb_memory_limit: "1GB".to_string(),
+        }
+    }
+
+    fn test_event(website_id: &str) -> Event {
+        Event {
+            id: format!("evt_{website_id}"),
+            website_id: website_id.to_string(),
+            tenant_id: None,
+            session_id: "session_test".to_string(),
+            visitor_id: "visitor_test".to_string(),
+            event_type: "pageview".to_string(),
+            url: "/".to_string(),
+            referrer_url: None,
+            referrer_domain: None,
+            event_name: None,
+            event_data: None,
+            country: None,
+            region: None,
+            city: None,
+            browser: None,
+            browser_version: None,
+            os: None,
+            os_version: None,
+            device_type: None,
+            screen: None,
+            language: None,
+            utm_source: None,
+            utm_medium: None,
+            utm_campaign: None,
+            utm_term: None,
+            utm_content: None,
+            link_id: None,
+            pixel_id: None,
+            source_ip: None,
+            user_agent: None,
+            is_bot: false,
+            bot_score: 0,
+            bot_reason: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn reserve_website_queue_capacity_empty_caps_use_default_limit() {
+        let data_dir = format!(
+            "/tmp/sparklytics-state-tests-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        );
+        std::fs::create_dir_all(&data_dir).expect("create temp data dir");
+
+        let db = DuckDbBackend::open_in_memory().expect("open in-memory duckdb");
+        let mut state = AppState::new(db, test_config(&data_dir));
+        state.website_ingest_queue_max_events_default = 1;
+
+        let events = vec![test_event("site_test"), test_event("site_test")];
+        let caps = HashMap::new();
+
+        let (accepted, dropped, website_counts) = state
+            .reserve_website_queue_capacity(events, Some(&caps))
+            .await;
+
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(dropped, 1);
+        assert_eq!(website_counts, vec![("site_test".to_string(), 1)]);
+
+        let queue_counts = state.website_ingest_queue_events.lock().await;
+        assert_eq!(queue_counts.get("site_test").copied(), Some(1));
+
+        drop(queue_counts);
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 }
