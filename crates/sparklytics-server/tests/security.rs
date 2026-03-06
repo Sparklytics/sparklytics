@@ -2,6 +2,8 @@
 ///
 /// Covers: SQL injection, oversized payload, malformed UTF-8, CORS behaviour,
 /// website cache invalidation on delete, and rate limiting.
+mod common;
+
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -22,7 +24,7 @@ use sparklytics_server::state::AppState;
 fn base_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-security-test".to_string(),
+        data_dir: common::unique_data_dir("security"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,

@@ -1,3 +1,5 @@
+mod common;
+
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -16,7 +18,7 @@ const TEST_PASSWORD: &str = "strong_password_123";
 fn config(auth_mode: AuthMode) -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("goals"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode,
         https: false,

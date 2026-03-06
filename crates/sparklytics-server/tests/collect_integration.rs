@@ -1,3 +1,5 @@
+mod common;
+
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
@@ -5,7 +7,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::Duration;
 use tower::ServiceExt;
 
 use async_trait::async_trait;
@@ -19,7 +21,7 @@ use sparklytics_server::state::AppState;
 fn test_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("collect"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,
@@ -536,29 +538,22 @@ async fn test_buffer_flush_on_threshold() {
     }
 
     // Threshold flush now runs in a background task; wait briefly for persistence.
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        let conn = state.db.conn_for_test().await;
-        let mut stmt = conn
-            .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1")
-            .expect("prepare");
-        let count: i64 = stmt
-            .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
-                row.get(0)
-            })
-            .expect("count");
-        drop(stmt);
-        drop(conn);
-
-        if count == 100 {
-            break;
+    common::poll_until(Duration::from_secs(2), Duration::from_millis(20), || {
+        let state = Arc::clone(&state);
+        async move {
+            let conn = state.db.conn_for_test().await;
+            let mut stmt = conn
+                .prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1")
+                .expect("prepare");
+            let count: i64 = stmt
+                .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+                    row.get(0)
+                })
+                .expect("count");
+            count == 100
         }
-        assert!(
-            Instant::now() < deadline,
-            "all 100 events should be flushed to DuckDB (count={count})"
-        );
-        sleep(Duration::from_millis(20)).await;
-    }
+    })
+    .await;
 }
 
 // ============================================================

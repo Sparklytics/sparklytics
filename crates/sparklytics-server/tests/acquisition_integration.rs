@@ -1,3 +1,6 @@
+mod common;
+
+use std::path::Path;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -14,7 +17,7 @@ use sparklytics_server::state::AppState;
 fn test_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("acquisition"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,
@@ -70,6 +73,24 @@ async fn json_body(response: axum::http::Response<Body>) -> Value {
         .expect("read body")
         .to_bytes();
     serde_json::from_slice(&bytes).expect("json")
+}
+
+fn ingest_wal_size(state: &AppState) -> u64 {
+    let wal_path = Path::new(&state.config.data_dir).join("ingest-wal/segment.log");
+    std::fs::metadata(&wal_path)
+        .expect("ingest wal metadata")
+        .len()
+}
+
+async fn event_count(state: &AppState, event_name: &str) -> i64 {
+    let conn = state.db.conn_for_test().await;
+    conn.prepare("SELECT COUNT(*) FROM events WHERE website_id = ?1 AND event_name = ?2")
+        .expect("prepare count")
+        .query_row(
+            sparklytics_duckdb::duckdb::params!["site_test", event_name],
+            |row| row.get(0),
+        )
+        .expect("count")
 }
 
 #[tokio::test]
@@ -313,6 +334,8 @@ async fn inactive_link_returns_not_found_without_recording_event() {
         .expect("disable link");
     assert_eq!(disable_response.status(), StatusCode::OK);
 
+    let wal_size_before_request = ingest_wal_size(&state);
+
     let response = app
         .oneshot(get_request(&format!("/l/{slug}")))
         .await
@@ -329,6 +352,7 @@ async fn inactive_link_returns_not_found_without_recording_event() {
         })
         .expect("count");
     assert_eq!(count, 0);
+    assert_eq!(ingest_wal_size(&state), wal_size_before_request);
 }
 
 #[tokio::test]
@@ -362,6 +386,8 @@ async fn inactive_pixel_returns_not_found_without_recording_event() {
         .expect("disable pixel");
     assert_eq!(disable_response.status(), StatusCode::OK);
 
+    let wal_size_before_request = ingest_wal_size(&state);
+
     let response = app
         .oneshot(get_request(&format!("/p/{pixel_key}")))
         .await
@@ -378,6 +404,111 @@ async fn inactive_pixel_returns_not_found_without_recording_event() {
         })
         .expect("count");
     assert_eq!(count, 0);
+    assert_eq!(ingest_wal_size(&state), wal_size_before_request);
+}
+
+#[tokio::test]
+async fn disabling_cached_link_invalidates_cache_without_recording_more_events() {
+    let (state, app) = setup().await;
+    let create_response = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/websites/site_test/links",
+            json!({
+                "name": "Cached Link",
+                "destination_url": "https://example.com/pricing"
+            }),
+        ))
+        .await
+        .expect("create link");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let created = json_body(create_response).await;
+    let link_id = created["data"]["id"].as_str().expect("link id");
+    let slug = created["data"]["slug"].as_str().expect("slug");
+
+    let warm_response = app
+        .clone()
+        .oneshot(get_request(&format!("/l/{slug}")))
+        .await
+        .expect("warm request");
+    assert_eq!(warm_response.status(), StatusCode::FOUND);
+    state.flush_buffer().await;
+    assert_eq!(event_count(&state, "link_click").await, 1);
+
+    let disable_response = app
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            &format!("/api/websites/site_test/links/{link_id}"),
+            json!({ "is_active": false }),
+        ))
+        .await
+        .expect("disable link");
+    assert_eq!(disable_response.status(), StatusCode::OK);
+
+    let wal_size_before_request = ingest_wal_size(&state);
+    let response = app
+        .oneshot(get_request(&format!("/l/{slug}")))
+        .await
+        .expect("request after disable");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    state.flush_buffer().await;
+    assert_eq!(event_count(&state, "link_click").await, 1);
+    assert_eq!(ingest_wal_size(&state), wal_size_before_request);
+}
+
+#[tokio::test]
+async fn disabling_cached_pixel_invalidates_cache_without_recording_more_events() {
+    let (state, app) = setup().await;
+    let create_response = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/websites/site_test/pixels",
+            json!({
+                "name": "Cached Pixel",
+                "default_url": "https://example.com/docs"
+            }),
+        ))
+        .await
+        .expect("create pixel");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let created = json_body(create_response).await;
+    let pixel_id = created["data"]["id"].as_str().expect("pixel id");
+    let pixel_key = created["data"]["pixel_key"].as_str().expect("pixel key");
+
+    let warm_response = app
+        .clone()
+        .oneshot(get_request(&format!("/p/{pixel_key}")))
+        .await
+        .expect("warm request");
+    assert_eq!(warm_response.status(), StatusCode::OK);
+    state.flush_buffer().await;
+    assert_eq!(event_count(&state, "pixel_view").await, 1);
+
+    let disable_response = app
+        .clone()
+        .oneshot(json_request(
+            "PUT",
+            &format!("/api/websites/site_test/pixels/{pixel_id}"),
+            json!({ "is_active": false }),
+        ))
+        .await
+        .expect("disable pixel");
+    assert_eq!(disable_response.status(), StatusCode::OK);
+
+    let wal_size_before_request = ingest_wal_size(&state);
+    let response = app
+        .oneshot(get_request(&format!("/p/{pixel_key}")))
+        .await
+        .expect("request after disable");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    state.flush_buffer().await;
+    assert_eq!(event_count(&state, "pixel_view").await, 1);
+    assert_eq!(ingest_wal_size(&state), wal_size_before_request);
 }
 
 #[tokio::test]
