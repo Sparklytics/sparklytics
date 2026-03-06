@@ -1,10 +1,12 @@
+mod common;
+
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::Deserialize;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::Duration;
 
 use sparklytics_core::billing::{BillingAdmission, BillingGate};
 use sparklytics_core::config::{AppMode, AuthMode, Config};
@@ -139,20 +141,6 @@ async fn read_retry_entries(data_dir: &str) -> Vec<UsageSyncRetryEntry> {
     serde_json::from_str::<Vec<UsageSyncRetryEntry>>(&content).expect("parse retry queue file")
 }
 
-async fn wait_until<F>(timeout: Duration, mut condition: F)
-where
-    F: FnMut() -> bool,
-{
-    let deadline = Instant::now() + timeout;
-    loop {
-        if condition() {
-            return;
-        }
-        assert!(Instant::now() < deadline, "condition timed out");
-        sleep(Duration::from_millis(25)).await;
-    }
-}
-
 #[tokio::test]
 async fn test_failed_usage_sync_is_persisted_to_retry_file() {
     let data_dir = unique_data_dir("persist");
@@ -172,15 +160,18 @@ async fn test_failed_usage_sync_is_persisted_to_retry_file() {
         .await
         .expect("enqueue events");
 
-    wait_until(Duration::from_secs(5), || {
-        let entries =
-            std::fs::read_to_string(std::path::Path::new(&data_dir).join(RETRY_QUEUE_FILE))
-                .ok()
-                .and_then(|raw| serde_json::from_str::<Vec<UsageSyncRetryEntry>>(&raw).ok())
-                .unwrap_or_default();
-        entries
-            .iter()
-            .any(|entry| entry.tenant_id == "org_retry" && entry.event_count >= 1)
+    common::poll_until(Duration::from_secs(5), Duration::from_millis(25), || {
+        let data_dir = data_dir.clone();
+        async move {
+            let entries =
+                std::fs::read_to_string(std::path::Path::new(&data_dir).join(RETRY_QUEUE_FILE))
+                    .ok()
+                    .and_then(|raw| serde_json::from_str::<Vec<UsageSyncRetryEntry>>(&raw).ok())
+                    .unwrap_or_default();
+            entries
+                .iter()
+                .any(|entry| entry.tenant_id == "org_retry" && entry.event_count >= 1)
+        }
     })
     .await;
 
@@ -217,21 +208,27 @@ async fn test_usage_sync_retry_replays_on_startup() {
 
     state.restore_ingest_queue_from_wal().await;
 
-    wait_until(Duration::from_secs(5), || {
-        let calls = calls.lock().expect("lock calls");
-        calls
-            .iter()
-            .any(|(tenant_id, count)| tenant_id == "org_restore" && *count == 7)
+    common::poll_until(Duration::from_secs(5), Duration::from_millis(25), || {
+        let calls = Arc::clone(&calls);
+        async move {
+            let calls = calls.lock().expect("lock calls");
+            calls
+                .iter()
+                .any(|(tenant_id, count)| tenant_id == "org_restore" && *count == 7)
+        }
     })
     .await;
 
-    wait_until(Duration::from_secs(5), || {
-        let entries =
-            std::fs::read_to_string(std::path::Path::new(&data_dir).join(RETRY_QUEUE_FILE))
-                .ok()
-                .and_then(|raw| serde_json::from_str::<Vec<UsageSyncRetryEntry>>(&raw).ok())
-                .unwrap_or_default();
-        entries.is_empty()
+    common::poll_until(Duration::from_secs(5), Duration::from_millis(25), || {
+        let data_dir = data_dir.clone();
+        async move {
+            let entries =
+                std::fs::read_to_string(std::path::Path::new(&data_dir).join(RETRY_QUEUE_FILE))
+                    .ok()
+                    .and_then(|raw| serde_json::from_str::<Vec<UsageSyncRetryEntry>>(&raw).ok())
+                    .unwrap_or_default();
+            entries.is_empty()
+        }
     })
     .await;
 
