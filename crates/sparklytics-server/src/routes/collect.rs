@@ -19,11 +19,12 @@ use chrono::Utc;
 use serde_json::json;
 
 use sparklytics_core::{
-    billing::BillingOutcome,
+    billing::BillingLimitReason,
     config::AppMode,
     event::{CollectOrBatch, CollectPayload, Event},
     visitor::{compute_visitor_id, extract_referrer_domain},
 };
+use sparklytics_metadata::Website;
 
 use crate::{
     bot_detection::{classify_event, BotOverrideDecision, BotPolicyInput},
@@ -111,7 +112,7 @@ pub async fn collect(
     // Validate unique IDs only to avoid repeated DB lookups for batches.
     let unique_website_ids: HashSet<String> =
         payloads.iter().map(|p| p.website_id.clone()).collect();
-    let mut website_tenant_ids: HashMap<String, Option<String>> = HashMap::new();
+    let mut websites_by_id: HashMap<String, Website> = HashMap::new();
     for website_id in unique_website_ids {
         let website = state
             .get_website_metadata_cached(&website_id)
@@ -123,14 +124,14 @@ pub async fn collect(
                 website_id
             )));
         };
-        website_tenant_ids.insert(website_id, website.tenant_id);
+        websites_by_id.insert(website_id, website);
     }
 
     // --- Resolve cloud tenant context from website ownership ---
     let cloud_batch_tenant_id = if state.config.mode == AppMode::Cloud {
         let mut resolved_tenant_id: Option<&str> = None;
-        for tenant_id in website_tenant_ids.values() {
-            let Some(tenant_id) = tenant_id.as_deref() else {
+        for website in websites_by_id.values() {
+            let Some(tenant_id) = website.tenant_id.as_deref() else {
                 return Err(AppError::OrganizationContextRequired);
             };
             match resolved_tenant_id {
@@ -152,14 +153,6 @@ pub async fn collect(
         None
     };
 
-    // --- BillingGate check (cloud mode) ---
-    if let Some(ref tenant_id) = cloud_batch_tenant_id {
-        let outcome = state.billing_gate.check(tenant_id).await;
-        if outcome == BillingOutcome::LimitExceeded {
-            return Err(AppError::PlanLimitExceeded);
-        }
-    }
-
     // --- Extract client IP ---
     let client_ip = extract_client_ip(&headers, maybe_connect_info.0);
 
@@ -167,6 +160,91 @@ pub async fn collect(
     // SPARKLYTICS_RATE_LIMIT_DISABLE bypasses this for load testing only.
     if !state.config.rate_limit_disable && !state.check_rate_limit(&client_ip).await {
         return Err(AppError::RateLimited);
+    }
+
+    // --- Apply cloud plan admission limits ---
+    let mut payloads = payloads;
+    let mut dropped_monthly_limit = 0usize;
+    let mut dropped_peak_rate = 0usize;
+    if let Some(ref tenant_id) = cloud_batch_tenant_id {
+        let admission = state
+            .billing_gate
+            .admit_events(tenant_id, payloads.len())
+            .await;
+        if admission.allowed_events < payloads.len() {
+            let dropped = payloads.len().saturating_sub(admission.allowed_events);
+            payloads.truncate(admission.allowed_events);
+            match admission.reason {
+                Some(BillingLimitReason::MonthlyLimit) => {
+                    dropped_monthly_limit = dropped_monthly_limit.saturating_add(dropped);
+                }
+                Some(BillingLimitReason::PeakRate) | None => {
+                    dropped_peak_rate = dropped_peak_rate.saturating_add(dropped);
+                }
+            }
+        }
+    }
+
+    // --- Apply self-hosted per-website peak rate admission ---
+    if state.config.mode == AppMode::SelfHosted {
+        let mut requested_by_website: HashMap<String, usize> = HashMap::new();
+        for payload in &payloads {
+            let next = requested_by_website
+                .get(&payload.website_id)
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            requested_by_website.insert(payload.website_id.clone(), next);
+        }
+
+        let mut allowed_by_website: HashMap<String, usize> = HashMap::new();
+        for (website_id, requested) in requested_by_website {
+            let peak_eps = websites_by_id
+                .get(&website_id)
+                .and_then(|website| website.ingest_peak_eps)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(state.website_ingest_peak_eps_default());
+            let max_per_min = peak_eps.saturating_mul(60);
+            let admitted = state
+                .admit_events_rate_limit_with_max(
+                    &format!("website:{website_id}"),
+                    requested,
+                    max_per_min,
+                )
+                .await;
+            allowed_by_website.insert(website_id, admitted);
+        }
+
+        let mut admitted_payloads = Vec::with_capacity(payloads.len());
+        for payload in payloads {
+            let remaining = allowed_by_website
+                .entry(payload.website_id.clone())
+                .or_insert(0);
+            if *remaining > 0 {
+                *remaining = remaining.saturating_sub(1);
+                admitted_payloads.push(payload);
+            } else {
+                dropped_peak_rate = dropped_peak_rate.saturating_add(1);
+            }
+        }
+        payloads = admitted_payloads;
+    }
+
+    if payloads.is_empty() {
+        let mut reasons = Vec::new();
+        if dropped_monthly_limit > 0 {
+            reasons.push("monthly_limit");
+        }
+        if dropped_peak_rate > 0 {
+            reasons.push("peak_rate");
+        }
+        return Ok(build_collect_response(
+            &state,
+            0,
+            dropped_monthly_limit.saturating_add(dropped_peak_rate),
+            &reasons,
+        ));
     }
 
     // --- Extract User-Agent header ---
@@ -250,7 +328,9 @@ pub async fn collect(
         events.push(Event {
             id: uuid::Uuid::new_v4().to_string(),
             website_id,
-            tenant_id: website_tenant_ids.get(&p.website_id).cloned().flatten(),
+            tenant_id: websites_by_id
+                .get(&p.website_id)
+                .and_then(|website| website.tenant_id.clone()),
             // Session is resolved in the ingest worker right before persistence.
             session_id: AppState::pending_session_marker().to_string(),
             visitor_id,
@@ -294,8 +374,52 @@ pub async fn collect(
         });
     }
 
-    state.enqueue_ingest_events(events).await?;
+    let website_queue_caps = if state.config.mode == AppMode::SelfHosted {
+        let mut caps = HashMap::new();
+        for (website_id, website) in &websites_by_id {
+            let cap = website
+                .ingest_queue_max_events
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(state.website_ingest_queue_max_events_default());
+            caps.insert(website_id.clone(), cap);
+        }
+        Some(caps)
+    } else {
+        None
+    };
 
+    let enqueue_outcome = state
+        .enqueue_ingest_events_with_limits(events, website_queue_caps.as_ref())
+        .await?;
+
+    let mut reasons = Vec::new();
+    if dropped_monthly_limit > 0 {
+        reasons.push("monthly_limit");
+    }
+    if dropped_peak_rate > 0 {
+        reasons.push("peak_rate");
+    }
+    if enqueue_outcome.dropped_events > 0 {
+        reasons.push("queue_overflow");
+    }
+
+    Ok(build_collect_response(
+        &state,
+        enqueue_outcome.accepted_events,
+        dropped_monthly_limit
+            .saturating_add(dropped_peak_rate)
+            .saturating_add(enqueue_outcome.dropped_events),
+        &reasons,
+    ))
+}
+
+fn build_collect_response(
+    state: &Arc<AppState>,
+    accepted_events: usize,
+    dropped_events: usize,
+    drop_reasons: &[&str],
+) -> Response {
     let mut response = (
         axum::http::StatusCode::ACCEPTED,
         Json(json!({ "ok": true })),
@@ -315,7 +439,26 @@ pub async fn collect(
             .headers_mut()
             .insert("x-sparklytics-ingest-queue-capacity", value);
     }
-    Ok(response)
+    if let Ok(value) = HeaderValue::from_str(&accepted_events.to_string()) {
+        response
+            .headers_mut()
+            .insert("x-sparklytics-ingest-accepted-events", value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&dropped_events.to_string()) {
+        response
+            .headers_mut()
+            .insert("x-sparklytics-ingest-dropped-events", value);
+    }
+    if !drop_reasons.is_empty() {
+        let reason_value = drop_reasons.join(",");
+        if let Ok(value) = HeaderValue::from_str(&reason_value) {
+            response
+                .headers_mut()
+                .insert("x-sparklytics-ingest-drop-reason", value);
+        }
+    }
+
+    response
 }
 
 // ---------------------------------------------------------------------------

@@ -71,3 +71,33 @@ export function useDeleteWebsite() {
     },
   });
 }
+
+export function useWebsiteIngestLimits(websiteId: string) {
+  return useQuery({
+    queryKey: ['website-ingest-limits', websiteId],
+    queryFn: () => api.getWebsiteIngestLimits(websiteId),
+    enabled: !!websiteId,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useUpdateWebsiteIngestLimits(websiteId: string) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: (payload: {
+      peak_events_per_sec?: number | null;
+      queue_max_events?: number | null;
+    }) => api.updateWebsiteIngestLimits(websiteId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['website-ingest-limits', websiteId] });
+      queryClient.invalidateQueries({ queryKey: ['website', websiteId] });
+      queryClient.invalidateQueries({ queryKey: ['websites'] });
+      toast({ title: 'Ingestion limits saved' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Save failed', description: error.message, variant: 'destructive' });
+    },
+  });
+}

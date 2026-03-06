@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -11,6 +11,9 @@ use chrono::NaiveDate;
 use serde::Deserialize;
 use serde_json::json;
 
+use sparklytics_core::config::{AppMode, AuthMode};
+
+use super::bearer_jwt::verify_and_decode_bearer_claims;
 use crate::{error::AppError, state::AppState};
 
 /// Maximum date range allowed for export (90 days).
@@ -37,6 +40,10 @@ pub async fn export_events(
     Path(website_id): Path<String>,
     Query(q): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
+    if state.config.mode == AppMode::Cloud && matches!(&state.config.auth_mode, AuthMode::None) {
+        return Err(AppError::Unauthorized);
+    }
+
     if !state.is_valid_website(&website_id).await {
         return Err(AppError::NotFound("Website not found".to_string()));
     }
@@ -213,4 +220,47 @@ pub async fn usage_not_found() -> impl IntoResponse {
             }
         })),
     )
+}
+
+async fn extract_tenant_id_from_bearer(headers: &HeaderMap) -> Result<String, AppError> {
+    let claims = verify_and_decode_bearer_claims(headers).await?;
+    claims
+        .get("o")
+        .and_then(|org| org.get("id"))
+        .and_then(|id| id.as_str())
+        .map(str::to_string)
+        .ok_or(AppError::OrganizationContextRequired)
+}
+
+/// `GET /api/usage` — tenant usage summary (cloud mode only).
+pub async fn get_usage(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    if state.config.mode != AppMode::Cloud {
+        return Ok(usage_not_found().await.into_response());
+    }
+
+    let tenant_id = extract_tenant_id_from_bearer(&headers).await?;
+    let usage = state
+        .billing_gate
+        .get_tenant_monthly_usage(&tenant_id, None)
+        .await
+        .map_err(AppError::Internal)?;
+    let effective = state
+        .billing_gate
+        .get_tenant_effective_limits(&tenant_id)
+        .await
+        .map_err(AppError::Internal)?;
+
+    Ok(Json(json!({
+        "data": {
+            "month": usage.month,
+            "event_count": usage.event_count,
+            "event_limit": usage.event_limit,
+            "percent_used": usage.percent_used,
+            "plan": effective.plan,
+        }
+    }))
+    .into_response())
 }

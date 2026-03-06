@@ -10,8 +10,15 @@ import { ChangePasswordSection } from '@/components/settings/ChangePasswordSecti
 import { BotsSettingsPage } from '@/components/settings/BotsSettingsPage';
 import { NotificationsSettingsPage } from '@/components/notifications/NotificationsSettingsPage';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useWebsite, useUpdateWebsite, useDeleteWebsite } from '@/hooks/useWebsites';
+import {
+  useWebsite,
+  useUpdateWebsite,
+  useDeleteWebsite,
+  useWebsiteIngestLimits,
+  useUpdateWebsiteIngestLimits,
+} from '@/hooks/useWebsites';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 import { TIMEZONE_GROUPS } from '@/lib/timezones';
 
 function navigate(path: string) {
@@ -23,10 +30,22 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
   const { data: websiteData, isLoading } = useWebsite(websiteId);
   const updateWebsite = useUpdateWebsite(websiteId);
   const deleteWebsite = useDeleteWebsite();
+  const ingestLimitsQuery = useWebsiteIngestLimits(websiteId);
+  const updateIngestLimits = useUpdateWebsiteIngestLimits(websiteId);
   const { data: authStatus } = useAuth();
+  const { toast } = useToast();
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [timezone, setTimezone] = useState('UTC');
+  const [generalDraftDirty, setGeneralDraftDirty] = useState(false);
+  const [generalDraftWebsiteId, setGeneralDraftWebsiteId] = useState<string | null>(null);
+  const [peakEventsPerSec, setPeakEventsPerSec] = useState('');
+  const [queueMaxEvents, setQueueMaxEvents] = useState('');
+  const [customPeak, setCustomPeak] = useState(false);
+  const [customQueue, setCustomQueue] = useState(false);
+  const [ingestionDraftDirty, setIngestionDraftDirty] = useState(false);
+  const [ingestionDraftWebsiteId, setIngestionDraftWebsiteId] = useState<string | null>(null);
+  const [ingestionValidationError, setIngestionValidationError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const website = websiteData?.data;
@@ -35,21 +54,74 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
     authStatus?.mode === 'password' || authStatus?.mode === 'local';
 
   useEffect(() => {
+    if (generalDraftWebsiteId === websiteId) return;
+    setName('');
+    setDomain('');
+    setTimezone('UTC');
+    setGeneralDraftDirty(false);
+    setGeneralDraftWebsiteId(websiteId);
+  }, [generalDraftWebsiteId, websiteId]);
+
+  useEffect(() => {
     if (website) {
+      if (generalDraftDirty) return;
       setName(website.name);
       setDomain(website.domain);
       setTimezone(website.timezone);
     }
-  }, [website]);
+  }, [website, generalDraftDirty]);
+
+  useEffect(() => {
+    if (ingestionDraftWebsiteId === websiteId) return;
+    setPeakEventsPerSec('');
+    setQueueMaxEvents('');
+    setCustomPeak(false);
+    setCustomQueue(false);
+    setIngestionDraftDirty(false);
+    setIngestionValidationError(null);
+    setIngestionDraftWebsiteId(websiteId);
+  }, [ingestionDraftWebsiteId, websiteId]);
+
+  useEffect(() => {
+    const limits = ingestLimitsQuery.data?.data;
+    if (!limits || ingestionDraftDirty) return;
+    setPeakEventsPerSec(String(limits.peak_events_per_sec));
+    setQueueMaxEvents(String(limits.queue_max_events));
+    setCustomPeak(limits.source.peak_events_per_sec === 'custom');
+    setCustomQueue(limits.source.queue_max_events === 'custom');
+  }, [ingestLimitsQuery.data, ingestionDraftDirty]);
 
   async function handleSave() {
     await updateWebsite.mutateAsync({ name, domain, timezone });
+    setGeneralDraftDirty(false);
   }
 
   async function handleDelete() {
     await deleteWebsite.mutateAsync(websiteId);
     setShowDeleteConfirm(false);
     navigate('/settings');
+  }
+
+  async function handleSaveIngestion() {
+    const parsedPeak = Number(peakEventsPerSec);
+    const parsedQueue = Number(queueMaxEvents);
+    if (customPeak && (!Number.isInteger(parsedPeak) || parsedPeak <= 0)) {
+      setIngestionValidationError('Peak events/sec must be a positive integer.');
+      toast({ title: 'Invalid peak events/sec', variant: 'destructive' });
+      return;
+    }
+    if (customQueue && (!Number.isInteger(parsedQueue) || parsedQueue <= 0)) {
+      setIngestionValidationError('Queue max events must be a positive integer.');
+      toast({ title: 'Invalid queue max events', variant: 'destructive' });
+      return;
+    }
+    setIngestionValidationError(null);
+    await updateIngestLimits.mutateAsync({
+      peak_events_per_sec: customPeak ? parsedPeak : null,
+      queue_max_events: customQueue ? parsedQueue : null,
+    });
+    await ingestLimitsQuery.refetch();
+    setIngestionDraftDirty(false);
   }
 
   if (isLoading) {
@@ -90,7 +162,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <span className="text-xs text-ink-2 mb-1 block">Name</span>
               <input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setGeneralDraftDirty(true);
+                }}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
             </label>
@@ -98,7 +173,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <span className="text-xs text-ink-2 mb-1 block">Domain</span>
               <input
                 value={domain}
-                onChange={(e) => setDomain(e.target.value)}
+                onChange={(e) => {
+                  setDomain(e.target.value);
+                  setGeneralDraftDirty(true);
+                }}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
             </label>
@@ -106,7 +184,10 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
               <span className="text-xs text-ink-2 mb-1 block">Timezone</span>
               <select
                 value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
+                onChange={(e) => {
+                  setTimezone(e.target.value);
+                  setGeneralDraftDirty(true);
+                }}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               >
                 {Object.entries(TIMEZONE_GROUPS).map(([group, zones]) => (
@@ -131,6 +212,92 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
         <section className="bg-surface-1 border border-line rounded-lg p-6">
           <h2 className="text-sm font-semibold text-ink mb-4">Tracking snippet</h2>
           <TrackingSnippet websiteId={websiteId} domain={website.domain} />
+        </section>
+      )}
+
+      {subSubPage === 'ingestion' && (
+        <section className="bg-surface-1 border border-line rounded-lg p-6 space-y-4">
+          <h2 className="text-sm font-semibold text-ink">Ingestion limits</h2>
+          <p className="text-xs text-ink-3">
+            Configure per-website peak ingest and queue cap. Peak is enforced as a 60-second rolling bucket derived from events/second.
+          </p>
+          {ingestLimitsQuery.isError && (
+            <p className="text-xs text-down">
+              Failed to load current ingestion limits. Refresh and retry before saving.
+            </p>
+          )}
+          <label className="flex items-center gap-2 text-xs text-ink-2">
+            <input
+              type="checkbox"
+              checked={customPeak}
+              onChange={(e) => {
+                setCustomPeak(e.target.checked);
+                setIngestionDraftDirty(true);
+                setIngestionValidationError(null);
+              }}
+            />
+            Use custom peak limit
+          </label>
+          <label className="block">
+            <span className="text-xs text-ink-2 mb-1 block">Peak events per second</span>
+            <input
+              type="number"
+              min={1}
+              disabled={!customPeak}
+              value={peakEventsPerSec}
+              onChange={(e) => {
+                setPeakEventsPerSec(e.target.value);
+                setIngestionDraftDirty(true);
+                setIngestionValidationError(null);
+              }}
+              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-60"
+            />
+          </label>
+
+          <label className="flex items-center gap-2 text-xs text-ink-2">
+            <input
+              type="checkbox"
+              checked={customQueue}
+              onChange={(e) => {
+                setCustomQueue(e.target.checked);
+                setIngestionDraftDirty(true);
+                setIngestionValidationError(null);
+              }}
+            />
+            Use custom queue cap
+          </label>
+          <label className="block">
+            <span className="text-xs text-ink-2 mb-1 block">Queue max events</span>
+            <input
+              type="number"
+              min={1}
+              disabled={!customQueue}
+              value={queueMaxEvents}
+              onChange={(e) => {
+                setQueueMaxEvents(e.target.value);
+                setIngestionDraftDirty(true);
+                setIngestionValidationError(null);
+              }}
+              className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm font-mono tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark disabled:opacity-60"
+            />
+          </label>
+          {ingestionValidationError && (
+            <p className="text-xs text-down">{ingestionValidationError}</p>
+          )}
+
+          <Button
+            size="sm"
+            onClick={handleSaveIngestion}
+            disabled={
+              updateIngestLimits.isPending ||
+              ingestLimitsQuery.isLoading ||
+              ingestLimitsQuery.isError
+            }
+            className="text-xs"
+          >
+            {updateIngestLimits.isPending && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+            Save ingestion limits
+          </Button>
         </section>
       )}
 

@@ -19,6 +19,8 @@ pub struct Website {
     pub name: String,
     pub domain: String,
     pub timezone: String,
+    pub ingest_peak_eps: Option<i64>,
+    pub ingest_queue_max_events: Option<i64>,
     pub share_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -36,6 +38,16 @@ pub struct UpdateWebsiteParams {
     pub name: Option<String>,
     pub domain: Option<String>,
     pub timezone: Option<String>,
+    /// Tri-state:
+    /// - `None`: do not change
+    /// - `Some(Some(v))`: set explicit value
+    /// - `Some(None)`: clear value (fall back to runtime defaults)
+    pub ingest_peak_eps: Option<Option<i64>>,
+    /// Tri-state:
+    /// - `None`: do not change
+    /// - `Some(Some(v))`: set explicit value
+    /// - `Some(None)`: clear value (fall back to runtime defaults)
+    pub ingest_queue_max_events: Option<Option<i64>>,
 }
 
 /// Storage interface for non-analytics metadata operations.

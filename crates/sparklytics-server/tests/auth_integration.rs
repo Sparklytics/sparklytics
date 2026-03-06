@@ -6,7 +6,7 @@ use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use sparklytics_core::billing::{BillingGate, BillingOutcome, NullBillingGate};
+use sparklytics_core::billing::{BillingGate, NullBillingGate};
 use sparklytics_core::config::{AppMode, AuthMode, Config};
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
@@ -679,5 +679,7 @@ async fn test_password_mode_first_run_login_flow() {
 #[tokio::test]
 async fn test_null_billing_gate_test_in_server_still_passes() {
     let gate = NullBillingGate;
-    assert_eq!(gate.check("org_any").await, BillingOutcome::Allowed);
+    let admission = gate.admit_events("org_any", 7).await;
+    assert_eq!(admission.allowed_events, 7);
+    assert!(admission.reason.is_none());
 }

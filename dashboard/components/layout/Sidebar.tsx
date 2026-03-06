@@ -3,6 +3,7 @@
 import {
   Clock,
   Settings,
+  Gauge,
   LogOut,
   FileText,
   Globe,
@@ -87,6 +88,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
 
   const configItems: { label: string; path: string; icon: any }[] = [
     { label: 'General', path: `/dashboard/${websiteId}/settings/general`, icon: Settings },
+    { label: 'Ingestion', path: `/dashboard/${websiteId}/settings/ingestion`, icon: Gauge },
     { label: 'Snippet', path: `/dashboard/${websiteId}/settings/snippet`, icon: Code },
     { label: 'Sharing', path: `/dashboard/${websiteId}/settings/sharing`, icon: Share2 },
     { label: 'Notifications', path: `/dashboard/${websiteId}/settings/notifications`, icon: Bell },
