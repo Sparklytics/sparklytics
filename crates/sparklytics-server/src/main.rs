@@ -55,14 +55,6 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Seed a default website so the server is usable out of the box.
-    // Uses ON CONFLICT so it's safe to run on every startup.
-    if let Err(e) = db.seed_website("site_default", "localhost").await {
-        tracing::warn!(error = %e, "Failed to seed default website");
-    } else {
-        info!("Default website 'site_default' (localhost) ready");
-    }
-
     // Auth initialization for password/local modes.
     match &cfg.auth_mode {
         sparklytics_core::config::AuthMode::Password(_)

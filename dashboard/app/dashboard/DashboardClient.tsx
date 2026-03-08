@@ -95,13 +95,14 @@ export function DashboardClient() {
 
   // Redirect bare /dashboard (no websiteId) → first website or /onboarding
   useEffect(() => {
-    if (websiteId || !websitesData) return;
+    if (websiteId || !websitesData || !authLoaded || authError) return;
+    if (authStatus && (authStatus.setup_required || !authStatus.authenticated)) return;
     if (websitesData.data.length > 0) {
       navigate(`/dashboard/${websitesData.data[0].id}`);
     } else {
-      navigate('/onboarding');
+      window.location.href = '/onboarding';
     }
-  }, [websiteId, websitesData]);
+  }, [websiteId, websitesData, authLoaded, authError, authStatus]);
 
   // Find the current website for EmptyState domain prop
   const currentWebsite = websitesData?.data?.find((w) => w.id === websiteId);

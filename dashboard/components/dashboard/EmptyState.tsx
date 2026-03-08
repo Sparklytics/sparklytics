@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Copy, Check } from 'lucide-react';
 
 interface EmptyStateProps {
@@ -9,6 +10,7 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ websiteId, domain }: EmptyStateProps) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
 
   const host = domain || window.location.host;
@@ -56,21 +58,11 @@ export function EmptyState({ websiteId, domain }: EmptyStateProps) {
         <div className="mt-6 flex items-center justify-center gap-4">
           <button
             onClick={() => {
-              window.history.pushState({}, '', '/onboarding');
-              window.dispatchEvent(new PopStateEvent('popstate'));
+              router.push(`/dashboard/${websiteId}/settings/snippet`);
             }}
             className="text-xs text-spark hover:underline"
           >
-            Open setup wizard
-          </button>
-          <button
-            onClick={() => {
-              window.history.pushState({}, '', `/dashboard/${websiteId}/settings/snippet`);
-              window.dispatchEvent(new PopStateEvent('popstate'));
-            }}
-            className="text-xs text-ink-3 hover:text-ink transition-colors"
-          >
-            Go to settings
+            Open snippet settings
           </button>
         </div>
       </div>

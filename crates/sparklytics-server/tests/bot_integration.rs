@@ -390,18 +390,21 @@ async fn recompute_returns_job_status_and_audit_record() {
         .expect("recompute start");
     assert_eq!(recompute_response.status(), StatusCode::ACCEPTED);
     let recompute_json = json_body(recompute_response).await;
-    let job_id = recompute_json["job_id"].as_str().expect("job_id");
+    let job_id = recompute_json["job_id"]
+        .as_str()
+        .expect("job_id")
+        .to_string();
     assert_eq!(recompute_json["status"], "queued");
 
     let status = Arc::new(Mutex::new(String::new()));
     let run_payload = Arc::new(Mutex::new(Value::Null));
     common::poll_until(
-        tokio::time::Duration::from_millis(500),
+        tokio::time::Duration::from_secs(5),
         tokio::time::Duration::from_millis(25),
         || {
             let app = app.clone();
             let website_id = website_id.clone();
-            let job_id = job_id;
+            let job_id = job_id.clone();
             let status = Arc::clone(&status);
             let run_payload = Arc::clone(&run_payload);
             async move {

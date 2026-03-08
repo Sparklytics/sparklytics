@@ -17,6 +17,8 @@ Track pageviews, sessions, custom events, funnels, and retention — with full d
 
 ## Deploy on your VPS in 5 minutes
 
+Docker is the recommended first-time install path. Use plain HTTP only for local testing; for a public VPS, put Sparklytics behind HTTPS with Caddy, Nginx, or Traefik.
+
 ### 1. Start Sparklytics
 
 ```bash
@@ -24,22 +26,25 @@ curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-co
 docker compose up -d
 ```
 
-Open `http://your-server-ip:3000` — you'll be guided through a one-time setup to create your admin account.
+Open `http://your-server-ip:3000` and Sparklytics will guide you through:
+
+1. creating your admin password,
+2. landing in onboarding and adding your first website,
+3. installing the tracking snippet, and
+4. verifying that your first pageview was received.
+
+Fresh installs start with zero websites. There is no seeded default site; the first website is created in onboarding.
 
 If you use plain HTTP locally, set `SPARKLYTICS_HTTPS=false` in `docker-compose.yml` (or env). Keep `SPARKLYTICS_HTTPS=true` only behind HTTPS/TLS.
 
-### 2. Add your first website
-
-In the dashboard: **New website** → enter name + domain → click **Create**.
-
-### 3. Connect your site
+### 2. Connect your site
 
 Pick the integration that fits your stack:
 
 #### Any website — HTML snippet
 
 ```html
-<!-- Add before </body> on every page -->
+<!-- Add inside <head> on every page -->
 <script defer src="https://analytics.example.com/s.js" data-website-id="YOUR_WEBSITE_ID"></script>
 ```
 
@@ -91,9 +96,22 @@ export function SignupButton() {
 
 That's it. Both integrations are < 5 KB gzipped and work without cookies.
 
+### 3. Production minimum
+
+Before exposing Sparklytics on the public internet, make sure you have:
+
+- HTTPS enabled via reverse proxy
+- `SPARKLYTICS_HTTPS=true` in the Sparklytics container behind TLS
+- a persistent Docker volume mounted at `/data`
+- an explicit DuckDB memory cap via `SPARKLYTICS_DUCKDB_MEMORY`
+- a strong password in `local` or `password` mode
+- an explicit `SPARKLYTICS_CORS_ORIGINS` allowlist when browser-side analytics API access is needed
+
+Avoid `SPARKLYTICS_AUTH=none` outside trusted local or private-network development.
+
 ---
 
-## Enable HTTPS (recommended)
+## Enable HTTPS (recommended for production)
 
 Use [Caddy](https://caddyserver.com) for automatic TLS — no certbot, no manual renewal:
 
@@ -106,6 +124,8 @@ docker compose -f docker-compose.caddy.yml up -d
 Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 
 > **Nginx / Traefik:** See [docs/reverse-proxy.md](docs/reverse-proxy.md) for alternative configs.
+>
+> **Local testing:** Keep the simple `docker-compose.yml` path and set `SPARKLYTICS_HTTPS=false` if you are using plain HTTP on localhost.
 
 ---
 

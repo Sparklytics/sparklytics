@@ -86,7 +86,11 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-surface-1 border border-line rounded-lg p-6">
-          <h1 className="text-sm font-medium text-ink mb-6">Sign in</h1>
+          <h1 className="text-sm font-medium text-ink mb-1">Sign in</h1>
+          <p className="text-xs text-ink-3 mb-6">
+            Use the admin password for this self-hosted instance. If this is your first visit in
+            local auth mode, complete setup first.
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
