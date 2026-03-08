@@ -1,3 +1,5 @@
+mod common;
+
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -18,7 +20,7 @@ const TEST_PASSWORD: &str = "strong_password_123";
 fn auth_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("auth"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::Local,
         https: false,
@@ -46,7 +48,7 @@ fn cloud_auth_config() -> Config {
 fn none_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("auth"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,
@@ -67,7 +69,7 @@ fn none_config() -> Config {
 fn password_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("auth"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::Password(TEST_PASSWORD.to_string()),
         https: false,

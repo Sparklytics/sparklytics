@@ -1,10 +1,11 @@
-use std::sync::Arc;
-use std::time::Duration as StdDuration;
+mod common;
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tower::ServiceExt;
 
 use sparklytics_core::config::{AppMode, AuthMode, Config};
@@ -15,7 +16,7 @@ use sparklytics_server::state::AppState;
 fn config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("bot"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,
@@ -169,9 +170,7 @@ async fn stats_excludes_bots_by_default_and_can_include_them() {
     .await;
     state.flush_buffer().await;
 
-    let today = chrono::Utc::now().date_naive();
-    let start = today.format("%Y-%m-%d");
-    let end = today.format("%Y-%m-%d");
+    let (start, end) = common::surrounding_date_window();
 
     let default_req = Request::builder()
         .method("GET")
@@ -394,32 +393,41 @@ async fn recompute_returns_job_status_and_audit_record() {
     let job_id = recompute_json["job_id"].as_str().expect("job_id");
     assert_eq!(recompute_json["status"], "queued");
 
-    let mut status = String::new();
-    let mut run_payload = Value::Null;
-    for _ in 0..20 {
-        let status_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri(format!("/api/websites/{website_id}/bot/recompute/{job_id}"))
-                    .body(Body::empty())
-                    .expect("request"),
-            )
-            .await
-            .expect("recompute status");
-        assert_eq!(status_response.status(), StatusCode::OK);
-        let status_json = json_body(status_response).await;
-        run_payload = status_json["data"].clone();
-        status = run_payload["status"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
-        if status == "success" {
-            break;
-        }
-        tokio::time::sleep(StdDuration::from_millis(25)).await;
-    }
+    let status = Arc::new(Mutex::new(String::new()));
+    let run_payload = Arc::new(Mutex::new(Value::Null));
+    common::poll_until(
+        tokio::time::Duration::from_millis(500),
+        tokio::time::Duration::from_millis(25),
+        || {
+            let app = app.clone();
+            let website_id = website_id.clone();
+            let job_id = job_id;
+            let status = Arc::clone(&status);
+            let run_payload = Arc::clone(&run_payload);
+            async move {
+                let status_response = app
+                    .oneshot(
+                        Request::builder()
+                            .method("GET")
+                            .uri(format!("/api/websites/{website_id}/bot/recompute/{job_id}"))
+                            .body(Body::empty())
+                            .expect("request"),
+                    )
+                    .await
+                    .expect("recompute status");
+                assert_eq!(status_response.status(), StatusCode::OK);
+                let status_json = json_body(status_response).await;
+                let payload = status_json["data"].clone();
+                let current_status = payload["status"].as_str().unwrap_or_default().to_string();
+                *run_payload.lock().await = payload;
+                *status.lock().await = current_status.clone();
+                current_status == "success"
+            }
+        },
+    )
+    .await;
+    let status = status.lock().await.clone();
+    let run_payload = run_payload.lock().await.clone();
     assert_eq!(run_payload["website_id"], website_id);
     assert!(run_payload["created_at"].as_str().is_some());
     assert_eq!(status, "success");

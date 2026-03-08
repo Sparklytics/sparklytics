@@ -1,3 +1,5 @@
+mod common;
+
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -16,7 +18,7 @@ const TEST_PASSWORD: &str = "strong_password_123";
 fn config(auth_mode: AuthMode) -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("events"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode,
         https: false,
@@ -118,11 +120,7 @@ async fn test_events_endpoints_return_custom_event_data() {
     let website_id = create_website(&app).await;
     seed_custom_events(&state, &app, &website_id).await;
 
-    let today = chrono::Utc::now().date_naive();
-    let start = (today - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-    let end = today.format("%Y-%m-%d").to_string();
+    let (start, end) = common::surrounding_date_window();
 
     let names_request = Request::builder()
         .method("GET")

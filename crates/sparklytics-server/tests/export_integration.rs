@@ -1,6 +1,8 @@
 /// BDD integration tests for the CSV export endpoint.
 use std::sync::Arc;
 
+mod common;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
@@ -15,7 +17,7 @@ use sparklytics_server::state::AppState;
 fn test_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("export"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,
@@ -82,11 +84,11 @@ async fn test_export_events_as_csv() {
     let (_state, app) = setup().await;
     let website_id = create_website(&app).await;
 
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let (start, end) = common::surrounding_date_window();
     let request = Request::builder()
         .method("GET")
         .uri(format!(
-            "/api/websites/{website_id}/export?start_date={today}&end_date={today}&format=csv"
+            "/api/websites/{website_id}/export?start_date={start}&end_date={end}&format=csv"
         ))
         .body(Body::empty())
         .expect("build request");
@@ -169,11 +171,11 @@ async fn test_export_date_range_too_large_returns_400() {
 async fn test_export_unknown_website_returns_404() {
     let (_state, app) = setup().await;
 
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let (start, end) = common::surrounding_date_window();
     let request = Request::builder()
         .method("GET")
         .uri(format!(
-            "/api/websites/site_nonexistent/export?start_date={today}&end_date={today}"
+            "/api/websites/site_nonexistent/export?start_date={start}&end_date={end}"
         ))
         .body(Body::empty())
         .expect("build request");

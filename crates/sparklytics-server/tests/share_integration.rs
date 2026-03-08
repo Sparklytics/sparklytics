@@ -4,6 +4,8 @@
 /// self-hosted share management endpoints and the public share analytics endpoints.
 use std::sync::Arc;
 
+mod common;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
@@ -18,7 +20,7 @@ use sparklytics_server::state::AppState;
 fn test_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("share"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,

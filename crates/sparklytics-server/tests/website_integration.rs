@@ -1,3 +1,5 @@
+mod common;
+
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -15,7 +17,7 @@ use sparklytics_server::state::AppState;
 fn test_config() -> Config {
     Config {
         port: 0,
-        data_dir: "/tmp/sparklytics-test".to_string(),
+        data_dir: common::unique_data_dir("website"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
         https: false,
@@ -285,12 +287,12 @@ async fn test_stats_returns_data() {
     let website_id = create_test_website(&app).await;
     seed_events(&state, &app, &website_id).await;
 
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let (start, end) = common::surrounding_date_window();
     let request = Request::builder()
         .method("GET")
         .uri(format!(
             "/api/websites/{}/stats?start_date={}&end_date={}",
-            website_id, today, today
+            website_id, start, end
         ))
         .body(Body::empty())
         .expect("build request");
@@ -329,12 +331,12 @@ async fn test_pageviews_returns_series() {
     let website_id = create_test_website(&app).await;
     seed_events(&state, &app, &website_id).await;
 
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let (start, end) = common::surrounding_date_window();
     let request = Request::builder()
         .method("GET")
         .uri(format!(
             "/api/websites/{}/pageviews?start_date={}&end_date={}",
-            website_id, today, today
+            website_id, start, end
         ))
         .body(Body::empty())
         .expect("build request");
@@ -369,12 +371,12 @@ async fn test_metrics_top_pages() {
     let website_id = create_test_website(&app).await;
     seed_events(&state, &app, &website_id).await;
 
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let (start, end) = common::surrounding_date_window();
     let request = Request::builder()
         .method("GET")
         .uri(format!(
             "/api/websites/{}/metrics?type=page&start_date={}&end_date={}",
-            website_id, today, today
+            website_id, start, end
         ))
         .body(Body::empty())
         .expect("build request");
