@@ -12,10 +12,12 @@ _Last updated: 2026-03-08_
 
 - Run the full release matrix:
 - `cargo test`
-- `cargo clippy --all-targets --all-features`
+- `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo build --release`
 - `cd dashboard && npm run build`
-- Selected Playwright suite including fresh-install smoke
+- Selected Playwright suite including explicit first-launch smoke (`npm run test:e2e -- first-launch-onboarding.spec.ts` and `npm run test:release-smoke`)
+- `docker compose config`
+- `docker compose -f docker-compose.caddy.yml config`
 - Perform one Docker-first cold install from docs only
 - Cut and validate a release candidate before public launch
 

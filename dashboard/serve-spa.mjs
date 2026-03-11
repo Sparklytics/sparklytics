@@ -6,7 +6,8 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.join(__dirname, 'out');
-const PORT = 3002;
+const PORT = Number(process.env.PORT ?? '3002');
+const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN ?? 'http://127.0.0.1:3000';
 
 const MIME = {
   '.html': 'text/html',
@@ -20,8 +21,30 @@ const MIME = {
   '.txt': 'text/plain',
 };
 
-http.createServer((req, res) => {
+http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
+
+  if (url.startsWith('/api/')) {
+    const body =
+      req.method === 'GET' || req.method === 'HEAD'
+        ? undefined
+        : Buffer.concat(await Array.fromAsync(req, (chunk) => Buffer.from(chunk)));
+    const proxyResponse = await fetch(`${BACKEND_ORIGIN}${req.url}`, {
+      method: req.method,
+      headers: req.headers,
+      body,
+      duplex: body ? 'half' : undefined,
+    });
+
+    res.writeHead(proxyResponse.status, Object.fromEntries(proxyResponse.headers.entries()));
+    if (proxyResponse.body) {
+      for await (const chunk of proxyResponse.body) {
+        res.write(chunk);
+      }
+    }
+    res.end();
+    return;
+  }
 
   // Try the exact path first
   let filePath = path.join(outDir, url);

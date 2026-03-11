@@ -43,7 +43,7 @@ test('fresh local install completes setup, onboarding, collect, and dashboard ve
   expect(website.name).toBe(websiteName);
   expect(website.domain).toBe(websiteDomain);
 
-  const collectResponse = await page.request.post('http://127.0.0.1:3000/api/collect', {
+  const collectResponse = await page.request.post('/api/collect', {
     data: {
       website_id: website.id,
       type: 'pageview',

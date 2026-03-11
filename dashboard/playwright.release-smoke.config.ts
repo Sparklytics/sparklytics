@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const backendOrigin = process.env.PLAYWRIGHT_RELEASE_BACKEND_URL ?? 'http://127.0.0.1:3000';
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: /release-smoke\.spec\.ts/,
@@ -16,18 +18,20 @@ export default defineConfig({
     {
       command: 'node scripts/start-fresh-selfhosted-backend.mjs',
       cwd: '..',
-      url: 'http://127.0.0.1:3000/health',
+      url: `${backendOrigin}/health`,
       reuseExistingServer: false,
       timeout: 180_000,
     },
     {
-      command: 'npx next dev --port 3101',
+      command: `npm run build && PORT=3101 BACKEND_ORIGIN=${backendOrigin} node serve-spa.mjs`,
       cwd: '.',
       url: 'http://127.0.0.1:3101',
       reuseExistingServer: false,
+      timeout: 180_000,
       env: {
         ...process.env,
         SPARKLYTICS_AUTH: 'local',
+        PLAYWRIGHT_RELEASE_BACKEND_URL: backendOrigin,
       },
     },
   ],

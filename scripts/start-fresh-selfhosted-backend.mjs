@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 
 const repoRoot = process.cwd();
 const dataDir = await mkdtemp(path.join(os.tmpdir(), 'sparklytics-release-smoke-'));
+let wrapperShutdown = false;
 
 const child = spawn(
   'cargo',
@@ -25,6 +26,7 @@ const child = spawn(
 );
 
 const stopChild = (signal = 'SIGTERM') => {
+  wrapperShutdown = true;
   if (!child.killed) {
     child.kill(signal);
   }
@@ -36,7 +38,7 @@ process.on('exit', () => stopChild('SIGTERM'));
 
 child.on('exit', (code, signal) => {
   if (signal) {
-    process.exit(0);
+    process.exit(wrapperShutdown ? 0 : 1);
   }
   process.exit(code ?? 1);
 });
