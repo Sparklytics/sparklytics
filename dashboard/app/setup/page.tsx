@@ -66,7 +66,7 @@ export default function SetupPage() {
     setLoading(true);
     try {
       await api.setup(password);
-      router.push('/dashboard');
+      router.push('/login');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed');
     } finally {
@@ -102,7 +102,13 @@ export default function SetupPage() {
 
         <div className="bg-surface-1 border border-line rounded-lg p-6">
           <h1 className="text-sm font-medium text-ink mb-1">Set up your instance</h1>
-          <p className="text-xs text-ink-3 mb-6">Create an admin password to protect your analytics.</p>
+          <p className="text-xs text-ink-3 mb-3">
+            Create the admin password for this self-hosted instance.
+          </p>
+          <p className="text-xs text-ink-4 mb-6">
+            After this step you will sign in, add your first website, install the tracking snippet,
+            and verify your first pageview.
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -117,7 +123,7 @@ export default function SetupPage() {
                 required
                 autoFocus
                 className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
-                placeholder="Choose a password"
+                placeholder="Choose a strong password"
               />
             </div>
 
@@ -160,7 +166,7 @@ export default function SetupPage() {
               className="w-full bg-spark hover:bg-spark-dim text-canvas font-medium text-sm py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              Create account
+              Create admin account
             </button>
           </form>
         </div>

@@ -7,6 +7,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- Fresh self-hosted installs now start with zero websites and route new users through onboarding to create the first site.
+- First-run setup now hands off directly to sign-in before onboarding continues.
+- Release-facing install docs now consistently describe the Docker-first self-hosted flow, explicit HTTPS behavior, and user-created first website flow.
+
+### Fixed
+
+- Removed the seeded `site_default` first-run behavior that dropped new users into an empty dashboard instead of onboarding.
+- Fixed first-launch guidance drift across the README and runbooks so smoke checks use a created website id instead of assuming a default site.
+
 ## [0.2.0] — 2026-02-27
 
 ### Added
@@ -67,7 +80,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `POST /api/auth/setup`, `POST /api/auth/login`, `POST /api/auth/logout`
 
 **Dashboard**
-- Next.js 16 App Router, static export embedded in Rust binary
+- Next.js 15 App Router, static export embedded in Rust binary
 - Dark mode by default, TailwindCSS + shadcn/ui
 - URL-param-driven filters (date range, page, country, browser, OS, device, UTM)
 - Realtime panel with 10-second polling

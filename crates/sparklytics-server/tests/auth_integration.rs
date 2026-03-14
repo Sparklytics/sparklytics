@@ -415,6 +415,34 @@ async fn test_valid_session_allows_access() {
 }
 
 // ============================================================
+// BDD: Fresh self-hosted instance starts with zero websites
+// ============================================================
+#[tokio::test]
+async fn test_fresh_instance_has_no_seeded_websites() {
+    let (_state, app) = setup_auth().await;
+
+    let cookie = setup_and_login(&app).await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/websites")
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = json_body(response).await;
+    let websites = json["data"].as_array().expect("websites array");
+    assert_eq!(
+        websites.len(),
+        0,
+        "fresh instance should not seed a default website"
+    );
+}
+
+// ============================================================
 // BDD: No auth returns 401 on protected routes
 // ============================================================
 #[tokio::test]

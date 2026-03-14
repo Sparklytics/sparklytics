@@ -105,6 +105,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       {step === 'create' && (
         <div className="bg-surface-1 border border-line rounded-lg p-6 space-y-4">
           <h2 className="text-base font-semibold text-ink">Add your website</h2>
+          <p className="text-xs text-ink-3">
+            Start with the domain you want to verify today. You can add more websites later from
+            settings.
+          </p>
           <div className="space-y-3">
             <label className="block">
               <span className="text-xs text-ink-2 mb-1 block">Website name</span>
@@ -123,6 +127,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 placeholder="example.com"
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
+              <span className="mt-1 block text-[11px] text-ink-4">
+                Use the domain visitors will see in their browser, for example `example.com` or
+                `app.example.com`.
+              </span>
             </label>
             <label className="block">
               <span className="text-xs text-ink-2 mb-1 block">Timezone</span>
@@ -157,6 +165,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             Copy the snippet below and paste it inside the{' '}
             <code className="text-ink-2">&lt;head&gt;</code> tag of every page you want to track.
           </p>
+          <p className="text-xs text-ink-4">
+            Publish the change, then open your site in a new tab and load one tracked page before
+            moving to verification.
+          </p>
           <TrackingSnippet websiteId={websiteId} />
           <Button onClick={() => { setStep('verify'); setError(''); }} className="w-full gap-2">
             <ArrowRight className="w-4 h-4" />
@@ -172,6 +184,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           <p className="text-xs text-ink-3">
             Visit your website to generate a test pageview, then click the button below to check
             if Sparklytics received it.
+          </p>
+          <p className="text-xs text-ink-4">
+            If verification fails, confirm the snippet is deployed to the page you visited and that
+            the website id matches this project.
           </p>
           {verified ? (
             <div className="flex items-center gap-2 text-spark text-sm">

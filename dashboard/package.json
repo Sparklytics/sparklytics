@@ -6,7 +6,8 @@
     "build": "next build",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:release-smoke": "playwright test --config playwright.release-smoke.config.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.0.0",
