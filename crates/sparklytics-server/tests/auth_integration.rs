@@ -435,7 +435,11 @@ async fn test_fresh_instance_has_no_seeded_websites() {
 
     let json = json_body(response).await;
     let websites = json["data"].as_array().expect("websites array");
-    assert_eq!(websites.len(), 0, "fresh instance should not seed a default website");
+    assert_eq!(
+        websites.len(),
+        0,
+        "fresh instance should not seed a default website"
+    );
 }
 
 // ============================================================
