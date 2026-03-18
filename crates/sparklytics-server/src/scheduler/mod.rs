@@ -28,8 +28,17 @@ pub async fn run_scheduler_loop(state: Arc<AppState>) {
     info!(tick_seconds = tick, "Notifications scheduler started");
     let mut interval = tokio::time::interval(Duration::from_secs(tick));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_login_attempt_prune = std::time::Instant::now();
     loop {
         interval.tick().await;
+        if last_login_attempt_prune.elapsed() >= Duration::from_secs(24 * 60 * 60) {
+            match state.metadata.prune_login_attempts().await {
+                Ok(pruned) if pruned > 0 => info!(pruned, "Pruned stale login attempts"),
+                Ok(_) => {}
+                Err(err) => error!(error = %err, "Failed to prune stale login attempts"),
+            }
+            last_login_attempt_prune = std::time::Instant::now();
+        }
         if let Err(err) = process_once(&state).await {
             error!(error = %err, "notifications scheduler iteration failed");
         }

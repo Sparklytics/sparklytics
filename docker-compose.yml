@@ -8,13 +8,25 @@ services:
     environment:
       # Auth mode: "local" (recommended), "password", or "none"
       - SPARKLYTICS_AUTH=local
+      # First-boot bootstrap password. If omitted, Sparklytics falls back to:
+      #   sparklytics
+      # and then forces an immediate password rotation after first login.
+      # Set this explicitly in production.
+      - SPARKLYTICS_BOOTSTRAP_PASSWORD=replace-this-bootstrap-password
 
       # IMPORTANT: keep "true" (default) when accessed over HTTPS.
       # Only set to "false" for plain-HTTP local development.
       - SPARKLYTICS_HTTPS=true
 
+      # Public origin used in onboarding snippets and share links.
+      - SPARKLYTICS_PUBLIC_URL=https://analytics.example.com
+
       # DuckDB query memory. Raise to 2GB–8GB on a larger VPS.
       - SPARKLYTICS_DUCKDB_MEMORY=1GB
+
+      # Trust reverse proxies before accepting X-Forwarded-For.
+      # Example Docker bridge CIDR — replace for your environment:
+      # - SPARKLYTICS_TRUSTED_PROXIES=172.18.0.0/16
 
       # Restrict which origins can query the analytics API from a browser.
       # Uncomment and set to your site(s):

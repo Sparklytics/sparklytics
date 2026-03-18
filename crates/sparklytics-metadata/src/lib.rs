@@ -58,6 +58,16 @@ pub struct UpdateWebsiteParams {
 pub trait MetadataStore: Send + Sync + 'static {
     async fn get_setting(&self, key: &str) -> anyhow::Result<Option<String>>;
     async fn set_setting(&self, key: &str, value: &str) -> anyhow::Result<()>;
+    async fn complete_admin_setup(
+        &self,
+        password_hash: &str,
+        password_change_required: bool,
+    ) -> anyhow::Result<()>;
+    async fn complete_password_change(
+        &self,
+        password_hash: &str,
+        jwt_secret: &str,
+    ) -> anyhow::Result<()>;
     async fn ensure_jwt_secret(&self) -> anyhow::Result<String>;
     async fn is_admin_configured(&self) -> anyhow::Result<bool>;
 
@@ -78,6 +88,7 @@ pub trait MetadataStore: Send + Sync + 'static {
     ) -> anyhow::Result<(Vec<ApiKeyRecord>, i64)>;
     async fn record_login_attempt(&self, ip: &str, succeeded: bool) -> anyhow::Result<()>;
     async fn check_login_rate_limit(&self, ip: &str) -> anyhow::Result<bool>;
+    async fn prune_login_attempts(&self) -> anyhow::Result<u64>;
 
     async fn create_website(&self, params: CreateWebsiteParams) -> anyhow::Result<Website>;
     async fn list_websites(

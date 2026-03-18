@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Check } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { AUTH_QUERY_KEY } from '@/hooks/useAuth';
 
-const MIN_PASSWORD_LENGTH = 12;
-
-export default function SetupPage() {
+export default function ForcePasswordPage() {
   const router = useRouter();
-  const [bootstrapPassword, setBootstrapPassword] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const queryClient = useQueryClient();
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
@@ -24,23 +25,28 @@ export default function SetupPage() {
         const status = await api.getAuthStatus();
         if (cancelled) return;
 
-        // SPARKLYTICS_AUTH=none: setup should not be shown.
         if (status === null) {
           router.replace('/dashboard');
           return;
         }
 
-        // Setup only applies to local mode before first setup.
-        if (status.mode !== 'local' || !status.setup_required) {
-          if (status.authenticated && status.password_change_required) {
-            router.replace('/force-password');
-            return;
-          }
-          router.replace(status.authenticated ? '/dashboard' : '/login');
+        if (status.setup_required) {
+          router.replace('/setup');
+          return;
+        }
+
+        if (!status.authenticated) {
+          router.replace('/login');
+          return;
+        }
+
+        if (!status.password_change_required) {
+          router.replace('/dashboard');
           return;
         }
       } catch {
-        // If status check fails, still allow user to attempt setup.
+        router.replace('/login');
+        return;
       }
 
       if (!cancelled) {
@@ -56,45 +62,35 @@ export default function SetupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!bootstrapPassword.trim()) {
-      setError('Bootstrap password is required');
+
+    if (!currentPassword || !newPassword) {
+      setError('Both passwords are required');
       return;
     }
-    if (password !== confirm) {
+
+    if (newPassword !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
-    if (password.trim().length === 0) {
-      setError('Password cannot be empty or whitespace-only');
-      return;
-    }
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-      return;
-    }
+
     setLoading(true);
     try {
-      await api.setup(bootstrapPassword, password);
-      router.push('/login');
+      await api.changePassword(currentPassword, newPassword);
+      await queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY, exact: true });
+      router.replace('/login');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Setup failed');
+      setError(err instanceof Error ? err.message : 'Password update failed');
     } finally {
       setLoading(false);
     }
   }
-
-  const checks = [
-    { label: `At least ${MIN_PASSWORD_LENGTH} characters`, met: password.length >= MIN_PASSWORD_LENGTH },
-    { label: 'Not whitespace-only', met: password.trim().length > 0 },
-    { label: 'Passwords match', met: password.length > 0 && password === confirm },
-  ];
 
   if (!ready) {
     return (
       <div className="min-h-screen bg-canvas flex items-center justify-center">
         <div className="flex items-center gap-2 text-sm text-ink-3">
           <Loader2 className="w-4 h-4 animate-spin" />
-          Checking setup status...
+          Checking security status...
         </div>
       </div>
     );
@@ -110,78 +106,60 @@ export default function SetupPage() {
         </div>
 
         <div className="bg-surface-1 border border-line rounded-lg p-6">
-          <h1 className="text-sm font-medium text-ink mb-1">Set up your instance</h1>
+          <h1 className="text-sm font-medium text-ink mb-1">Change password before continuing</h1>
           <p className="text-xs text-ink-3 mb-3">
-            Enter the bootstrap password from install time, then create the admin password for this
-            self-hosted instance.
+            This instance was initialized with the default bootstrap password.
           </p>
           <p className="text-xs text-ink-4 mb-6">
-            If no custom bootstrap password was set, the default is <span className="font-mono tabular-nums text-ink">sparklytics</span>.
-            Change it in production with <span className="font-mono tabular-nums text-ink">SPARKLYTICS_BOOTSTRAP_PASSWORD</span>.
+            Set a new admin password now. After saving, you will sign in again with the new one.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="bootstrap-password" className="block text-xs text-ink-2 mb-2">
-                Bootstrap password
+              <label htmlFor="current-password" className="block text-xs text-ink-2 mb-2">
+                Current password
               </label>
               <input
-                id="bootstrap-password"
+                id="current-password"
                 type="password"
-                value={bootstrapPassword}
-                onChange={(e) => setBootstrapPassword(e.target.value)}
-                required
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
                 autoFocus
+                required
                 className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
-                placeholder="Enter the install-time bootstrap password"
+                placeholder="Enter your current admin password"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-xs text-ink-2 mb-2">
-                Password
+              <label htmlFor="new-password" className="block text-xs text-ink-2 mb-2">
+                New password
               </label>
               <input
-                id="password"
+                id="new-password"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
                 required
                 className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
-                placeholder="Choose a strong password"
+                placeholder="Choose a strong new password"
               />
             </div>
 
             <div>
-              <label htmlFor="confirm" className="block text-xs text-ink-2 mb-2">
-                Confirm password
+              <label htmlFor="confirm-password" className="block text-xs text-ink-2 mb-2">
+                Confirm new password
               </label>
               <input
-                id="confirm"
+                id="confirm-password"
                 type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
-                placeholder="Repeat password"
+                placeholder="Repeat the new password"
               />
             </div>
-
-            {/* Password checks */}
-            {password && (
-              <div className="space-y-1">
-                {checks.map((c) => (
-                  <div key={c.label} className="flex items-center gap-2 text-xs">
-                    <Check
-                      className={`w-3.5 h-3.5 transition-colors ${
-                        c.met ? 'text-spark' : 'text-ink-4'
-                      }`}
-                    />
-                    <span className={c.met ? 'text-ink-2' : 'text-ink-4'}>{c.label}</span>
-                  </div>
-                ))}
-              </div>
-            )}
 
             {error && <p className="text-xs text-down">{error}</p>}
 
@@ -191,7 +169,7 @@ export default function SetupPage() {
               className="w-full bg-spark hover:bg-spark-dim text-canvas font-medium text-sm py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              Create admin account
+              Update password
             </button>
           </form>
         </div>

@@ -88,6 +88,10 @@ export function DashboardClient() {
       window.location.href = '/setup';
       return;
     }
+    if (authStatus.password_change_required) {
+      window.location.href = '/force-password';
+      return;
+    }
     if (!authStatus.authenticated) {
       window.location.href = '/login';
     }
@@ -96,7 +100,7 @@ export function DashboardClient() {
   // Redirect bare /dashboard (no websiteId) → first website or /onboarding
   useEffect(() => {
     if (websiteId || !websitesData || !authLoaded || authError) return;
-    if (authStatus && (authStatus.setup_required || !authStatus.authenticated)) return;
+    if (authStatus && (authStatus.setup_required || authStatus.password_change_required || !authStatus.authenticated)) return;
     if (websitesData.data.length > 0) {
       navigate(`/dashboard/${websitesData.data[0].id}`);
     } else {

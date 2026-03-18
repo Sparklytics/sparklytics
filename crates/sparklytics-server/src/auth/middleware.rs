@@ -12,6 +12,7 @@ use serde_json::json;
 use crate::state::AppState;
 
 use super::api_keys::hash_api_key;
+use super::handlers::is_password_change_required;
 use super::jwt::decode_jwt;
 
 /// Auth context injected into request extensions after successful auth.
@@ -26,16 +27,49 @@ pub async fn require_auth(state: Arc<AppState>, request: Request, next: Next) ->
     require_auth_inner(state, request, next, false).await
 }
 
+/// Internal: require authentication and a cleared forced password-change state.
+pub async fn require_auth_ready(state: Arc<AppState>, request: Request, next: Next) -> Response {
+    require_auth_ready_inner(state, request, next, false).await
+}
+
 /// Internal: require cookie-only authentication.
 pub async fn require_cookie_auth(state: Arc<AppState>, request: Request, next: Next) -> Response {
     require_auth_inner(state, request, next, true).await
 }
 
+/// Internal: require cookie-only authentication and a cleared forced password-change state.
+pub async fn require_cookie_auth_ready(
+    state: Arc<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_auth_ready_inner(state, request, next, true).await
+}
+
 async fn require_auth_inner(
+    state: Arc<AppState>,
+    request: Request,
+    next: Next,
+    cookie_only: bool,
+) -> Response {
+    require_auth_impl(state, request, next, cookie_only, false).await
+}
+
+async fn require_auth_ready_inner(
+    state: Arc<AppState>,
+    request: Request,
+    next: Next,
+    cookie_only: bool,
+) -> Response {
+    require_auth_impl(state, request, next, cookie_only, true).await
+}
+
+async fn require_auth_impl(
     state: Arc<AppState>,
     mut request: Request,
     next: Next,
     cookie_only: bool,
+    enforce_password_change_clear: bool,
 ) -> Response {
     // Check if setup is required in local mode.
     if let sparklytics_core::config::AuthMode::Local = &state.config.auth_mode {
@@ -82,6 +116,17 @@ async fn require_auth_inner(
                 let key_hash = hash_api_key(token);
                 match state.metadata.lookup_api_key(&key_hash).await {
                     Ok(Some(key_record)) => {
+                        if enforce_password_change_clear {
+                            match is_password_change_required(&state).await {
+                                Ok(true) => return password_change_required_response(),
+                                Ok(false) => {}
+                                Err(e) => {
+                                    tracing::error!(error = %e, "Failed to check password change state");
+                                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                                }
+                            }
+                        }
+
                         let key_id = key_record.id.clone();
                         request.extensions_mut().insert(AuthContext {
                             auth_type: "api_key".to_string(),
@@ -120,6 +165,17 @@ async fn require_auth_inner(
 
     if let Some(token) = cookie_token {
         if let Some(ctx) = validate_cookie_jwt(&state, &token).await {
+            if enforce_password_change_clear {
+                match is_password_change_required(&state).await {
+                    Ok(true) => return password_change_required_response(),
+                    Ok(false) => {}
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to check password change state");
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                }
+            }
+
             request.extensions_mut().insert(ctx);
             return next.run(request).await;
         }
@@ -145,6 +201,20 @@ fn unauthorized_response() -> Response {
             "error": {
                 "code": "unauthorized",
                 "message": "Not authenticated",
+                "field": null
+            }
+        })),
+    )
+        .into_response()
+}
+
+fn password_change_required_response() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": {
+                "code": "password_change_required",
+                "message": "Password change required before continuing",
                 "field": null
             }
         })),

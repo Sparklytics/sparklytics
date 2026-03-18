@@ -695,18 +695,26 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .layer(query_cors)
                 .layer(middleware::from_fn(move |req: Request, next: Next| {
                     let s = auth_state.clone();
-                    async move { auth::middleware::require_auth(s, req, next).await }
+                    async move { auth::middleware::require_auth_ready(s, req, next).await }
                 }));
 
-            // Cookie-only routes (auth management — same-origin, no CORS needed).
-            let cookie_state = Arc::clone(&state);
-            let cookie_only = Router::new()
+            // Cookie-only routes allowed during forced password rotation.
+            let cookie_state_basic = Arc::clone(&state);
+            let cookie_only_basic = Router::new()
                 .route("/api/auth/logout", post(auth::handlers::auth_logout))
                 .route("/api/auth/session", get(auth::handlers::auth_session))
                 .route(
                     "/api/auth/password",
                     put(auth::handlers::auth_change_password),
                 )
+                .layer(middleware::from_fn(move |req: Request, next: Next| {
+                    let s = cookie_state_basic.clone();
+                    async move { auth::middleware::require_cookie_auth(s, req, next).await }
+                }));
+
+            // Cookie-only routes blocked until password rotation is complete.
+            let cookie_state_ready = Arc::clone(&state);
+            let cookie_only_ready = Router::new()
                 .route("/api/auth/keys", get(auth::handlers::list_api_keys))
                 .route(
                     "/api/auth/keys",
@@ -717,11 +725,14 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     axum::routing::delete(auth::handlers::delete_api_key),
                 )
                 .layer(middleware::from_fn(move |req: Request, next: Next| {
-                    let s = cookie_state.clone();
-                    async move { auth::middleware::require_cookie_auth(s, req, next).await }
+                    let s = cookie_state_ready.clone();
+                    async move { auth::middleware::require_cookie_auth_ready(s, req, next).await }
                 }));
 
-            app = app.merge(protected).merge(cookie_only);
+            app = app
+                .merge(protected)
+                .merge(cookie_only_basic)
+                .merge(cookie_only_ready);
         }
     }
 

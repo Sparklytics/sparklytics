@@ -10,6 +10,14 @@ export function setTokenGetter(fn: () => Promise<string | null>): void {
 type RequestOptions = {
   method?: string;
   body?: unknown;
+  redirectOn401?: boolean;
+};
+
+export type AuthStatus = {
+  mode: string;
+  setup_required: boolean;
+  authenticated: boolean;
+  password_change_required: boolean;
 };
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -27,12 +35,19 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   });
 
   if (res.status === 401) {
-    if (typeof window !== 'undefined') window.location.href = '/login';
-    throw new Error('Unauthorized');
+    const err = await res.json().catch(() => ({ error: { message: 'Unauthorized' } }));
+    if (opts.redirectOn401 !== false && typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
+    throw new Error(err?.error?.message ?? 'Unauthorized');
   }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: { message: 'Request failed' } }));
+    if (res.status === 403 && err?.error?.code === 'password_change_required') {
+      if (typeof window !== 'undefined') window.location.href = '/force-password';
+      throw new Error('Password change required');
+    }
     throw new Error(err?.error?.message ?? 'Request failed');
   }
 
@@ -59,7 +74,7 @@ export type Filters = Record<string, string | undefined>;
 
 export const api = {
   // Auth — getAuthStatus returns null when auth mode is "none" (endpoint returns 404)
-  getAuthStatus: async (): Promise<{ mode: string; setup_required: boolean; authenticated: boolean } | null> => {
+  getAuthStatus: async (): Promise<AuthStatus | null> => {
     const res = await fetch(`${BASE}/api/auth/status`, { credentials: 'include' });
     if (res.status === 404) return null;
     if (res.status === 401) {
@@ -72,9 +87,19 @@ export const api = {
     }
     return res.json();
   },
-  login: (password: string) => request('/api/auth/login', { method: 'POST', body: { password } }),
+  login: (password: string) =>
+    request('/api/auth/login', {
+      method: 'POST',
+      body: { password },
+      redirectOn401: false,
+    }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
-  setup: (password: string) => request('/api/auth/setup', { method: 'POST', body: { password } }),
+  setup: (bootstrapPassword: string, password: string) =>
+    request('/api/auth/setup', {
+      method: 'POST',
+      body: { bootstrap_password: bootstrapPassword, password },
+      redirectOn401: false,
+    }),
 
   // Websites
   getWebsites: () => request<{ data: Website[] }>('/api/websites'),
@@ -176,6 +201,7 @@ export const api = {
     request<{ data: { ok: boolean } }>('/api/auth/password', {
       method: 'PUT',
       body: { current_password: currentPassword, new_password: newPassword },
+      redirectOn401: false,
     }),
 
   // Custom Events

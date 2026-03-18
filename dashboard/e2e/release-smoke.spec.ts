@@ -11,6 +11,7 @@ test('fresh local install completes setup, onboarding, collect, and dashboard ve
 
   await expect(page.getByRole('heading', { name: 'Set up your instance' })).toBeVisible();
 
+  await page.getByLabel(/Bootstrap password/i).fill('sparklytics');
   await page.getByLabel(/^Password$/).fill(password);
   await page.getByLabel(/^Confirm password$/).fill(password);
   await page.getByRole('button', { name: /Create admin account/i }).click();
@@ -19,6 +20,17 @@ test('fresh local install completes setup, onboarding, collect, and dashboard ve
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 
   await page.getByLabel(/^Password$/).fill(password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+
+  await page.waitForURL(/\/force-password\/?$/);
+  await expect(page.getByRole('heading', { name: /change password before continuing/i })).toBeVisible();
+  await page.getByLabel(/Current password/i).fill(password);
+  await page.getByLabel(/^New password$/).fill(`${password}_rotated`);
+  await page.getByLabel(/Confirm new password/i).fill(`${password}_rotated`);
+  await page.getByRole('button', { name: /update password/i }).click();
+
+  await page.waitForURL(/\/login\/?$/);
+  await page.getByLabel(/^Password$/).fill(`${password}_rotated`);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await page.waitForURL(/\/onboarding\/?$/);

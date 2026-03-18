@@ -31,7 +31,8 @@ Your first launch is successful when all of these are true:
 Important behavior:
 - In `password` mode, `SPARKLYTICS_PASSWORD` is required at startup.
 - In `none` mode, `/api/auth/status` returns `404` by design.
-- In `local` mode, first run requires `POST /api/auth/setup` once.
+- In `local` mode, first run requires `POST /api/auth/setup` once with a bootstrap password.
+- Set `SPARKLYTICS_BOOTSTRAP_PASSWORD` explicitly when possible. If unset, Sparklytics falls back to `sparklytics` and forces a password rotation after first login.
 
 ---
 
@@ -65,6 +66,9 @@ Recommended first-time path:
 curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-compose.yml
 # For plain HTTP localhost only:
 # edit docker-compose.yml and set SPARKLYTICS_HTTPS=false
+# Also set:
+# - SPARKLYTICS_BOOTSTRAP_PASSWORD
+# - SPARKLYTICS_PUBLIC_URL
 docker compose up -d
 ```
 
@@ -102,7 +106,9 @@ docker run -d \
 mkdir -p ./data
 SPARKLYTICS_DATA_DIR=./data \
 SPARKLYTICS_AUTH=local \
+SPARKLYTICS_BOOTSTRAP_PASSWORD=replace-this-bootstrap-password \
 SPARKLYTICS_HTTPS=false \
+SPARKLYTICS_PUBLIC_URL=http://localhost:3000 \
 SPARKLYTICS_DUCKDB_MEMORY=1GB \
 ./sparklytics
 ```
@@ -118,12 +124,13 @@ Open `http://localhost:3000`.
 Expected first-run sequence:
 
 1. `/dashboard` redirects to `/setup`.
-2. Set admin password (minimum 12 chars, not whitespace-only).
+2. Enter the bootstrap password from install time and set the admin password.
 3. App transitions to login flow.
 4. Sign in with the new password.
-5. If no websites exist yet, Sparklytics takes you to onboarding.
-6. Create your first website, copy the snippet, and verify a pageview.
-7. Land on `/dashboard/<your-website-id>`.
+5. If the fallback bootstrap password `sparklytics` was used, Sparklytics immediately requires one more password rotation before showing the dashboard.
+6. If no websites exist yet, Sparklytics takes you to onboarding.
+7. Create your first website, copy the snippet, and verify a pageview.
+8. Land on `/dashboard/<your-website-id>`.
 
 ### 4.2 `SPARKLYTICS_AUTH=password`
 
@@ -161,7 +168,7 @@ Expect: `HTTP/1.1 200` and `{"status":"ok", ...}`.
 ```bash
 curl -i -X POST http://localhost:3000/api/auth/setup \
   -H 'content-type: application/json' \
-  -d '{"password":"correct horse battery staple"}'
+  -d '{"bootstrap_password":"replace-this-bootstrap-password","password":"correct horse battery staple"}'
 ```
 
 Expect first run: `201 Created`.
@@ -272,6 +279,8 @@ After first successful launch:
 
 - HTTPS enabled and working end-to-end
 - persistent `/data` volume verified across restart
+- `SPARKLYTICS_PUBLIC_URL` set to the final public origin
+- `SPARKLYTICS_TRUSTED_PROXIES` set when behind Caddy/Nginx/Traefik
 - explicit DuckDB memory cap set
 - `SPARKLYTICS_CORS_ORIGINS` narrowed to expected origins
 - backup process for the DuckDB file documented

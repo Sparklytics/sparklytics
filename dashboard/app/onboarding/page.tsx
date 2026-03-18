@@ -1,9 +1,29 @@
 'use client';
 
+import { useEffect } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function OnboardingPage() {
+  const { data: authStatus, isSuccess: authLoaded } = useAuth();
+
+  useEffect(() => {
+    if (!authLoaded) return;
+    if (authStatus === null) return;
+    if (authStatus.setup_required) {
+      window.location.href = '/setup';
+      return;
+    }
+    if (authStatus.password_change_required) {
+      window.location.href = '/force-password';
+      return;
+    }
+    if (!authStatus.authenticated) {
+      window.location.href = '/login';
+    }
+  }, [authLoaded, authStatus]);
+
   function handleComplete(websiteId: string) {
     window.location.href = `/dashboard/${websiteId}`;
   }

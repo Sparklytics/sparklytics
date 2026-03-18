@@ -31,6 +31,7 @@ fn config(auth_mode: AuthMode) -> Config {
         data_dir: unique_data_dir("reports"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode,
+        bootstrap_password: None,
         https: false,
         retention_days: 365,
         cors_origins: vec![],

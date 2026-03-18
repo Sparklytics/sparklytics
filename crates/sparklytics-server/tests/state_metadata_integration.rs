@@ -19,6 +19,7 @@ fn test_config() -> Config {
         data_dir: format!("/tmp/sparklytics-test-state-{ts}"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
+        bootstrap_password: None,
         https: false,
         retention_days: 365,
         cors_origins: vec![],

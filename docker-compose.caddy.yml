@@ -14,8 +14,12 @@ services:
       - sparklytics-data:/data
     environment:
       - SPARKLYTICS_AUTH=local
+      - SPARKLYTICS_BOOTSTRAP_PASSWORD=replace-this-bootstrap-password
       - SPARKLYTICS_HTTPS=true
+      - SPARKLYTICS_PUBLIC_URL=https://analytics.example.com
       - SPARKLYTICS_DUCKDB_MEMORY=1GB
+      # Replace with the CIDR used by your reverse proxy/container network.
+      # - SPARKLYTICS_TRUSTED_PROXIES=172.18.0.0/16
       # Uncomment and set to your tracked site(s):
       # - SPARKLYTICS_CORS_ORIGINS=https://yoursite.com
     restart: unless-stopped

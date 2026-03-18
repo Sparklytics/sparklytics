@@ -23,6 +23,9 @@ Docker is the recommended first-time install path. Use plain HTTP only for local
 
 ```bash
 curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-compose.yml
+# Edit docker-compose.yml:
+# - set SPARKLYTICS_BOOTSTRAP_PASSWORD for first boot
+# - set SPARKLYTICS_PUBLIC_URL to your final public origin
 docker compose up -d
 ```
 
@@ -34,6 +37,12 @@ Open `http://your-server-ip:3000` and Sparklytics will guide you through:
 4. verifying that your first pageview was received.
 
 Fresh installs start with zero websites. There is no seeded default site; the first website is created in onboarding.
+
+In `SPARKLYTICS_AUTH=local`, first boot is protected by a bootstrap password:
+
+- preferred: set `SPARKLYTICS_BOOTSTRAP_PASSWORD` explicitly during install
+- fallback: if you leave it unset, Sparklytics uses `sparklytics`
+- safety: when the fallback is used, Sparklytics forces an immediate admin password rotation before the dashboard becomes usable
 
 If you use plain HTTP locally, set `SPARKLYTICS_HTTPS=false` in `docker-compose.yml` (or env). Keep `SPARKLYTICS_HTTPS=true` only behind HTTPS/TLS.
 
@@ -102,8 +111,11 @@ Before exposing Sparklytics on the public internet, make sure you have:
 
 - HTTPS enabled via reverse proxy
 - `SPARKLYTICS_HTTPS=true` in the Sparklytics container behind TLS
+- `SPARKLYTICS_PUBLIC_URL=https://analytics.example.com` set to the real public origin
 - a persistent Docker volume mounted at `/data`
 - an explicit DuckDB memory cap via `SPARKLYTICS_DUCKDB_MEMORY`
+- `SPARKLYTICS_BOOTSTRAP_PASSWORD` set to a non-default value for production installs
+- `SPARKLYTICS_TRUSTED_PROXIES` set when running behind Caddy, Nginx, or Traefik
 - a strong password in `local` or `password` mode
 - an explicit `SPARKLYTICS_CORS_ORIGINS` allowlist when browser-side analytics API access is needed
 
@@ -118,6 +130,10 @@ Use [Caddy](https://caddyserver.com) for automatic TLS — no certbot, no manual
 ```bash
 curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-compose.caddy.yml
 # Edit Caddyfile — replace analytics.example.com with your domain
+# Edit docker-compose.caddy.yml:
+# - set SPARKLYTICS_BOOTSTRAP_PASSWORD
+# - set SPARKLYTICS_PUBLIC_URL to your domain
+# - set SPARKLYTICS_TRUSTED_PROXIES for your proxy/network CIDR
 docker compose -f docker-compose.caddy.yml up -d
 ```
 

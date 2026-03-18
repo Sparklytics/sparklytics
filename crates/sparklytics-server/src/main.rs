@@ -3,6 +3,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use tracing::info;
 
+use sparklytics_server::auth::handlers::{
+    bootstrap_password_is_default, effective_bootstrap_password,
+};
 use sparklytics_server::state::AppState;
 
 /// `sparklytics health` — liveness probe for Docker HEALTHCHECK.
@@ -55,6 +58,22 @@ async fn main() -> Result<()> {
         );
     }
 
+    if matches!(cfg.mode, sparklytics_core::config::AppMode::SelfHosted)
+        && (cfg.public_url.contains("localhost") || cfg.public_url.contains("127.0.0.1"))
+    {
+        if cfg.https {
+            return Err(anyhow::anyhow!(
+                "SPARKLYTICS_PUBLIC_URL must be set to your real public origin when SPARKLYTICS_HTTPS=true. \
+                 For localhost development, set SPARKLYTICS_HTTPS=false."
+            ));
+        }
+
+        tracing::warn!(
+            public_url = %cfg.public_url,
+            "SPARKLYTICS_PUBLIC_URL still points to localhost. Tracking snippets and share URLs will be wrong until it is set to your real public origin."
+        );
+    }
+
     // Auth initialization for password/local modes.
     match &cfg.auth_mode {
         sparklytics_core::config::AuthMode::Password(_)
@@ -68,7 +87,15 @@ async fn main() -> Result<()> {
                 match db.is_admin_configured().await {
                     Ok(true) => info!("Admin password configured"),
                     Ok(false) => {
-                        info!("Admin not configured — setup required via POST /api/auth/setup")
+                        info!("Admin not configured — setup required via POST /api/auth/setup");
+                        if bootstrap_password_is_default(&cfg) {
+                            tracing::warn!(
+                                bootstrap_password = %effective_bootstrap_password(&cfg),
+                                "Using default bootstrap password fallback. Set SPARKLYTICS_BOOTSTRAP_PASSWORD in production and rotate the admin password immediately after first login."
+                            );
+                        } else {
+                            info!("Custom bootstrap password configured");
+                        }
                     }
                     Err(e) => tracing::error!(error = %e, "Failed to check admin configured"),
                 }
@@ -82,6 +109,11 @@ async fn main() -> Result<()> {
     }
 
     let state = Arc::new(AppState::new(db, cfg.clone()));
+    match state.metadata.prune_login_attempts().await {
+        Ok(pruned) if pruned > 0 => info!(pruned, "Pruned stale login attempts"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "Failed to prune stale login attempts"),
+    }
     state.restore_ingest_queue_from_wal().await;
 
     // Spawn background buffer-flush task.
