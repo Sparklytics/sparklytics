@@ -513,17 +513,24 @@ pub fn verify_bootstrap_password(
 }
 
 pub fn bootstrap_password_is_default(config: &sparklytics_core::config::Config) -> bool {
-    config.bootstrap_password.is_none()
+    match config.bootstrap_password.as_deref().map(str::trim) {
+        Some(value) => value.is_empty(),
+        None => true,
+    }
 }
 
 pub fn effective_bootstrap_password(config: &sparklytics_core::config::Config) -> &str {
-    config
-        .bootstrap_password
-        .as_deref()
-        .unwrap_or(DEFAULT_BOOTSTRAP_PASSWORD)
+    match config.bootstrap_password.as_deref().map(str::trim) {
+        Some(value) if !value.is_empty() => value,
+        _ => DEFAULT_BOOTSTRAP_PASSWORD,
+    }
 }
 
 pub async fn is_password_change_required(state: &AppState) -> anyhow::Result<bool> {
+    if !matches!(state.config.auth_mode, AuthMode::Local) {
+        return Ok(false);
+    }
+
     Ok(state
         .metadata
         .get_setting(PASSWORD_CHANGE_REQUIRED_KEY)

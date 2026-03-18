@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tracing::info;
+use url::Url;
 
 use sparklytics_server::auth::handlers::{
     bootstrap_password_is_default, effective_bootstrap_password,
@@ -19,6 +20,19 @@ fn run_health_check() -> ! {
         Ok(resp) if resp.status() == 200 => std::process::exit(0),
         _ => std::process::exit(1),
     }
+}
+
+fn public_url_uses_loopback_host(public_url: &str) -> bool {
+    Url::parse(public_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| {
+            host.eq_ignore_ascii_case("localhost")
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .map(|ip| ip.is_loopback())
+                    .unwrap_or(false)
+        })
 }
 
 #[tokio::main]
@@ -59,7 +73,7 @@ async fn main() -> Result<()> {
     }
 
     if matches!(cfg.mode, sparklytics_core::config::AppMode::SelfHosted)
-        && (cfg.public_url.contains("localhost") || cfg.public_url.contains("127.0.0.1"))
+        && public_url_uses_loopback_host(&cfg.public_url)
     {
         if cfg.https {
             return Err(anyhow::anyhow!(
@@ -164,4 +178,26 @@ async fn main() -> Result<()> {
     .ok();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::public_url_uses_loopback_host;
+
+    #[test]
+    fn detects_loopback_hosts_exactly() {
+        assert!(public_url_uses_loopback_host("http://localhost:3000"));
+        assert!(public_url_uses_loopback_host("https://127.0.0.1"));
+        assert!(public_url_uses_loopback_host("https://[::1]:3000"));
+    }
+
+    #[test]
+    fn does_not_match_public_domains_containing_localhost_substrings() {
+        assert!(!public_url_uses_loopback_host(
+            "https://analytics-localhost.example.com"
+        ));
+        assert!(!public_url_uses_loopback_host(
+            "https://127.0.0.1.example.com"
+        ));
+    }
 }

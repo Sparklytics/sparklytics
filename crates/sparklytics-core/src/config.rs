@@ -49,8 +49,8 @@ impl Config {
     where
         F: Fn(&str) -> Option<String>,
     {
-        let public_url =
-            get_var("SPARKLYTICS_PUBLIC_URL").unwrap_or_else(|| "http://localhost:3000".to_string());
+        let public_url = get_var("SPARKLYTICS_PUBLIC_URL")
+            .unwrap_or_else(|| "http://localhost:3000".to_string());
         let public_url = public_url.trim().trim_end_matches('/').to_string();
         if public_url.is_empty() {
             return Err("SPARKLYTICS_PUBLIC_URL must not be empty".to_string());
@@ -61,8 +61,7 @@ impl Config {
                 .unwrap_or_else(|| "3000".to_string())
                 .parse()
                 .map_err(|e| format!("invalid port: {e}"))?,
-            data_dir: get_var("SPARKLYTICS_DATA_DIR")
-                .unwrap_or_else(|| "./data".to_string()),
+            data_dir: get_var("SPARKLYTICS_DATA_DIR").unwrap_or_else(|| "./data".to_string()),
             geoip_path: get_var("SPARKLYTICS_GEOIP_PATH")
                 .unwrap_or_else(|| "./GeoLite2-City.mmdb".to_string()),
             auth_mode: {
@@ -78,7 +77,10 @@ impl Config {
                     _ => AuthMode::Local,
                 }
             },
-            bootstrap_password: get_var("SPARKLYTICS_BOOTSTRAP_PASSWORD"),
+            bootstrap_password: get_var("SPARKLYTICS_BOOTSTRAP_PASSWORD").and_then(|value| {
+                let trimmed = value.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            }),
             https: get_var("SPARKLYTICS_HTTPS")
                 .map(|v| v == "true")
                 .unwrap_or(true),
@@ -87,7 +89,13 @@ impl Config {
                 .parse()
                 .unwrap_or(365),
             cors_origins: get_var("SPARKLYTICS_CORS_ORIGINS")
-                .map(|v| v.split(',').map(str::to_string).collect())
+                .map(|v| {
+                    v.split(|c: char| c == ',' || c.is_whitespace())
+                        .map(str::trim)
+                        .filter(|origin| !origin.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
                 .unwrap_or_default(),
             session_days: get_var("SPARKLYTICS_SESSION_DAYS")
                 .unwrap_or_else(|| "7".to_string())
@@ -145,5 +153,33 @@ mod tests {
         let err = Config::from_env_with(|key| vars.get(key).cloned()).expect_err("empty url");
 
         assert_eq!(err, "SPARKLYTICS_PUBLIC_URL must not be empty");
+    }
+
+    #[test]
+    fn parses_comma_and_whitespace_separated_cors_origins() {
+        let vars = HashMap::from([(
+            "SPARKLYTICS_CORS_ORIGINS",
+            "https://a.example, https://b.example https://c.example".to_string(),
+        )]);
+
+        let cfg = Config::from_env_with(|key| vars.get(key).cloned()).expect("config");
+
+        assert_eq!(
+            cfg.cors_origins,
+            vec![
+                "https://a.example".to_string(),
+                "https://b.example".to_string(),
+                "https://c.example".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn treats_blank_bootstrap_password_as_unset() {
+        let vars = HashMap::from([("SPARKLYTICS_BOOTSTRAP_PASSWORD", "   ".to_string())]);
+
+        let cfg = Config::from_env_with(|key| vars.get(key).cloned()).expect("config");
+
+        assert_eq!(cfg.bootstrap_password, None);
     }
 }

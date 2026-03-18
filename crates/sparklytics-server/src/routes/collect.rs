@@ -502,7 +502,7 @@ fn warn_if_forwarded_headers_untrusted(headers: &HeaderMap) {
     if headers.contains_key("x-forwarded-for") && trusted_proxy_cidrs().is_empty() {
         WARN_ONCE.call_once(|| {
             tracing::warn!(
-                "Received X-Forwarded-For but SPARKLYTICS_TRUSTED_PROXIES is unset. Real client IP, GeoIP, visitor_id, and per-IP rate limits may resolve to the proxy address."
+                "Received X-Forwarded-For but SPARKLYTICS_TRUSTED_PROXIES is unset or has no valid CIDRs. Real client IP, GeoIP, visitor_id, and per-IP rate limits may resolve to the proxy address."
             );
         });
     }
@@ -512,7 +512,11 @@ fn parse_trusted_proxy_cidrs(raw: &str) -> (Vec<ipnet::IpNet>, Vec<String>) {
     let mut trusted = Vec::new();
     let mut invalid = Vec::new();
 
-    for entry in raw.split(',').map(str::trim).filter(|entry| !entry.is_empty()) {
+    for entry in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
         match entry.parse::<ipnet::IpNet>() {
             Ok(cidr) => trusted.push(cidr),
             Err(_) => invalid.push(entry.to_string()),

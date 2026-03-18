@@ -777,6 +777,63 @@ async fn test_password_mode_first_run_login_flow() {
 }
 
 #[tokio::test]
+async fn test_password_mode_ignores_stale_password_change_flag() {
+    let (state, app) = setup_password().await;
+    state
+        .metadata
+        .set_setting("password_change_required", "true")
+        .await
+        .expect("seed stale flag");
+
+    let status_request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/status")
+        .body(Body::empty())
+        .expect("build request");
+    let status_response = app
+        .clone()
+        .oneshot(status_request)
+        .await
+        .expect("status request");
+    assert_eq!(status_response.status(), StatusCode::OK);
+    let status_json = json_body(status_response).await;
+    assert_eq!(status_json["password_change_required"], false);
+
+    let login_response = app
+        .clone()
+        .oneshot(login_request(TEST_PASSWORD))
+        .await
+        .expect("login request");
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let cookie = login_response
+        .headers()
+        .get("set-cookie")
+        .expect("set-cookie")
+        .to_str()
+        .expect("valid header")
+        .split(';')
+        .next()
+        .expect("cookie pair")
+        .to_string();
+
+    let cookie_status_request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/status")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let cookie_status_response = app
+        .clone()
+        .oneshot(cookie_status_request)
+        .await
+        .expect("status request");
+    assert_eq!(cookie_status_response.status(), StatusCode::OK);
+    let cookie_json = json_body(cookie_status_response).await;
+    assert_eq!(cookie_json["authenticated"], true);
+    assert_eq!(cookie_json["password_change_required"], false);
+}
+
+#[tokio::test]
 async fn test_default_bootstrap_requires_password_change_after_login() {
     let (_state, app) = setup_auth().await;
 

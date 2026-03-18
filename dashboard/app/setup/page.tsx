@@ -56,7 +56,8 @@ export default function SetupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!bootstrapPassword.trim()) {
+    const normalizedBootstrapPassword = bootstrapPassword.trim();
+    if (!normalizedBootstrapPassword) {
       setError('Bootstrap password is required');
       return;
     }
@@ -74,7 +75,7 @@ export default function SetupPage() {
     }
     setLoading(true);
     try {
-      await api.setup(bootstrapPassword, password);
+      await api.setup(normalizedBootstrapPassword, password);
       router.push('/login');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed');
