@@ -33,6 +33,9 @@ pub enum AppError {
     #[error("setup required")]
     SetupRequired,
 
+    #[error("password change required")]
+    PasswordChangeRequired,
+
     #[error("gone")]
     Gone,
 
@@ -95,6 +98,12 @@ impl IntoResponse for AppError {
                 StatusCode::FORBIDDEN,
                 "setup_required",
                 "Admin setup required. POST /api/auth/setup first.",
+                None,
+            ),
+            AppError::PasswordChangeRequired => (
+                StatusCode::FORBIDDEN,
+                "password_change_required",
+                "Password change required before continuing",
                 None,
             ),
             AppError::Gone => (StatusCode::GONE, "gone", "Setup already completed", None),

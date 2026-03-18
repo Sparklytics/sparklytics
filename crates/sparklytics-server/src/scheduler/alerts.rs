@@ -163,6 +163,7 @@ mod tests {
             data_dir,
             geoip_path: "./GeoLite2-City.mmdb".to_string(),
             auth_mode: AuthMode::None,
+            bootstrap_password: None,
             https: false,
             retention_days: 365,
             cors_origins: vec![],

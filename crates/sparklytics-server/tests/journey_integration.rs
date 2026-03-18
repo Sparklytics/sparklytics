@@ -21,6 +21,7 @@ fn config(auth_mode: AuthMode) -> Config {
         data_dir: common::unique_data_dir("journey"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode,
+        bootstrap_password: None,
         https: false,
         retention_days: 365,
         cors_origins: vec![],
@@ -372,7 +373,13 @@ async fn test_journey_endpoint_requires_auth_in_local_mode() {
         .method("POST")
         .uri("/api/auth/setup")
         .header("content-type", "application/json")
-        .body(Body::from(json!({ "password": TEST_PASSWORD }).to_string()))
+        .body(Body::from(
+            json!({
+                "bootstrap_password": "sparklytics",
+                "password": TEST_PASSWORD
+            })
+            .to_string(),
+        ))
         .expect("build request");
     let setup_response = app.clone().oneshot(setup_request).await.expect("request");
     assert_eq!(setup_response.status(), StatusCode::CREATED);

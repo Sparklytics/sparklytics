@@ -15,6 +15,9 @@ use sparklytics_server::app::build_app;
 use sparklytics_server::state::AppState;
 
 const TEST_PASSWORD: &str = "strong_password_123";
+const TEST_BOOTSTRAP_PASSWORD: &str = "install_secret_123";
+const DEFAULT_BOOTSTRAP_PASSWORD: &str = "sparklytics";
+const ROTATED_PASSWORD: &str = "rotated_password_456";
 
 /// Build a test Config with AuthMode::Local and low argon2 memory for fast tests.
 fn auth_config() -> Config {
@@ -23,6 +26,7 @@ fn auth_config() -> Config {
         data_dir: common::unique_data_dir("auth"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::Local,
+        bootstrap_password: None,
         https: false,
         retention_days: 365,
         cors_origins: vec![],
@@ -41,6 +45,13 @@ fn auth_config() -> Config {
 fn cloud_auth_config() -> Config {
     let mut config = auth_config();
     config.mode = AppMode::Cloud;
+    config.bootstrap_password = Some(TEST_BOOTSTRAP_PASSWORD.to_string());
+    config
+}
+
+fn custom_bootstrap_auth_config() -> Config {
+    let mut config = auth_config();
+    config.bootstrap_password = Some(TEST_BOOTSTRAP_PASSWORD.to_string());
     config
 }
 
@@ -51,6 +62,7 @@ fn none_config() -> Config {
         data_dir: common::unique_data_dir("auth"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
+        bootstrap_password: None,
         https: false,
         retention_days: 365,
         cors_origins: vec![],
@@ -72,6 +84,7 @@ fn password_config() -> Config {
         data_dir: common::unique_data_dir("auth"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::Password(TEST_PASSWORD.to_string()),
+        bootstrap_password: None,
         https: false,
         retention_days: 365,
         cors_origins: vec![],
@@ -90,6 +103,14 @@ fn password_config() -> Config {
 async fn setup_auth() -> (Arc<AppState>, axum::Router) {
     let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
     let config = auth_config();
+    let state = Arc::new(AppState::new(db, config));
+    let app = build_app(Arc::clone(&state));
+    (state, app)
+}
+
+async fn setup_auth_custom_bootstrap() -> (Arc<AppState>, axum::Router) {
+    let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
+    let config = custom_bootstrap_auth_config();
     let state = Arc::new(AppState::new(db, config));
     let app = build_app(Arc::clone(&state));
     (state, app)
@@ -133,9 +154,16 @@ async fn json_body(response: axum::http::Response<Body>) -> Value {
     serde_json::from_slice(&bytes).expect("parse JSON")
 }
 
-/// Helper: POST /api/auth/setup with a password.
+/// Helper: POST /api/auth/setup with bootstrap + admin password.
 fn setup_request(password: &str) -> Request<Body> {
-    let body = json!({ "password": password });
+    setup_request_with_bootstrap(DEFAULT_BOOTSTRAP_PASSWORD, password)
+}
+
+fn setup_request_with_bootstrap(bootstrap_password: &str, password: &str) -> Request<Body> {
+    let body = json!({
+        "bootstrap_password": bootstrap_password,
+        "password": password,
+    });
     Request::builder()
         .method("POST")
         .uri("/api/auth/setup")
@@ -156,17 +184,40 @@ fn login_request(password: &str) -> Request<Body> {
         .expect("build request")
 }
 
+fn change_password_request(
+    cookie: &str,
+    current_password: &str,
+    new_password: &str,
+) -> Request<Body> {
+    let body = json!({
+        "current_password": current_password,
+        "new_password": new_password,
+    });
+    Request::builder()
+        .method("PUT")
+        .uri("/api/auth/password")
+        .header("content-type", "application/json")
+        .header("cookie", cookie)
+        .body(Body::from(body.to_string()))
+        .expect("build request")
+}
+
 /// Helper: run setup + login and return the session cookie string.
 async fn setup_and_login(app: &axum::Router) -> String {
-    // Step 1: Setup admin.
+    setup_and_login_with_bootstrap(app, TEST_BOOTSTRAP_PASSWORD).await
+}
+
+async fn setup_and_login_with_bootstrap(app: &axum::Router, bootstrap_password: &str) -> String {
     let response = app
         .clone()
-        .oneshot(setup_request(TEST_PASSWORD))
+        .oneshot(setup_request_with_bootstrap(
+            bootstrap_password,
+            TEST_PASSWORD,
+        ))
         .await
         .expect("setup request");
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    // Step 2: Login.
     let response = app
         .clone()
         .oneshot(login_request(TEST_PASSWORD))
@@ -174,23 +225,16 @@ async fn setup_and_login(app: &axum::Router) -> String {
         .expect("login request");
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Extract Set-Cookie header.
-    let set_cookie = response
+    response
         .headers()
         .get("set-cookie")
         .expect("Set-Cookie header must be present")
         .to_str()
         .expect("valid header string")
-        .to_string();
-
-    // Extract just the cookie value: "spk_session=<token>; ..."
-    let cookie = set_cookie
         .split(';')
         .next()
         .expect("cookie value")
-        .to_string();
-
-    cookie
+        .to_string()
 }
 
 // ============================================================
@@ -211,6 +255,21 @@ async fn test_setup_creates_admin() {
     assert_eq!(json["data"]["ok"], true);
 }
 
+#[tokio::test]
+async fn test_setup_accepts_custom_bootstrap_password() {
+    let (_state, app) = setup_auth_custom_bootstrap().await;
+
+    let response = app
+        .oneshot(setup_request_with_bootstrap(
+            TEST_BOOTSTRAP_PASSWORD,
+            TEST_PASSWORD,
+        ))
+        .await
+        .expect("request");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+}
+
 // ============================================================
 // BDD: Setup rejects whitespace-only password
 // ============================================================
@@ -218,13 +277,7 @@ async fn test_setup_creates_admin() {
 async fn test_setup_rejects_whitespace_only_password() {
     let (_state, app) = setup_auth().await;
 
-    let body = json!({ "password": "            " });
-    let request = Request::builder()
-        .method("POST")
-        .uri("/api/auth/setup")
-        .header("content-type", "application/json")
-        .body(Body::from(body.to_string()))
-        .expect("build request");
+    let request = setup_request("            ");
 
     let response = app.clone().oneshot(request).await.expect("request");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -258,6 +311,21 @@ async fn test_setup_returns_410_after_use() {
 
     let json = json_body(response).await;
     assert_eq!(json["error"]["code"], "gone");
+}
+
+#[tokio::test]
+async fn test_setup_rejects_wrong_bootstrap_password() {
+    let (_state, app) = setup_auth_custom_bootstrap().await;
+
+    let response = app
+        .oneshot(setup_request_with_bootstrap(
+            "wrong-bootstrap",
+            TEST_PASSWORD,
+        ))
+        .await
+        .expect("request");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 // ============================================================
@@ -395,7 +463,7 @@ async fn test_login_rate_limit_returns_retry_after_header() {
 // ============================================================
 #[tokio::test]
 async fn test_valid_session_allows_access() {
-    let (_state, app) = setup_auth().await;
+    let (_state, app) = setup_auth_custom_bootstrap().await;
 
     let cookie = setup_and_login(&app).await;
 
@@ -419,7 +487,7 @@ async fn test_valid_session_allows_access() {
 // ============================================================
 #[tokio::test]
 async fn test_fresh_instance_has_no_seeded_websites() {
-    let (_state, app) = setup_auth().await;
+    let (_state, app) = setup_auth_custom_bootstrap().await;
 
     let cookie = setup_and_login(&app).await;
 
@@ -476,7 +544,7 @@ async fn test_no_auth_returns_401() {
 // ============================================================
 #[tokio::test]
 async fn test_api_key_grants_analytics_access() {
-    let (_state, app) = setup_auth().await;
+    let (_state, app) = setup_auth_custom_bootstrap().await;
 
     let cookie = setup_and_login(&app).await;
 
@@ -560,7 +628,7 @@ async fn test_cloud_api_key_prefix_and_access() {
 // ============================================================
 #[tokio::test]
 async fn test_api_key_forbidden_for_auth_mgmt() {
-    let (_state, app) = setup_auth().await;
+    let (_state, app) = setup_auth_custom_bootstrap().await;
 
     let cookie = setup_and_login(&app).await;
 
@@ -650,6 +718,7 @@ async fn test_auth_status_returns_mode() {
         json["authenticated"], false,
         "authenticated should be false without cookie"
     );
+    assert_eq!(json["password_change_required"], false);
 }
 
 // ============================================================
@@ -674,6 +743,7 @@ async fn test_password_mode_first_run_login_flow() {
     assert_eq!(status_json["mode"], "password");
     assert_eq!(status_json["setup_required"], false);
     assert_eq!(status_json["authenticated"], false);
+    assert_eq!(status_json["password_change_required"], false);
 
     let login_response = app
         .clone()
@@ -704,6 +774,202 @@ async fn test_password_mode_first_run_login_flow() {
         .await
         .expect("websites request");
     assert_eq!(websites_response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_password_mode_ignores_stale_password_change_flag() {
+    let (state, app) = setup_password().await;
+    state
+        .metadata
+        .set_setting("password_change_required", "true")
+        .await
+        .expect("seed stale flag");
+
+    let status_request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/status")
+        .body(Body::empty())
+        .expect("build request");
+    let status_response = app
+        .clone()
+        .oneshot(status_request)
+        .await
+        .expect("status request");
+    assert_eq!(status_response.status(), StatusCode::OK);
+    let status_json = json_body(status_response).await;
+    assert_eq!(status_json["password_change_required"], false);
+
+    let login_response = app
+        .clone()
+        .oneshot(login_request(TEST_PASSWORD))
+        .await
+        .expect("login request");
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let cookie = login_response
+        .headers()
+        .get("set-cookie")
+        .expect("set-cookie")
+        .to_str()
+        .expect("valid header")
+        .split(';')
+        .next()
+        .expect("cookie pair")
+        .to_string();
+
+    let cookie_status_request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/status")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let cookie_status_response = app
+        .clone()
+        .oneshot(cookie_status_request)
+        .await
+        .expect("status request");
+    assert_eq!(cookie_status_response.status(), StatusCode::OK);
+    let cookie_json = json_body(cookie_status_response).await;
+    assert_eq!(cookie_json["authenticated"], true);
+    assert_eq!(cookie_json["password_change_required"], false);
+}
+
+#[tokio::test]
+async fn test_default_bootstrap_requires_password_change_after_login() {
+    let (_state, app) = setup_auth().await;
+
+    let cookie = setup_and_login_with_bootstrap(&app, DEFAULT_BOOTSTRAP_PASSWORD).await;
+
+    let status_request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/status")
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let status_response = app
+        .clone()
+        .oneshot(status_request)
+        .await
+        .expect("status request");
+    assert_eq!(status_response.status(), StatusCode::OK);
+    let status_json = json_body(status_response).await;
+    assert_eq!(status_json["authenticated"], true);
+    assert_eq!(status_json["password_change_required"], true);
+
+    let websites_request = Request::builder()
+        .method("GET")
+        .uri("/api/websites")
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let websites_response = app
+        .clone()
+        .oneshot(websites_request)
+        .await
+        .expect("websites request");
+    assert_eq!(websites_response.status(), StatusCode::FORBIDDEN);
+    let websites_json = json_body(websites_response).await;
+    assert_eq!(websites_json["error"]["code"], "password_change_required");
+}
+
+#[tokio::test]
+async fn test_custom_bootstrap_does_not_require_password_change() {
+    let (_state, app) = setup_auth_custom_bootstrap().await;
+
+    let cookie = setup_and_login_with_bootstrap(&app, TEST_BOOTSTRAP_PASSWORD).await;
+
+    let status_request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/status")
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let status_response = app
+        .clone()
+        .oneshot(status_request)
+        .await
+        .expect("status request");
+    assert_eq!(status_response.status(), StatusCode::OK);
+    let status_json = json_body(status_response).await;
+    assert_eq!(status_json["password_change_required"], false);
+
+    let websites_request = Request::builder()
+        .method("GET")
+        .uri("/api/websites")
+        .header("cookie", &cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let websites_response = app
+        .clone()
+        .oneshot(websites_request)
+        .await
+        .expect("websites request");
+    assert_eq!(websites_response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_password_change_clears_rotation_flag_and_invalidates_old_session() {
+    let (_state, app) = setup_auth().await;
+
+    let old_cookie = setup_and_login_with_bootstrap(&app, DEFAULT_BOOTSTRAP_PASSWORD).await;
+
+    let change_password_response = app
+        .clone()
+        .oneshot(change_password_request(
+            &old_cookie,
+            TEST_PASSWORD,
+            ROTATED_PASSWORD,
+        ))
+        .await
+        .expect("change password request");
+    assert_eq!(change_password_response.status(), StatusCode::OK);
+
+    let old_cookie_request = Request::builder()
+        .method("GET")
+        .uri("/api/websites")
+        .header("cookie", &old_cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let old_cookie_response = app
+        .clone()
+        .oneshot(old_cookie_request)
+        .await
+        .expect("old cookie request");
+    assert_eq!(old_cookie_response.status(), StatusCode::UNAUTHORIZED);
+
+    let new_login_response = app
+        .clone()
+        .oneshot(login_request(ROTATED_PASSWORD))
+        .await
+        .expect("new login request");
+    assert_eq!(new_login_response.status(), StatusCode::OK);
+
+    let new_cookie = new_login_response
+        .headers()
+        .get("set-cookie")
+        .expect("Set-Cookie header must be present")
+        .to_str()
+        .expect("valid header string")
+        .split(';')
+        .next()
+        .expect("cookie value")
+        .to_string();
+
+    let status_request = Request::builder()
+        .method("GET")
+        .uri("/api/auth/status")
+        .header("cookie", &new_cookie)
+        .body(Body::empty())
+        .expect("build request");
+    let status_response = app
+        .clone()
+        .oneshot(status_request)
+        .await
+        .expect("status request");
+    assert_eq!(status_response.status(), StatusCode::OK);
+
+    let status_json = json_body(status_response).await;
+    assert_eq!(status_json["authenticated"], true);
+    assert_eq!(status_json["password_change_required"], false);
 }
 
 #[tokio::test]

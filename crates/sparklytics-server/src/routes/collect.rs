@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Once, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use axum::{
@@ -488,11 +488,42 @@ pub(crate) fn extract_client_ip(headers: &HeaderMap, remote_addr: Option<SocketA
 }
 
 fn parse_forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
+    warn_if_forwarded_headers_untrusted(headers);
     headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.split(',').next())
         .and_then(|s| s.trim().parse::<IpAddr>().ok())
+}
+
+fn warn_if_forwarded_headers_untrusted(headers: &HeaderMap) {
+    static WARN_ONCE: Once = Once::new();
+
+    if headers.contains_key("x-forwarded-for") && trusted_proxy_cidrs().is_empty() {
+        WARN_ONCE.call_once(|| {
+            tracing::warn!(
+                "Received X-Forwarded-For but SPARKLYTICS_TRUSTED_PROXIES is unset or has no valid CIDRs. Real client IP, GeoIP, visitor_id, and per-IP rate limits may resolve to the proxy address."
+            );
+        });
+    }
+}
+
+fn parse_trusted_proxy_cidrs(raw: &str) -> (Vec<ipnet::IpNet>, Vec<String>) {
+    let mut trusted = Vec::new();
+    let mut invalid = Vec::new();
+
+    for entry in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
+        match entry.parse::<ipnet::IpNet>() {
+            Ok(cidr) => trusted.push(cidr),
+            Err(_) => invalid.push(entry.to_string()),
+        }
+    }
+
+    (trusted, invalid)
 }
 
 fn trusted_proxy_cidrs() -> &'static Vec<ipnet::IpNet> {
@@ -501,9 +532,16 @@ fn trusted_proxy_cidrs() -> &'static Vec<ipnet::IpNet> {
         std::env::var("SPARKLYTICS_TRUSTED_PROXIES")
             .ok()
             .map(|raw| {
-                raw.split(',')
-                    .filter_map(|entry| entry.trim().parse::<ipnet::IpNet>().ok())
-                    .collect::<Vec<_>>()
+                let (trusted, invalid) = parse_trusted_proxy_cidrs(&raw);
+
+                if !invalid.is_empty() {
+                    tracing::warn!(
+                        invalid_entries = %invalid.join(","),
+                        "Ignoring invalid SPARKLYTICS_TRUSTED_PROXIES entries. Requests from those proxies will not trust X-Forwarded-For until the CIDRs are fixed."
+                    );
+                }
+
+                trusted
             })
             .unwrap_or_default()
     })
@@ -555,6 +593,42 @@ pub(crate) fn lookup_geo(path: &str, ip: &str) -> Option<GeoInfo> {
         region,
         city,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    use axum::http::HeaderMap;
+
+    use super::{extract_client_ip, parse_trusted_proxy_cidrs};
+
+    #[test]
+    fn parse_trusted_proxy_cidrs_keeps_valid_and_reports_invalid_entries() {
+        let (trusted, invalid) =
+            parse_trusted_proxy_cidrs("10.0.0.0/8, definitely-not-a-cidr, 192.168.0.0/16");
+
+        assert_eq!(trusted.len(), 2);
+        assert_eq!(invalid, vec!["definitely-not-a-cidr".to_string()]);
+    }
+
+    #[test]
+    fn parse_trusted_proxy_cidrs_returns_empty_when_all_entries_invalid() {
+        let (trusted, invalid) = parse_trusted_proxy_cidrs("bad, also-bad");
+
+        assert!(trusted.is_empty());
+        assert_eq!(invalid, vec!["bad".to_string(), "also-bad".to_string()]);
+    }
+
+    #[test]
+    fn extract_client_ip_prefers_socket_ip_when_proxy_not_trusted() {
+        let headers = HeaderMap::new();
+        let remote_addr = SocketAddr::from((Ipv4Addr::new(198, 51, 100, 10), 12345));
+
+        let ip = extract_client_ip(&headers, Some(remote_addr));
+
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10)).to_string());
+    }
 }
 
 /// Extract UTM parameters from the URL query string.

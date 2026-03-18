@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { AUTH_QUERY_KEY } from '@/hooks/useAuth';
 
 export default function LoginPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,6 +37,10 @@ export default function LoginPage() {
 
         // Already authenticated.
         if (status.authenticated) {
+          if (status.password_change_required) {
+            router.replace('/force-password');
+            return;
+          }
           router.replace('/dashboard');
           return;
         }
@@ -57,6 +64,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await api.login(password);
+      await queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY, exact: true });
       router.push('/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed');

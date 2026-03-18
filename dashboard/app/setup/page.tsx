@@ -9,6 +9,7 @@ const MIN_PASSWORD_LENGTH = 12;
 
 export default function SetupPage() {
   const router = useRouter();
+  const [bootstrapPassword, setBootstrapPassword] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
@@ -31,6 +32,10 @@ export default function SetupPage() {
 
         // Setup only applies to local mode before first setup.
         if (status.mode !== 'local' || !status.setup_required) {
+          if (status.authenticated && status.password_change_required) {
+            router.replace('/force-password');
+            return;
+          }
           router.replace(status.authenticated ? '/dashboard' : '/login');
           return;
         }
@@ -51,6 +56,11 @@ export default function SetupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    const normalizedBootstrapPassword = bootstrapPassword.trim();
+    if (!normalizedBootstrapPassword) {
+      setError('Bootstrap password is required');
+      return;
+    }
     if (password !== confirm) {
       setError('Passwords do not match');
       return;
@@ -65,7 +75,7 @@ export default function SetupPage() {
     }
     setLoading(true);
     try {
-      await api.setup(password);
+      await api.setup(normalizedBootstrapPassword, password);
       router.push('/login');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed');
@@ -103,14 +113,31 @@ export default function SetupPage() {
         <div className="bg-surface-1 border border-line rounded-lg p-6">
           <h1 className="text-sm font-medium text-ink mb-1">Set up your instance</h1>
           <p className="text-xs text-ink-3 mb-3">
-            Create the admin password for this self-hosted instance.
+            Enter the bootstrap password from install time, then create the admin password for this
+            self-hosted instance.
           </p>
           <p className="text-xs text-ink-4 mb-6">
-            After this step you will sign in, add your first website, install the tracking snippet,
-            and verify your first pageview.
+            If no custom bootstrap password was set, the default is <span className="font-mono tabular-nums text-ink">sparklytics</span>.
+            Change it in production with <span className="font-mono tabular-nums text-ink">SPARKLYTICS_BOOTSTRAP_PASSWORD</span>.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="bootstrap-password" className="block text-xs text-ink-2 mb-2">
+                Bootstrap password
+              </label>
+              <input
+                id="bootstrap-password"
+                type="password"
+                value={bootstrapPassword}
+                onChange={(e) => setBootstrapPassword(e.target.value)}
+                required
+                autoFocus
+                className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
+                placeholder="Enter the install-time bootstrap password"
+              />
+            </div>
+
             <div>
               <label htmlFor="password" className="block text-xs text-ink-2 mb-2">
                 Password
@@ -121,7 +148,6 @@ export default function SetupPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                autoFocus
                 className="w-full bg-surface-input border border-line rounded-md px-3 py-2 text-sm text-ink placeholder-ink-4 focus:outline-none focus:border-line-3 focus:ring-2 focus:ring-spark focus:ring-offset-2 focus:ring-offset-surface-1 transition-colors"
                 placeholder="Choose a strong password"
               />

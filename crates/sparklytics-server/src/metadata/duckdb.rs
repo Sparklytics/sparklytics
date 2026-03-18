@@ -28,6 +28,26 @@ impl MetadataStore for DuckDbMetadataStore {
         self.db.set_setting(key, value).await
     }
 
+    async fn complete_admin_setup(
+        &self,
+        password_hash: &str,
+        password_change_required: bool,
+    ) -> anyhow::Result<()> {
+        self.db
+            .complete_admin_setup(password_hash, password_change_required)
+            .await
+    }
+
+    async fn complete_password_change(
+        &self,
+        password_hash: &str,
+        jwt_secret: &str,
+    ) -> anyhow::Result<()> {
+        self.db
+            .complete_password_change(password_hash, jwt_secret)
+            .await
+    }
+
     async fn ensure_jwt_secret(&self) -> anyhow::Result<String> {
         self.db.ensure_jwt_secret().await
     }
@@ -72,6 +92,10 @@ impl MetadataStore for DuckDbMetadataStore {
 
     async fn check_login_rate_limit(&self, ip: &str) -> anyhow::Result<bool> {
         self.db.check_login_rate_limit(ip).await
+    }
+
+    async fn prune_login_attempts(&self) -> anyhow::Result<u64> {
+        self.db.prune_login_attempts().await
     }
 
     async fn create_website(&self, params: CreateWebsiteParams) -> anyhow::Result<Website> {

@@ -22,6 +22,7 @@ fn test_config() -> Config {
         data_dir: common::unique_data_dir("usage"),
         geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
         auth_mode: AuthMode::None,
+        bootstrap_password: None,
         https: false,
         retention_days: 365,
         cors_origins: vec![],

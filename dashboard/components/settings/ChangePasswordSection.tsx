@@ -1,13 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { AUTH_QUERY_KEY } from '@/hooks/useAuth';
 
 export function ChangePasswordSection() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -24,10 +27,8 @@ export function ChangePasswordSection() {
     setSaving(true);
     try {
       await api.changePassword(currentPassword, newPassword);
-      toast({ title: 'Password updated' });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      await queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY, exact: true });
+      window.location.href = '/login';
     } catch (err) {
       toast({
         title: 'Failed to change password',

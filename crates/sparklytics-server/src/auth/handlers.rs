@@ -18,6 +18,8 @@ use super::jwt::{decode_jwt, encode_jwt};
 use super::password::{hash_password, validate_password_strength, verify_password};
 
 const LOGIN_RATE_LIMIT_RETRY_AFTER_SECONDS: u64 = 15 * 60;
+const DEFAULT_BOOTSTRAP_PASSWORD: &str = "sparklytics";
+const PASSWORD_CHANGE_REQUIRED_KEY: &str = "password_change_required";
 
 // ---------------------------------------------------------------------------
 // GET /api/auth/status
@@ -49,11 +51,19 @@ pub async fn auth_status(
 
     // Check if the user is authenticated (cookie JWT).
     let authenticated = is_cookie_authenticated(&state, &headers).await;
+    let password_change_required = if authenticated {
+        is_password_change_required(&state)
+            .await
+            .map_err(AppError::Internal)?
+    } else {
+        false
+    };
 
     Ok(Json(json!({
         "mode": mode_str,
         "setup_required": setup_required,
         "authenticated": authenticated,
+        "password_change_required": password_change_required,
     })))
 }
 
@@ -63,6 +73,7 @@ pub async fn auth_status(
 
 #[derive(Debug, Deserialize)]
 pub struct SetupRequest {
+    pub bootstrap_password: String,
     pub password: String,
 }
 
@@ -92,6 +103,10 @@ pub async fn auth_setup(
         return Err(AppError::Gone);
     }
 
+    if !verify_bootstrap_password(&state.config, &req.bootstrap_password) {
+        return Err(AppError::Unauthorized);
+    }
+
     validate_password_strength(&req.password).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let hash =
@@ -99,7 +114,7 @@ pub async fn auth_setup(
 
     state
         .metadata
-        .set_setting("admin_password_hash", &hash)
+        .complete_admin_setup(&hash, bootstrap_password_is_default(&state.config))
         .await
         .map_err(AppError::Internal)?;
 
@@ -329,11 +344,6 @@ pub async fn auth_change_password(
     // Hash new password.
     let new_hash = hash_password(&req.new_password, state.config.argon2_memory_kb)
         .map_err(AppError::Internal)?;
-    state
-        .metadata
-        .set_setting("admin_password_hash", &new_hash)
-        .await
-        .map_err(AppError::Internal)?;
 
     // Rotate JWT secret to invalidate all sessions.
     let new_secret = {
@@ -344,7 +354,7 @@ pub async fn auth_change_password(
     };
     state
         .metadata
-        .set_setting("jwt_secret", &new_secret)
+        .complete_password_change(&new_hash, &new_secret)
         .await
         .map_err(AppError::Internal)?;
 
@@ -493,4 +503,38 @@ async fn is_cookie_authenticated(state: &AppState, headers: &HeaderMap) -> bool 
     };
 
     decode_jwt(&token, &jwt_secret).is_ok()
+}
+
+pub fn verify_bootstrap_password(
+    config: &sparklytics_core::config::Config,
+    supplied: &str,
+) -> bool {
+    supplied == effective_bootstrap_password(config)
+}
+
+pub fn bootstrap_password_is_default(config: &sparklytics_core::config::Config) -> bool {
+    match config.bootstrap_password.as_deref().map(str::trim) {
+        Some(value) => value.is_empty(),
+        None => true,
+    }
+}
+
+pub fn effective_bootstrap_password(config: &sparklytics_core::config::Config) -> &str {
+    match config.bootstrap_password.as_deref().map(str::trim) {
+        Some(value) if !value.is_empty() => value,
+        _ => DEFAULT_BOOTSTRAP_PASSWORD,
+    }
+}
+
+pub async fn is_password_change_required(state: &AppState) -> anyhow::Result<bool> {
+    if !matches!(state.config.auth_mode, AuthMode::Local) {
+        return Ok(false);
+    }
+
+    Ok(state
+        .metadata
+        .get_setting(PASSWORD_CHANGE_REQUIRED_KEY)
+        .await?
+        .as_deref()
+        == Some("true"))
 }

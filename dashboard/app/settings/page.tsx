@@ -25,6 +25,7 @@ export default function SettingsPage() {
     if (!authLoaded) return;
     if (authStatus === null) return;
     if (authStatus.setup_required) { window.location.href = '/setup'; return; }
+    if (authStatus.password_change_required) { window.location.href = '/force-password'; return; }
     if (!authStatus.authenticated) { window.location.href = '/login'; }
   }, [authStatus, authLoaded]);
 
