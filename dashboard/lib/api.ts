@@ -397,6 +397,7 @@ export interface Website {
   name: string;
   domain: string;
   timezone: string;
+  tracking_snippet?: string;
   ingest_peak_eps?: number | null;
   ingest_queue_max_events?: number | null;
   created_at: string;

@@ -222,7 +222,7 @@ export function DashboardClient() {
   return (
     <AppShell websiteId={websiteId}>
       {isEmpty ? (
-        <EmptyState websiteId={websiteId} domain={currentWebsite?.domain} />
+        <EmptyState websiteId={websiteId} />
       ) : (
         <div className="space-y-6">
           {(!subPage || subPage === 'overview') && (

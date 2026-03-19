@@ -1,22 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { buildTrackingSnippet } from '@/lib/tracking';
 
 interface TrackingSnippetProps {
   websiteId: string;
-  domain?: string;
+  snippet?: string;
 }
 
-export function TrackingSnippet({ websiteId, domain }: TrackingSnippetProps) {
+export function TrackingSnippet({ websiteId, snippet }: TrackingSnippetProps) {
   const [copied, setCopied] = useState(false);
+  const [resolvedSnippet, setResolvedSnippet] = useState(
+    snippet ?? `<script defer src="/s.js" data-website-id="${websiteId}"></script>`,
+  );
 
-  const srcUrl = domain ? `https://${domain}/s.js` : '/s.js';
-  const snippet = `<script defer src="${srcUrl}" data-website-id="${websiteId}"></script>`;
+  useEffect(() => {
+    if (snippet) {
+      setResolvedSnippet(snippet);
+      return;
+    }
+
+    setResolvedSnippet(buildTrackingSnippet(websiteId, window.location.origin));
+  }, [snippet, websiteId]);
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(snippet);
+    await navigator.clipboard.writeText(resolvedSnippet);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -31,7 +41,7 @@ export function TrackingSnippet({ websiteId, domain }: TrackingSnippetProps) {
         </Button>
       </div>
       <pre className="bg-canvas border border-line rounded-md p-4 text-xs text-ink-2 overflow-x-auto whitespace-pre-wrap break-all">
-        {snippet}
+        {resolvedSnippet}
       </pre>
       <p className="text-xs text-ink-3">
         Paste this snippet inside the{' '}

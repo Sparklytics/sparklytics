@@ -1,24 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Copy, Check } from 'lucide-react';
+import { buildTrackingSnippet } from '@/lib/tracking';
 
 interface EmptyStateProps {
   websiteId: string;
-  domain?: string;
 }
 
-export function EmptyState({ websiteId, domain }: EmptyStateProps) {
+export function EmptyState({ websiteId }: EmptyStateProps) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [snippet, setSnippet] = useState(
+    `<script defer src="/s.js" data-website-id="${websiteId}"></script>`,
+  );
 
-  const host = domain || window.location.host;
-  const snippet = `<script
-  async
-  src="https://${host}/s.js"
-  data-website-id="${websiteId}"
-></script>`;
+  useEffect(() => {
+    setSnippet(buildTrackingSnippet(websiteId, window.location.origin));
+  }, [websiteId]);
 
   function handleCopy() {
     navigator.clipboard.writeText(snippet);
