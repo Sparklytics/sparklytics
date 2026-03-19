@@ -87,7 +87,7 @@ pub async fn create_website(
     state.cache_website_metadata(website.clone()).await;
 
     let tracking_snippet = format!(
-        r#"<script defer src="{}/s.js" data-website-id="{}"></script>"#,
+        r#"<script defer src="{0}/s.js" data-website-id="{1}"></script>"#,
         state.config.public_url, website.id
     );
 

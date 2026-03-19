@@ -41,6 +41,7 @@ test('fresh local install completes setup, onboarding, collect, and dashboard ve
   await page.getByRole('button', { name: 'Create website' }).click();
 
   await expect(page.getByRole('heading', { name: /Install the tracking snippet/i })).toBeVisible();
+  await expect(page.locator('pre')).toContainText('src="http://localhost:3000/s.js"');
   await page.getByRole('button', { name: /Done, verify installation/i }).click();
 
   await expect(page.getByRole('heading', { name: /Verify installation/i })).toBeVisible();

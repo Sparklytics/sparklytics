@@ -308,6 +308,36 @@ async fn test_cors_collect_allows_any_origin() {
     assert_eq!(acao, "*", "collect must return ACAO: *");
 }
 
+/// Scenario: /e allows any origin (Access-Control-Allow-Origin: *).
+#[tokio::test]
+async fn test_cors_collect_alias_allows_any_origin() {
+    let (_state, app) =
+        setup_with_config(config_with_cors(vec!["https://myapp.com".to_string()])).await;
+    let req = Request::builder()
+        .method("POST")
+        .uri("/e")
+        .header("content-type", "application/json")
+        .header("origin", "https://any-website.com")
+        .header("x-forwarded-for", "10.0.0.4")
+        .body(Body::from(
+            json!({
+                "website_id": "site_sec",
+                "type": "pageview",
+                "url": "/page"
+            })
+            .to_string(),
+        ))
+        .expect("build request");
+    let resp = app.oneshot(req).await.expect("request");
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    let acao = resp
+        .headers()
+        .get("access-control-allow-origin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(acao, "*", "collect alias must return ACAO: *");
+}
+
 /// Scenario: Analytics query endpoint (GET /api/websites/:id/stats) blocks
 /// requests from origins not in SPARKLYTICS_CORS_ORIGINS.
 #[tokio::test]

@@ -165,16 +165,17 @@ fn restricted_cors(origins: &[String]) -> CorsLayer {
 pub fn build_app(state: Arc<AppState>) -> Router {
     let auth_mode = state.config.auth_mode.clone();
 
-    // CORS: /api/collect allows any origin; analytics/auth routes enforce allowlist.
+    // CORS: ingest aliases allow any origin; analytics/auth routes enforce allowlist.
     let collect_cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods([Method::POST, Method::OPTIONS])
         .allow_headers(Any);
     let query_cors = restricted_cors(&state.config.cors_origins);
 
-    // /api/collect in its own sub-router so layer() type inference works cleanly.
+    // Ingest aliases in their own sub-router so layer() type inference works cleanly.
     let collect_router = Router::new()
         .route("/api/collect", post(routes::collect::collect))
+        .route("/e", post(routes::collect::collect))
         .layer(collect_cors)
         .layer(DefaultBodyLimit::max(routes::collect::COLLECT_BODY_LIMIT));
 
