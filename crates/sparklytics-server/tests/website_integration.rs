@@ -170,6 +170,10 @@ async fn test_create_website_selfhosted() {
         snippet.contains(id),
         "tracking snippet must contain website ID"
     );
+    assert!(
+        snippet.contains(r#"src="http://localhost:3000/s.js""#),
+        "tracking snippet must point at the configured analytics origin"
+    );
 }
 
 // ============================================================

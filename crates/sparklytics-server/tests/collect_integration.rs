@@ -105,9 +105,13 @@ async fn setup_cloud(
 
 /// Helper: send a POST /api/collect with the given JSON body and optional headers.
 fn collect_request(body: &str) -> Request<Body> {
+    collect_request_to("/api/collect", body)
+}
+
+fn collect_request_to(uri: &str, body: &str) -> Request<Body> {
     Request::builder()
         .method("POST")
-        .uri("/api/collect")
+        .uri(uri)
         .header("content-type", "application/json")
         .header("x-forwarded-for", "1.2.3.4")
         .header("user-agent", "Mozilla/5.0 Chrome/120")
@@ -175,6 +179,29 @@ async fn test_collect_valid_pageview() {
     assert_eq!(json, json!({ "ok": true }));
 
     // Verify event is persisted after flush.
+    let count = event_count(&state, "site_test").await;
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn test_collect_short_alias_accepts_pageview() {
+    let (state, app) = setup().await;
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/alias",
+    });
+
+    let response = app
+        .oneshot(collect_request_to("/e", &body.to_string()))
+        .await
+        .expect("request");
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let json = json_body(response).await;
+    assert_eq!(json, json!({ "ok": true }));
+
     let count = event_count(&state, "site_test").await;
     assert_eq!(count, 1);
 }
