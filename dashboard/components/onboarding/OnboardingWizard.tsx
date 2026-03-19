@@ -30,6 +30,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [creating, setCreating] = useState(false);
   const [websiteId, setWebsiteId] = useState('');
+  const [trackingSnippet, setTrackingSnippet] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState(false);
   const [error, setError] = useState('');
@@ -52,6 +53,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
     try {
       const result = await api.createWebsite({ name: name.trim(), domain: domain.trim(), timezone });
       setWebsiteId(result.data.id);
+      setTrackingSnippet(result.data.tracking_snippet ?? '');
       setStep('snippet');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create website');
@@ -169,7 +171,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             Publish the change, then open your site in a new tab and load one tracked page before
             moving to verification.
           </p>
-          <TrackingSnippet websiteId={websiteId} />
+          <TrackingSnippet websiteId={websiteId} snippet={trackingSnippet || undefined} />
           <Button onClick={() => { setStep('verify'); setError(''); }} className="w-full gap-2">
             <ArrowRight className="w-4 h-4" />
             Done, verify installation

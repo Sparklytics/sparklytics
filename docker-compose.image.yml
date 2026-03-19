@@ -1,0 +1,19 @@
+services:
+  sparklytics:
+    image: ghcr.io/sparklytics/sparklytics:${SPARKLYTICS_IMAGE_TAG:-latest}
+    pull_policy: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - sparklytics-data:/data
+    environment:
+      SPARKLYTICS_AUTH: ${SPARKLYTICS_AUTH:-local}
+      SPARKLYTICS_BOOTSTRAP_PASSWORD: ${SPARKLYTICS_BOOTSTRAP_PASSWORD:-sparklytics}
+      SPARKLYTICS_PUBLIC_URL: ${SPARKLYTICS_PUBLIC_URL:-https://analytics.example.com}
+      SPARKLYTICS_HTTPS: ${SPARKLYTICS_HTTPS:-true}
+      SPARKLYTICS_DUCKDB_MEMORY: ${SPARKLYTICS_DUCKDB_MEMORY:-1GB}
+      SPARKLYTICS_TRUSTED_PROXIES: ${SPARKLYTICS_TRUSTED_PROXIES:-}
+    restart: unless-stopped
+
+volumes:
+  sparklytics-data:

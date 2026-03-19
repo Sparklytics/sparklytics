@@ -29,6 +29,20 @@ curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-co
 docker compose up -d
 ```
 
+For a VPS deploy that should only pull a ready-made image instead of compiling Rust + Next.js on the server:
+
+```bash
+curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-compose.image.yml
+# Edit docker-compose.image.yml inputs via env:
+# - SPARKLYTICS_IMAGE_TAG=latest           (or a sha-* image tag from GHCR)
+# - SPARKLYTICS_BOOTSTRAP_PASSWORD
+# - SPARKLYTICS_PUBLIC_URL
+docker compose -f docker-compose.image.yml pull
+docker compose -f docker-compose.image.yml up -d
+```
+
+Prebuilt images are published to `ghcr.io/sparklytics/sparklytics` on every push to `main` and can also be published manually from a branch via the `Docker Publish` GitHub Actions workflow.
+
 Open `http://your-server-ip:3000` and Sparklytics will guide you through:
 
 1. creating your admin password,

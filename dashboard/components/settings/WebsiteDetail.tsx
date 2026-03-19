@@ -211,7 +211,7 @@ export function WebsiteDetail({ websiteId, subSubPage = 'general' }: { websiteId
       {subSubPage === 'snippet' && (
         <section className="bg-surface-1 border border-line rounded-lg p-6">
           <h2 className="text-sm font-semibold text-ink mb-4">Tracking snippet</h2>
-          <TrackingSnippet websiteId={websiteId} domain={website.domain} />
+          <TrackingSnippet websiteId={websiteId} />
         </section>
       )}
 
