@@ -37,6 +37,7 @@ fn base_config() -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 65536,
         public_url: "http://localhost:3000".to_string(),
+        tracking_public_base: "http://localhost:3000".to_string(),
         rate_limit_disable: true,
         duckdb_memory_limit: "1GB".to_string(), // disable for tests that send many requests
     }
@@ -306,6 +307,36 @@ async fn test_cors_collect_allows_any_origin() {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     assert_eq!(acao, "*", "collect must return ACAO: *");
+}
+
+/// Scenario: /e allows any origin (Access-Control-Allow-Origin: *).
+#[tokio::test]
+async fn test_cors_collect_alias_allows_any_origin() {
+    let (_state, app) =
+        setup_with_config(config_with_cors(vec!["https://myapp.com".to_string()])).await;
+    let req = Request::builder()
+        .method("POST")
+        .uri("/e")
+        .header("content-type", "application/json")
+        .header("origin", "https://any-website.com")
+        .header("x-forwarded-for", "10.0.0.4")
+        .body(Body::from(
+            json!({
+                "website_id": "site_sec",
+                "type": "pageview",
+                "url": "/page"
+            })
+            .to_string(),
+        ))
+        .expect("build request");
+    let resp = app.oneshot(req).await.expect("request");
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    let acao = resp
+        .headers()
+        .get("access-control-allow-origin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(acao, "*", "collect alias must return ACAO: *");
 }
 
 /// Scenario: Analytics query endpoint (GET /api/websites/:id/stats) blocks

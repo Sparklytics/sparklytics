@@ -13,6 +13,9 @@ services:
       SPARKLYTICS_HTTPS: ${SPARKLYTICS_HTTPS:-true}
       SPARKLYTICS_DUCKDB_MEMORY: ${SPARKLYTICS_DUCKDB_MEMORY:-1GB}
       SPARKLYTICS_TRUSTED_PROXIES: ${SPARKLYTICS_TRUSTED_PROXIES:-}
+      # Optional first-party tracker base. Add this line only when you want
+      # onboarding to emit a same-origin snippet such as https://example.com/_sl/s.js
+      # SPARKLYTICS_TRACKING_PUBLIC_BASE: https://example.com/_sl
     restart: unless-stopped
 
 volumes:

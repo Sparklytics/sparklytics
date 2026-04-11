@@ -20,6 +20,9 @@ services:
 
       # Public origin used in onboarding snippets and share links.
       - SPARKLYTICS_PUBLIC_URL=https://analytics.example.com
+      # Optional canonical tracker base. Set this when serving the snippet through
+      # a same-origin proxy path such as https://example.com/_sl
+      # - SPARKLYTICS_TRACKING_PUBLIC_BASE=https://example.com/_sl
 
       # DuckDB query memory. Raise to 2GB–8GB on a larger VPS.
       - SPARKLYTICS_DUCKDB_MEMORY=1GB

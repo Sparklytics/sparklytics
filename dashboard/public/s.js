@@ -1,7 +1,7 @@
 /* Sparklytics tracking script — public/s.js
  * Usage: <script defer src="/s.js" data-website-id="your-id"></script>
  * Options:
- *   data-api-host            Override the API host (default: same origin)
+ *   data-api-host            Override the API base URL (default: script src directory)
  *   data-exclude-hash        Set to "true" to skip hash-only URL changes
  *   data-respect-dnt         Set to "false" to ignore DNT/GPC signals (default: "true")
  *   data-disabled            Set to "true" to disable all tracking (e.g. dev/staging)
@@ -22,9 +22,28 @@
   if (!websiteId) return;
 
   // ── Configuration ─────────────────────────────────────────────────────────
+  function trimTrailingSlash(value) {
+    return value.replace(/\/+$/, '');
+  }
+
+  function deriveEndpoint() {
+    var explicit = script.getAttribute('data-api-host');
+    if (explicit) return trimTrailingSlash(explicit) + '/e';
+
+    var src = script.getAttribute('src') || script.src || '';
+    if (!src) return '/e';
+
+    try {
+      var parsed = new URL(src, window.location.href);
+      var basePath = parsed.pathname.replace(/\/[^/]*$/, '');
+      return parsed.origin + basePath + '/e';
+    } catch (e) {
+      return '/e';
+    }
+  }
+
   var excludeHash = script.getAttribute('data-exclude-hash') === 'true';
-  var apiHost = script.getAttribute('data-api-host') || '';
-  var endpoint = apiHost + '/api/collect';
+  var endpoint = deriveEndpoint();
   var respectDnt = script.getAttribute('data-respect-dnt') !== 'false';
   var disabled = script.getAttribute('data-disabled') === 'true';
 

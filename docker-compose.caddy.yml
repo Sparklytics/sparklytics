@@ -17,6 +17,8 @@ services:
       - SPARKLYTICS_BOOTSTRAP_PASSWORD=replace-this-bootstrap-password
       - SPARKLYTICS_HTTPS=true
       - SPARKLYTICS_PUBLIC_URL=https://analytics.example.com
+      # Optional first-party tracker base, e.g. https://example.com/_sl
+      # - SPARKLYTICS_TRACKING_PUBLIC_BASE=https://example.com/_sl
       - SPARKLYTICS_DUCKDB_MEMORY=1GB
       # Replace with the CIDR used by your reverse proxy/container network.
       # - SPARKLYTICS_TRUSTED_PROXIES=172.18.0.0/16
