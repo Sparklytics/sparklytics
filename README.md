@@ -26,6 +26,7 @@ curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-co
 # Edit docker-compose.yml:
 # - set SPARKLYTICS_BOOTSTRAP_PASSWORD for first boot
 # - set SPARKLYTICS_PUBLIC_URL to your final public origin
+# - optionally set SPARKLYTICS_TRACKING_PUBLIC_BASE when serving the tracker through a first-party proxy path
 docker compose up -d
 ```
 
@@ -37,6 +38,7 @@ curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-co
 # - SPARKLYTICS_IMAGE_TAG=latest           (or a sha-* image tag from GHCR)
 # - SPARKLYTICS_BOOTSTRAP_PASSWORD
 # - SPARKLYTICS_PUBLIC_URL
+# - SPARKLYTICS_TRACKING_PUBLIC_BASE       (optional, e.g. https://example.com/_sl)
 docker compose -f docker-compose.image.yml pull
 docker compose -f docker-compose.image.yml up -d
 ```
@@ -70,6 +72,26 @@ Pick the integration that fits your stack:
 <!-- Add inside <head> on every page -->
 <script defer src="https://analytics.example.com/s.js" data-website-id="YOUR_WEBSITE_ID"></script>
 ```
+
+#### Public websites behind Cloudflare / blockers — first-party proxy (recommended)
+
+```html
+<!-- Add inside <head> on every page -->
+<script defer src="/_sl/s.js" data-website-id="YOUR_WEBSITE_ID"></script>
+```
+
+Route these paths through your reverse proxy:
+
+- `/_sl/s.js` → Sparklytics `/s.js`
+- `/_sl/e` → Sparklytics `/e`
+
+If you want onboarding and the API to emit this form by default, set:
+
+```bash
+SPARKLYTICS_TRACKING_PUBLIC_BASE=https://example.com/_sl
+```
+
+`data-api-host` remains available as a legacy override, but standard self-hosted installs should not need it.
 
 Pageviews appear in the dashboard within seconds. To track custom events:
 
@@ -126,6 +148,7 @@ Before exposing Sparklytics on the public internet, make sure you have:
 - HTTPS enabled via reverse proxy
 - `SPARKLYTICS_HTTPS=true` in the Sparklytics container behind TLS
 - `SPARKLYTICS_PUBLIC_URL=https://analytics.example.com` set to the real public origin
+- `SPARKLYTICS_TRACKING_PUBLIC_BASE=https://example.com/_sl` when using a first-party proxy path
 - a persistent Docker volume mounted at `/data`
 - an explicit DuckDB memory cap via `SPARKLYTICS_DUCKDB_MEMORY`
 - `SPARKLYTICS_BOOTSTRAP_PASSWORD` set to a non-default value for production installs
@@ -147,6 +170,7 @@ curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-co
 # Edit docker-compose.caddy.yml:
 # - set SPARKLYTICS_BOOTSTRAP_PASSWORD
 # - set SPARKLYTICS_PUBLIC_URL to your domain
+# - optionally set SPARKLYTICS_TRACKING_PUBLIC_BASE=https://your-site.com/_sl
 # - set SPARKLYTICS_TRUSTED_PROXIES for your proxy/network CIDR
 docker compose -f docker-compose.caddy.yml up -d
 ```
@@ -235,6 +259,44 @@ Full methodology and raw data: [`docs/perf-baseline.md`](docs/perf-baseline.md).
 | `SPARKLYTICS_CORS_ORIGINS` | — | Comma-separated allowed origins for analytics API |
 | `SPARKLYTICS_RETENTION_DAYS` | `365` | How long to keep raw events |
 | `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | Path to city MMDB. Canonical default is `./GeoLite2-City.mmdb`; the bare-metal download script writes `./dbip-city-lite.mmdb`, so set this env var accordingly when using that script. |
+| `SPARKLYTICS_TRACKING_PUBLIC_BASE` | `SPARKLYTICS_PUBLIC_URL` | Optional public tracker base. Example: `https://example.com/_sl` emits `https://example.com/_sl/s.js`. |
+
+### First-party proxy example
+
+Nginx:
+
+```nginx
+location /_sl/s.js {
+    proxy_pass http://127.0.0.1:3000/s.js;
+    proxy_set_header Host $host;
+}
+
+location /_sl/e {
+    proxy_pass http://127.0.0.1:3000/e;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Caddy:
+
+```caddyfile
+example.com {
+    handle /_sl/s.js {
+        rewrite * /s.js
+        reverse_proxy localhost:3000
+    }
+
+    handle /_sl/e {
+        rewrite * /e
+        reverse_proxy localhost:3000
+    }
+}
+```
+
+If browser extensions or Cloudflare challenge `analytics.example.com`, switch to the first-party path above. `ERR_BLOCKED_BY_CLIENT` usually means an extension blocked the analytics origin or endpoint.
 
 ### Auth modes
 

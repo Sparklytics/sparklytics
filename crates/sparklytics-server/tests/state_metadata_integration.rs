@@ -29,6 +29,7 @@ fn test_config() -> Config {
         mode: AppMode::Cloud,
         argon2_memory_kb: 4_096,
         public_url: "http://localhost:3000".to_string(),
+        tracking_public_base: "http://localhost:3000".to_string(),
         rate_limit_disable: true,
         duckdb_memory_limit: "1GB".to_string(),
     }

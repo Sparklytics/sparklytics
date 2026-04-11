@@ -32,6 +32,7 @@ fn config(auth_mode: AuthMode) -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 4096,
         public_url: "http://localhost:3000".to_string(),
+        tracking_public_base: "http://localhost:3000".to_string(),
         rate_limit_disable: false,
         duckdb_memory_limit: "1GB".to_string(),
     }

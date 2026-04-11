@@ -16,6 +16,7 @@ pub struct Config {
     pub mode: AppMode,
     pub argon2_memory_kb: u32,
     pub public_url: String,
+    pub tracking_public_base: String,
     /// When true, skip the rate limiter on /api/collect. For benchmarking only.
     /// Controlled by SPARKLYTICS_RATE_LIMIT_DISABLE=true. Never document in README.
     pub rate_limit_disable: bool,
@@ -55,6 +56,16 @@ impl Config {
         if public_url.is_empty() {
             return Err("SPARKLYTICS_PUBLIC_URL must not be empty".to_string());
         }
+        let tracking_public_base = match get_var("SPARKLYTICS_TRACKING_PUBLIC_BASE") {
+            Some(value) => {
+                let trimmed = value.trim().trim_end_matches('/').to_string();
+                if trimmed.is_empty() {
+                    return Err("SPARKLYTICS_TRACKING_PUBLIC_BASE must not be empty".to_string());
+                }
+                trimmed
+            }
+            None => public_url.clone(),
+        };
 
         Ok(Self {
             port: get_var("SPARKLYTICS_PORT")
@@ -115,6 +126,7 @@ impl Config {
                 .parse()
                 .unwrap_or(65536),
             public_url,
+            tracking_public_base,
             rate_limit_disable: get_var("SPARKLYTICS_RATE_LIMIT_DISABLE")
                 .map(|v| v == "true")
                 .unwrap_or(false),
@@ -153,6 +165,40 @@ mod tests {
         let err = Config::from_env_with(|key| vars.get(key).cloned()).expect_err("empty url");
 
         assert_eq!(err, "SPARKLYTICS_PUBLIC_URL must not be empty");
+    }
+
+    #[test]
+    fn defaults_tracking_public_base_to_public_url() {
+        let vars = HashMap::from([(
+            "SPARKLYTICS_PUBLIC_URL",
+            "https://analytics.example.com".to_string(),
+        )]);
+
+        let cfg = Config::from_env_with(|key| vars.get(key).cloned()).expect("config");
+
+        assert_eq!(cfg.tracking_public_base, "https://analytics.example.com");
+    }
+
+    #[test]
+    fn trims_trailing_slash_from_tracking_public_base() {
+        let vars = HashMap::from([(
+            "SPARKLYTICS_TRACKING_PUBLIC_BASE",
+            "https://example.com/_sl/".to_string(),
+        )]);
+
+        let cfg = Config::from_env_with(|key| vars.get(key).cloned()).expect("config");
+
+        assert_eq!(cfg.tracking_public_base, "https://example.com/_sl");
+    }
+
+    #[test]
+    fn rejects_empty_tracking_public_base() {
+        let vars = HashMap::from([("SPARKLYTICS_TRACKING_PUBLIC_BASE", "   ".to_string())]);
+
+        let err =
+            Config::from_env_with(|key| vars.get(key).cloned()).expect_err("empty tracking base");
+
+        assert_eq!(err, "SPARKLYTICS_TRACKING_PUBLIC_BASE must not be empty");
     }
 
     #[test]

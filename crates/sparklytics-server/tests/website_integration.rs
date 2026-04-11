@@ -30,6 +30,7 @@ fn test_config() -> Config {
         mode: AppMode::SelfHosted,
         argon2_memory_kb: 65536,
         public_url: "http://localhost:3000".to_string(),
+        tracking_public_base: "http://localhost:3000".to_string(),
         rate_limit_disable: false,
         duckdb_memory_limit: "1GB".to_string(),
     }
@@ -37,8 +38,11 @@ fn test_config() -> Config {
 
 /// Create a fresh in-memory backend + state + app for each test.
 async fn setup() -> (Arc<AppState>, axum::Router) {
+    setup_with_config(test_config()).await
+}
+
+async fn setup_with_config(config: Config) -> (Arc<AppState>, axum::Router) {
     let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
-    let config = test_config();
     let state = Arc::new(AppState::new(db, config));
     let app = build_app(Arc::clone(&state));
     (state, app)
@@ -176,6 +180,38 @@ async fn test_create_website_selfhosted() {
     );
 }
 
+#[tokio::test]
+async fn test_create_website_uses_tracking_public_base_when_configured() {
+    let mut config = test_config();
+    config.tracking_public_base = "https://example.com/_sl".to_string();
+    let (_state, app) = setup_with_config(config).await;
+
+    let body = json!({
+        "name": "My Blog",
+        "domain": "blog.example.com",
+    });
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/websites")
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .expect("build request");
+
+    let response = app.oneshot(request).await.expect("request");
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let json = json_body(response).await;
+    let snippet = json["data"]["tracking_snippet"]
+        .as_str()
+        .expect("tracking_snippet");
+
+    assert!(
+        snippet.contains(r#"src="https://example.com/_sl/s.js""#),
+        "tracking snippet must use the configured public tracking base"
+    );
+}
+
 // ============================================================
 // BDD: List websites
 // ============================================================
@@ -231,6 +267,35 @@ async fn test_update_website() {
     let json = json_body(response).await;
     assert_eq!(json["data"]["name"], "Updated Name");
     assert_eq!(json["data"]["domain"], "updated.example.com");
+}
+
+#[tokio::test]
+async fn test_get_website_returns_tracking_snippet() {
+    let (_state, app) = setup().await;
+    let website_id = create_test_website(&app).await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/websites/{website_id}"))
+        .body(Body::empty())
+        .expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = json_body(response).await;
+    let snippet = json["data"]["tracking_snippet"]
+        .as_str()
+        .expect("tracking_snippet");
+
+    assert!(
+        snippet.contains(&format!(r#"data-website-id="{website_id}""#)),
+        "tracking snippet must contain the website ID"
+    );
+    assert!(
+        snippet.contains(r#"src="http://localhost:3000/s.js""#),
+        "tracking snippet must use the canonical tracking base"
+    );
 }
 
 // ============================================================

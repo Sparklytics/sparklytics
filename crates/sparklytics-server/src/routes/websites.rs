@@ -14,6 +14,12 @@ use sparklytics_metadata::{CreateWebsiteParams, UpdateWebsiteParams};
 
 use crate::{error::AppError, state::AppState};
 
+fn tracking_snippet(tracking_public_base: &str, website_id: &str) -> String {
+    format!(
+        r#"<script defer src="{tracking_public_base}/s.js" data-website-id="{website_id}"></script>"#
+    )
+}
+
 fn normalize_domain(raw: &str) -> Result<String, AppError> {
     let domain = raw.trim().trim_end_matches('.').to_ascii_lowercase();
     if domain.is_empty() {
@@ -86,10 +92,7 @@ pub async fn create_website(
 
     state.cache_website_metadata(website.clone()).await;
 
-    let tracking_snippet = format!(
-        r#"<script defer src="{0}/s.js" data-website-id="{1}"></script>"#,
-        state.config.public_url, website.id
-    );
+    let tracking_snippet = tracking_snippet(&state.config.tracking_public_base, &website.id);
 
     Ok((
         StatusCode::CREATED,
@@ -192,7 +195,21 @@ pub async fn get_website(
         .map_err(AppError::Internal)?
         .ok_or_else(|| AppError::NotFound("Website not found".to_string()))?;
 
-    Ok(Json(json!({ "data": website })))
+    let snippet = tracking_snippet(&state.config.tracking_public_base, &website.id);
+
+    Ok(Json(json!({
+        "data": {
+            "id": website.id,
+            "tenant_id": website.tenant_id,
+            "name": website.name,
+            "domain": website.domain,
+            "timezone": website.timezone,
+            "share_id": website.share_id,
+            "tracking_snippet": snippet,
+            "created_at": website.created_at,
+            "updated_at": website.updated_at,
+        }
+    })))
 }
 
 /// `DELETE /api/websites/:id` — Delete a website and all analytics data.
