@@ -83,23 +83,50 @@ These constraints are critical and often subject to AI hallucinations. Never vio
 
 ## 7. Multi-Repo Commit Rules (CRITICAL)
 
-This project uses **nested git repos** — the target architecture defined in Sprint 7. Once fully set up, three separate `.git/` directories live under `sparklytics/` on disk, each pushing to an independent GitHub remote. **Always verify which git repo you are committing to before running `git commit` or `git push`.**
+This project uses **multiple git repos** under the `sparklytics/` workspace root. **Always verify which git repo you are committing to before running `git commit` or `git push`, and do not assume only `cloud/` and `sdk/next/` exist.**
 
-> **Current on-disk state (pre-Sprint 7 setup):**
-> - `sparklytics/` — parent `.git/` exists ✓
-> - `sparklytics/cloud/` — directory does NOT exist yet (created in Sprint 7)
-> - `sparklytics/sdk/next/` — does NOT exist yet; SDK code lives at `sdk/` and is currently tracked by the parent repo
-> - `.gitignore` does NOT yet exclude `cloud/` or `sdk/next/` — this is part of Sprint 7 setup
+> **Current on-disk state (authoritative workspace repo roots):**
+> - `sparklytics/` — public product/runtime repo
+> - `sparklytics/cloud/` — private cloud runtime repo
+> - `sparklytics/docs/` — public documentation repo
+> - `sparklytics/marketing/` — public marketing site repo
+> - `sparklytics/sdk/next/` — public Next.js SDK repo
 
-### Repo map (target after Sprint 7 setup)
+### Repo map
 
 | Directory | Remote | Visibility |
 |-----------|--------|------------|
 | `sparklytics/` (root) | `github.com/Sparklytics/sparklytics` | **Public** — community can see every commit |
 | `sparklytics/cloud/` | `github.com/Sparklytics/sparklytics-cloud` | **Private** — cloud binary, ClickHouseBackend, StripeBillingGate |
+| `sparklytics/docs/` | `github.com/Sparklytics/sparklytics-docs` | **Public** — standalone docs and operational guides |
+| `sparklytics/marketing/` | `github.com/Sparklytics/sparklytics-marketing` | **Public** — marketing site/app |
 | `sparklytics/sdk/next/` | `github.com/Sparklytics/sparklytics-next` | **Public** — `@sparklytics/next` npm package |
 
-### One-time setup (run once when starting Sprint 7)
+### Repo discovery rule
+
+Before answering any question like “are all repos up to date?”, “commit and push everything”, or “open PRs for all repos”, enumerate **all** repo roots under `sparklytics/` first. Do not stop at the parent repo, `cloud/`, and `sdk/next/`.
+
+Minimum check:
+
+```bash
+find sparklytics -name .git \( -type d -o -type f \) -prune
+```
+
+Then, for each repo root, verify:
+
+```bash
+git fetch origin
+git branch --show-current
+git symbolic-ref --short refs/remotes/origin/HEAD
+git status --short
+git rev-list --left-right --count origin/<default-branch>...HEAD
+```
+
+Treat a repo as **not fully up to date** if either:
+- it is ahead/behind its remote default branch, or
+- it has local uncommitted changes, even when ahead/behind is `0 0`.
+
+### Historical setup notes
 
 ```bash
 # 1. Set up cloud/ nested repo
@@ -125,12 +152,15 @@ git ls-files cloud/ sdk/next/   # must return empty
 ### Rules you must never violate
 
 1. **Verify git context before committing.** Run `git remote -v` from the directory you are in. Never assume you are in the right repo.
-2. **Never use `git add -A` or `git add .` from `sparklytics/` root.** `cloud/` and `sdk/next/` are gitignored but stray new files can still be staged. Always stage by explicit path: `git add crates/ dashboard/ Cargo.toml CHANGELOG.md` etc.
-3. **Never commit billing logic, ClickHouse backend code, Clerk auth, or ops configs to `sparklytics/` root.** Those belong in `cloud/`. Note: pre-Sprint 7, Clerk code temporarily lives in `sparklytics-server/src/cloud/` behind `--features cloud` — Sprint 7 migrates it to `cloud/src/auth/` and removes the feature flag from the public repo entirely.
-4. **Never commit `ops/`, `migrations/`, `.env` files, or any secrets to `sparklytics/` root.** Run `git ls-files cloud/ sdk/next/ ops/ migrations/` before pushing — must return empty.
-5. **`cloud/.cargo/config.toml` must be in `cloud/.gitignore`.** It contains local path overrides (`../../crates/sparklytics-*`) that work only on your machine and must never reach the private remote.
-6. **SDK changes go in `sparklytics/sdk/next/` once Sprint 7 setup is complete.** Until then, `sdk/` is tracked by the parent repo — commit SDK changes there as normal files.
-7. **When the user asks to commit or push work, open a pull request by default.** Do not push directly to `main` unless the user explicitly asks for direct push.
+2. **When the user asks about all repos, inspect all five repo roots.** Root, `cloud/`, `docs/`, `marketing/`, and `sdk/next/`.
+3. **Never use `git add -A` or `git add .` from `sparklytics/` root.** Nested repos may be ignored, but stray files can still be staged. Always stage by explicit path: `git add crates/ dashboard/ Cargo.toml CHANGELOG.md` etc.
+4. **Never commit billing logic, ClickHouse backend code, Clerk auth, or ops configs to `sparklytics/` root.** Those belong in `cloud/`. Note: pre-Sprint 7, Clerk code temporarily lives in `sparklytics-server/src/cloud/` behind `--features cloud` — Sprint 7 migrates it to `cloud/src/auth/` and removes the feature flag from the public repo entirely.
+5. **Never commit `ops/`, `migrations/`, `.env` files, or any secrets to `sparklytics/` root.** Run `git ls-files cloud/ sdk/next/ ops/ migrations/` before pushing — must return empty.
+6. **`cloud/.cargo/config.toml` must be in `cloud/.gitignore`.** It contains local path overrides (`../../crates/sparklytics-*`) that work only on your machine and must never reach the private remote.
+7. **Docs changes belong in `sparklytics/docs/` when those files live under that repo root.** Do not report docs as “up to date” if `docs/` has local uncommitted changes, even when it is not ahead of `origin/main`.
+8. **Marketing app changes belong in `sparklytics/marketing/`.** Check its branch, remote HEAD, and working tree independently from the product repo.
+9. **SDK changes go in `sparklytics/sdk/next/`.** Do not assume SDK work is tracked by the parent repo.
+10. **When the user asks to commit or push work, open a pull request by default.** Do not push directly to `main` unless the user explicitly asks for direct push.
 
 ### Correct commit flow (post-Sprint 7 setup)
 
@@ -161,4 +191,22 @@ git add src/ package.json
 git commit -m "fix: spa navigation"
 git push origin fix/spa-navigation
 gh pr create --base main --head fix/spa-navigation --title "fix: spa navigation" --body "..."
+
+# Committing docs changes (public):
+cd sparklytics/docs/
+git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics-docs
+git checkout -b docs/reverse-proxy-notes
+git add reverse-proxy.md 19-FIRST-LAUNCH-RUNBOOK.md
+git commit -m "docs: update reverse proxy guidance"
+git push origin docs/reverse-proxy-notes
+gh pr create --base main --head docs/reverse-proxy-notes --title "docs: update reverse proxy guidance" --body "..."
+
+# Committing marketing changes (public):
+cd sparklytics/marketing/
+git remote -v             # confirm: origin → github.com/Sparklytics/sparklytics-marketing
+git checkout -b feat/homepage-refresh
+git add app/ components/ package.json
+git commit -m "feat: refresh marketing homepage"
+git push origin feat/homepage-refresh
+gh pr create --base main --head feat/homepage-refresh --title "feat: refresh marketing homepage" --body "..."
 ```
