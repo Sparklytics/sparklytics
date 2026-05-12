@@ -11,7 +11,7 @@
 
 Track pageviews, sessions, custom events, funnels, and retention — with full data ownership and no cookies.
 
-![Sparklytics Dashboard](docs/images/dashboard-screenshot.png)
+![Sparklytics Dashboard](https://raw.githubusercontent.com/Sparklytics/sparklytics-docs/main/images/dashboard-screenshot.png)
 
 ---
 
@@ -22,13 +22,21 @@ Docker is the recommended first-time install path. Use plain HTTP only for local
 ### 1. Start Sparklytics
 
 ```bash
-curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-compose.yml
-# Edit docker-compose.yml:
-# - set SPARKLYTICS_BOOTSTRAP_PASSWORD for first boot
-# - set SPARKLYTICS_PUBLIC_URL to your final public origin
-# - optionally set SPARKLYTICS_TRACKING_PUBLIC_BASE when serving the tracker through a first-party proxy path
-docker compose up -d
+git clone https://github.com/Sparklytics/sparklytics.git
+cd sparklytics
+# docker-compose.yml is localhost-ready:
+# - SPARKLYTICS_AUTH=local
+# - SPARKLYTICS_HTTPS=false
+# - SPARKLYTICS_PUBLIC_URL=http://localhost:3000
+# Before production use, set SPARKLYTICS_BOOTSTRAP_PASSWORD and switch to
+# docker-compose.caddy.yml or docker-compose.image.yml with your real HTTPS origin.
+docker compose up --build -d
 ```
+
+The source-build compose files pass `CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-1}`
+to the Docker build to keep small VPS builds stable. Set `CARGO_BUILD_JOBS=4`
+before `docker compose up --build -d` on larger builders if you want faster
+source builds.
 
 For a VPS deploy that should only pull a ready-made image instead of compiling Rust + Next.js on the server:
 
@@ -43,7 +51,7 @@ docker compose -f docker-compose.image.yml pull
 docker compose -f docker-compose.image.yml up -d
 ```
 
-Prebuilt images are published to `ghcr.io/sparklytics/sparklytics` on every push to `main` and can also be published manually from a branch via the `Docker Publish` GitHub Actions workflow.
+The optional prebuilt-image flow uses `ghcr.io/sparklytics/sparklytics`. The default source-build flow above does not require registry access; use it if `docker compose pull` returns `unauthorized` for the GHCR package.
 
 Open `http://your-server-ip:3000` and Sparklytics will guide you through:
 
@@ -80,7 +88,8 @@ Pick the integration that fits your stack:
 <script defer src="/_sl/s.js" data-website-id="YOUR_WEBSITE_ID"></script>
 ```
 
-Route these paths through your reverse proxy:
+Sparklytics serves `/_sl/s.js` and `/_sl/e` natively on its own origin. If you
+want those paths on your main app/domain, route them through your reverse proxy:
 
 - `/_sl/s.js` → Sparklytics `/s.js`
 - `/_sl/e` → Sparklytics `/e`
@@ -165,19 +174,20 @@ Avoid `SPARKLYTICS_AUTH=none` outside trusted local or private-network developme
 Use [Caddy](https://caddyserver.com) for automatic TLS — no certbot, no manual renewal:
 
 ```bash
-curl -O https://raw.githubusercontent.com/Sparklytics/sparklytics/main/docker-compose.caddy.yml
+git clone https://github.com/Sparklytics/sparklytics.git
+cd sparklytics
 # Edit Caddyfile — replace analytics.example.com with your domain
 # Edit docker-compose.caddy.yml:
 # - set SPARKLYTICS_BOOTSTRAP_PASSWORD
 # - set SPARKLYTICS_PUBLIC_URL to your domain
 # - optionally set SPARKLYTICS_TRACKING_PUBLIC_BASE=https://your-site.com/_sl
 # - set SPARKLYTICS_TRUSTED_PROXIES for your proxy/network CIDR
-docker compose -f docker-compose.caddy.yml up -d
+docker compose -f docker-compose.caddy.yml up --build -d
 ```
 
 Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 
-> **Nginx / Traefik:** See [docs/reverse-proxy.md](docs/reverse-proxy.md) for alternative configs.
+> **Nginx / Traefik:** See [Reverse Proxy Setup](https://github.com/Sparklytics/sparklytics-docs/blob/main/reverse-proxy.md) for alternative configs.
 >
 > **Local testing:** Keep the simple `docker-compose.yml` path and set `SPARKLYTICS_HTTPS=false` if you are using plain HTTP on localhost.
 
@@ -199,7 +209,7 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 | Goals & conversion | ✅ | ✅ | ✅ |
 | Real-time dashboard | ✅ | ✅ | ✅ |
 | Built-in A/B testing | 🗓 V1.1 | ❌ | ❌ |
-| GeoIP (bundled) | ✅ | ❌ | ✅ |
+| GeoIP (optional MMDB) | ✅ | ❌ | ✅ |
 | Multi-site | ✅ | ✅ | ✅ |
 | Next.js SDK | ✅ | ❌ | ❌ |
 | Docker arm64 | ✅ | ✅ | ✅ |
@@ -209,7 +219,7 @@ Your analytics dashboard will be live at `https://analytics.yourdomain.com`.
 ## Benchmarks
 
 Measured on Apple Silicon macOS, release builds, 100k–1M realistic events.
-Full methodology and raw data: [`docs/perf-baseline.md`](docs/perf-baseline.md).
+Full methodology and raw data: [`perf-baseline.md`](https://github.com/Sparklytics/sparklytics-docs/blob/main/perf-baseline.md).
 
 ### Self-Hosted (DuckDB)
 
@@ -221,28 +231,22 @@ Full methodology and raw data: [`docs/perf-baseline.md`](docs/perf-baseline.md).
 | Memory (idle) | **~29 MB** |
 | Memory (under load) | ~64 MB |
 | Storage per 1M events | ~278 MB |
-| Binary size (linux-amd64 musl) | ~15 MB |
+| Binary size (linux-amd64 release) | ~15 MB |
 | Dashboard bundle (gzipped) | ~632 KB |
 | `@sparklytics/next` SDK (gzipped) | < 5 KB |
 
-### Cloud (ClickHouse)
+### Self-Hosted Scaling Notes
 
-| Metric | Value |
-|--------|-------|
-| Peak ingest throughput | ~18,000–24,000 req/s (single event) |
-| Batch ingestion | ~86,660 events/s (batch of 10) |
-| Query throughput (analytics) | 1,600–4,300 req/s (all endpoints) |
-| Storage per 1M events | ~48 MB (5.8x more efficient) |
-| ClickHouse vs DuckDB speedup | **10–68x** at 100k, **47–239x** at 1M |
+Sparklytics self-host runs on one embedded DuckDB file. For larger local
+datasets, raise `SPARKLYTICS_DUCKDB_MEMORY` and keep `SPARKLYTICS_DATA_DIR` on
+fast persistent storage.
 
-### Scaling: 100k → 1M Events
-
-| Dimension | DuckDB | ClickHouse |
-|-----------|--------|-----------|
-| Query degradation | 3.5–5x slower per 10x data | Near-constant (< 1.2x) |
-| Ingest degradation | Drops 59% (26k→11k) | Unchanged |
-| Memory (query peak) | 407 MB → 3.5 GB | 200 MB → 325 MB |
-| Storage efficiency | 278 MB/1M | 48 MB/1M |
+| Dimension | Self-hosted DuckDB note |
+|-----------|-------------------------|
+| Query memory | 100k-event query peak measured around 407 MB; 1M-event peak around 3.5 GB |
+| Ingest throughput | Single-event peak remains above 10k req/s at 1M-event scale in release builds |
+| Storage efficiency | Around 278 MB per 1M realistic events in the measured fixture |
+| Tuning | Use `SPARKLYTICS_DUCKDB_MEMORY=4GB` or higher on larger VPS instances |
 
 ---
 
@@ -258,8 +262,9 @@ Full methodology and raw data: [`docs/perf-baseline.md`](docs/perf-baseline.md).
 | `SPARKLYTICS_DUCKDB_MEMORY` | `1GB` | Query memory limit (raise to `2GB`–`8GB` on larger VPS) |
 | `SPARKLYTICS_CORS_ORIGINS` | — | Comma-separated allowed origins for analytics API |
 | `SPARKLYTICS_RETENTION_DAYS` | `365` | How long to keep raw events |
-| `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | Path to city MMDB. Canonical default is `./GeoLite2-City.mmdb`; the bare-metal download script writes `./dbip-city-lite.mmdb`, so set this env var accordingly when using that script. |
+| `SPARKLYTICS_GEOIP_PATH` | `./GeoLite2-City.mmdb` | Optional path to a DB-IP or MaxMind city MMDB. Missing files are allowed and store `NULL` geo fields. |
 | `SPARKLYTICS_TRACKING_PUBLIC_BASE` | `SPARKLYTICS_PUBLIC_URL` | Optional public tracker base. Example: `https://example.com/_sl` emits `https://example.com/_sl/s.js`. |
+| `SPARKLYTICS_TRUSTED_PROXIES` | — | Comma/space-separated proxy CIDRs trusted for `X-Forwarded-For` / `X-Real-IP`. Required behind Caddy/Nginx/Traefik for correct source IP, GeoIP, visitor ID, and per-IP rate limits. |
 
 ### First-party proxy example
 
@@ -296,7 +301,7 @@ example.com {
 }
 ```
 
-If browser extensions or Cloudflare challenge `analytics.example.com`, switch to the first-party path above. `ERR_BLOCKED_BY_CLIENT` usually means an extension blocked the analytics origin or endpoint.
+If browser extensions or Cloudflare challenge `analytics.example.com`, switch to the first-party path above. `ERR_BLOCKED_BY_CLIENT` usually means an extension blocked the analytics origin or endpoint. Sparklytics accepts `/_sl/s.js` and `/_sl/e` directly when those paths reach the Sparklytics service; use the proxy snippets when the paths live on another app/domain.
 
 ### Auth modes
 
@@ -308,16 +313,16 @@ If browser extensions or Cloudflare challenge `analytics.example.com`, switch to
 
 ### GeoIP
 
-Docker images bundle the [DB-IP City Lite](https://db-ip.com) database — **no setup needed**.
+GeoIP enrichment is optional. If no MMDB file is configured, Sparklytics starts normally and stores `NULL` country/region/city fields.
 
-For bare-metal installs:
+To enable GeoIP, download the free [DB-IP City Lite](https://db-ip.com) database:
 
 ```bash
 ./scripts/download-geoip.sh
 export SPARKLYTICS_GEOIP_PATH=./dbip-city-lite.mmdb
 ```
 
-`SPARKLYTICS_GEOIP_PATH` defaults to `./GeoLite2-City.mmdb` (generic packaged default), but the download script outputs `dbip-city-lite.mmdb`, so keep the env var aligned with the file you actually install.
+`SPARKLYTICS_GEOIP_PATH` defaults to `./GeoLite2-City.mmdb` in bare-metal runs and `/geoip/dbip-city-lite.mmdb` in Docker images. Mount the MMDB file at that path or set the env var to the file you actually install.
 
 > You can also use MaxMind GeoLite2-City.mmdb — just point `SPARKLYTICS_GEOIP_PATH` at it.
 
@@ -330,13 +335,21 @@ Download from [Releases](https://github.com/Sparklytics/sparklytics/releases):
 ```
 sparklytics-linux-amd64
 sparklytics-linux-arm64
+sparklytics-darwin-amd64
 sparklytics-darwin-arm64
 ```
 
 Run directly — the dashboard is embedded:
 
 ```bash
-SPARKLYTICS_DATA_DIR=./data ./sparklytics
+mkdir -p ./data
+SPARKLYTICS_DATA_DIR=./data \
+SPARKLYTICS_AUTH=local \
+SPARKLYTICS_BOOTSTRAP_PASSWORD=replace-this-bootstrap-password \
+SPARKLYTICS_HTTPS=false \
+SPARKLYTICS_PUBLIC_URL=http://localhost:3000 \
+SPARKLYTICS_DUCKDB_MEMORY=1GB \
+./sparklytics
 ```
 
 ---
@@ -361,6 +374,16 @@ cargo build
 cargo test
 cargo run
 
+# Deterministic self-host API smoke (local/password/none auth modes)
+cd dashboard && npm run build && cd ..
+cargo build --release
+node scripts/selfhost-api-smoke.mjs
+
+# Browser first-launch release smoke
+cd dashboard && npm run test:release-smoke
+# If backend port 3000 is busy:
+# cd dashboard && PLAYWRIGHT_RELEASE_BACKEND_URL=http://127.0.0.1:3333 npm run test:release-smoke
+
 # Dashboard (dev server at :3001, proxies /api → :3000)
 cd dashboard && npm run dev
 
@@ -377,10 +400,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full setup instructions.
 ## Documentation
 
 - [First Launch Runbook](FIRST-LAUNCH-RUNBOOK.md) — detailed first-run verification with curl commands
-- [Reverse Proxy Setup](docs/reverse-proxy.md) — Nginx / Traefik configs
-- [API Specification](docs/07-API-SPECIFICATION.md)
-- [Database Schema](docs/08-DATABASE-SCHEMA.md)
-- [Self-Hosted Auth](docs/13-SELF-HOSTED-AUTH.md)
+- [Reverse Proxy Setup](https://github.com/Sparklytics/sparklytics-docs/blob/main/reverse-proxy.md) — Nginx / Traefik configs
+- [API Specification](https://github.com/Sparklytics/sparklytics-docs/blob/main/07-API-SPECIFICATION.md)
+- [Database Schema](https://github.com/Sparklytics/sparklytics-docs/blob/main/08-DATABASE-SCHEMA.md)
+- [Self-Hosted Auth](https://github.com/Sparklytics/sparklytics-docs/blob/main/13-SELF-HOSTED-AUTH.md)
 - [SDK (`@sparklytics/next`)](https://github.com/Sparklytics/sparklytics-next)
 
 ---

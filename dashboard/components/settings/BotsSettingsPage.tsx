@@ -229,7 +229,7 @@ export function BotsSettingsPage({ websiteId }: { websiteId: string }) {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold text-ink">Bots</h2>
-        <p className="text-xs text-ink-3 mt-0.5">
+        <p className="text-xs text-ink-3 mt-1">
           Configure bot policy, overrides, visibility, and recompute for this website.
         </p>
       </div>
@@ -265,7 +265,7 @@ export function BotsSettingsPage({ websiteId }: { websiteId: string }) {
                   : 'border-line text-ink-3 hover:text-ink-2'
               }`}
             >
-              <p className="text-xs font-semibold uppercase tracking-[0.08em]">{candidate}</p>
+              <p className="text-xs font-semibold uppercase">{candidate}</p>
               <p className="text-[11px] mt-1 text-ink-3">
                 {candidate === 'strict' && 'Lower threshold, more aggressive bot filtering.'}
                 {candidate === 'balanced' && 'Default detection threshold for mixed traffic.'}
@@ -276,7 +276,9 @@ export function BotsSettingsPage({ websiteId }: { websiteId: string }) {
         </div>
 
         <div className="max-w-[220px]">
-          <label className="block text-xs text-ink-2 mb-1">Threshold score (0-100)</label>
+          <label className="block text-xs text-ink-2 mb-1">
+            Threshold score (<span className="font-mono tabular-nums">0-100</span>)
+          </label>
           <Input
             type="number"
             min={0}
@@ -284,7 +286,7 @@ export function BotsSettingsPage({ websiteId }: { websiteId: string }) {
             value={threshold}
             disabled={mode === 'off'}
             onChange={(event) => setThreshold(Number(event.target.value || 0))}
-            className="h-8 text-xs"
+            className="h-8 text-xs font-mono tabular-nums"
           />
         </div>
       </section>
@@ -316,19 +318,19 @@ export function BotsSettingsPage({ websiteId }: { websiteId: string }) {
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="border border-line rounded-md p-3 bg-canvas">
-                <p className="text-[11px] text-ink-3 uppercase tracking-[0.08em]">Bot Events</p>
+                <p className="text-[11px] text-ink-3 uppercase">Bot Events</p>
                 <p className="mt-1 text-lg text-ink font-mono tabular-nums">
                   {formatNumber(summary?.bot_events ?? report?.split.bot_events ?? 0)}
                 </p>
               </div>
               <div className="border border-line rounded-md p-3 bg-canvas">
-                <p className="text-[11px] text-ink-3 uppercase tracking-[0.08em]">Human Events</p>
+                <p className="text-[11px] text-ink-3 uppercase">Human Events</p>
                 <p className="mt-1 text-lg text-ink font-mono tabular-nums">
                   {formatNumber(summary?.human_events ?? report?.split.human_events ?? 0)}
                 </p>
               </div>
               <div className="border border-line rounded-md p-3 bg-canvas">
-                <p className="text-[11px] text-ink-3 uppercase tracking-[0.08em]">Bot Rate</p>
+                <p className="text-[11px] text-ink-3 uppercase">Bot Rate</p>
                 <p className="mt-1 text-lg text-ink font-mono tabular-nums">
                   {(((summary?.bot_rate ?? report?.split.bot_rate ?? 0) * 100).toFixed(2))}%
                 </p>
@@ -354,7 +356,7 @@ export function BotsSettingsPage({ websiteId }: { websiteId: string }) {
                 {(report?.top_reasons ?? summary?.top_reasons ?? []).length === 0 ? (
                   <p className="text-xs text-ink-3">No bot traffic in selected range.</p>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {(report?.top_reasons ?? summary?.top_reasons ?? []).map((row) => (
                       <div key={row.code} className="flex items-center justify-between text-xs">
                         <span className="font-mono text-ink-2">{row.code}</span>
@@ -369,7 +371,7 @@ export function BotsSettingsPage({ websiteId }: { websiteId: string }) {
                 {(report?.top_user_agents ?? []).length === 0 ? (
                   <p className="text-xs text-ink-3">No bot user-agent records yet.</p>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {(report?.top_user_agents ?? []).map((row) => (
                       <div key={row.value} className="flex items-center justify-between text-xs gap-2">
                         <span className="font-mono text-ink-2 truncate">{row.value}</span>
@@ -484,7 +486,7 @@ export function BotsSettingsPage({ websiteId }: { websiteId: string }) {
               max={30}
               value={recomputeDays}
               onChange={(event) => setRecomputeDays(Number(event.target.value || 1))}
-              className="h-8 w-[110px] text-xs"
+              className="h-8 w-[110px] text-xs font-mono tabular-nums"
             />
             <Button
               size="sm"

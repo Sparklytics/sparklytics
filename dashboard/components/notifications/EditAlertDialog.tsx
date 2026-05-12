@@ -99,7 +99,7 @@ export function EditAlertDialog({ rule, isPending, onSave, onClose }: EditAlertD
               value={thresholdValue}
               onChange={(e) => setThresholdValue(e.target.value)}
               placeholder="e.g. 100"
-              className={inputClass}
+              className={`${inputClass} font-mono tabular-nums`}
             />
           </label>
 

@@ -34,7 +34,7 @@ function SummaryCards({ links }: { links: CampaignLink[] }) {
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       {cards.map((card) => (
         <div key={card.label} className="border border-line rounded-lg bg-surface-1 p-4">
-          <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">
+          <p className="text-[11px] text-ink-3 uppercase font-medium">
             {card.label}
           </p>
           <p className="mt-1 text-2xl font-mono tabular-nums text-ink">{card.value}</p>
@@ -63,7 +63,7 @@ function TableSkeletonRows() {
       {[0, 1, 2].map((i) => (
         <tr key={i} className="border-t border-line animate-pulse">
           <td className="px-3 py-3">
-            <div className="h-3.5 w-32 bg-surface-2 rounded mb-1.5" />
+            <div className="h-3.5 w-32 bg-surface-2 rounded mb-2" />
             <div className="h-3 w-48 bg-surface-2 rounded" />
           </td>
           <td className="px-3 py-3">
@@ -102,7 +102,7 @@ function EmptyState() {
             Campaign links let you track traffic from email campaigns, QR codes, and any channel
             where JavaScript tracking is unavailable. Create your first link above to get started.
           </p>
-          <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium mt-4">
+          <p className="text-[11px] text-ink-3 uppercase font-medium mt-4">
             Use the &ldquo;Create Link&rdquo; button above to add your first link
           </p>
         </div>
@@ -126,20 +126,20 @@ function LinkRow({
     <tr className="border-t border-line align-top">
       <td className="px-3 py-2">
         <p className="text-sm text-ink font-medium">{link.name}</p>
-        <p className="text-xs text-ink-3 mt-0.5">{link.destination_url}</p>
+        <p className="text-xs text-ink-3 mt-1">{link.destination_url}</p>
       </td>
       <td className="px-3 py-2">
-        <code className="text-xs text-ink bg-surface-2 px-1.5 py-0.5 rounded">{link.slug}</code>
+        <code className="text-xs text-ink bg-surface-2 px-2 py-1 rounded">{link.slug}</code>
       </td>
       <td className="px-3 py-2">
         <div className="text-xs text-ink-3">
-          <span className="font-medium text-ink">{link.clicks ?? 0}</span> clicks
+          <span className="font-mono tabular-nums font-medium text-ink">{link.clicks ?? 0}</span> clicks
           {' · '}
-          <span className="font-medium text-ink">{link.unique_visitors ?? 0}</span> visitors
+          <span className="font-mono tabular-nums font-medium text-ink">{link.unique_visitors ?? 0}</span> visitors
           {' · '}
-          <span className="font-medium text-ink">{link.conversions ?? 0}</span> conversions
+          <span className="font-mono tabular-nums font-medium text-ink">{link.conversions ?? 0}</span> conversions
           {' · '}
-          <span className="font-medium text-ink">${(link.revenue ?? 0).toFixed(2)}</span> revenue
+          <span className="font-mono tabular-nums font-medium text-ink">${(link.revenue ?? 0).toFixed(2)}</span> revenue
         </div>
       </td>
       <td className="px-3 py-2">
@@ -208,7 +208,7 @@ export function LinksPage({ websiteId }: LinksPageProps) {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-ink">Campaign Links</h2>
-        <p className="text-xs text-ink-3 mt-0.5">
+        <p className="text-xs text-ink-3 mt-1">
           Generate redirect links for channels where JavaScript tracking is unavailable.
         </p>
       </div>

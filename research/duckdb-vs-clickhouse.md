@@ -1,6 +1,7 @@
 # DuckDB vs ClickHouse for Web Analytics
 
-**Purpose:** Inform the dual-backend architecture decision.
+**Status:** Historical research note. The current public self-hosted runtime uses DuckDB only. External warehouse runtime belongs outside this public self-host repository if it is ever needed.
+**Purpose:** Historical evaluation of DuckDB versus external warehouse options.
 **Updated:** 2026-02-17
 
 ## Overview
@@ -56,7 +57,7 @@ SET checkpoint_threshold = '1GB'; -- When to write to disk
 ```
 **Important:** Never rely on DuckDB's default memory limit. The default (`80% of system RAM`) will consume all available memory on a 512MB VPS. Always set `memory_limit` at startup.
 
-## ClickHouse Deep Dive
+## Historical External Warehouse Deep Dive
 
 ### Architecture
 - Distributed column-oriented DBMS
@@ -72,7 +73,7 @@ SET checkpoint_threshold = '1GB'; -- When to write to disk
 - Linear scaling with additional cluster nodes
 - Point lookups ~15ms (not optimized for, but acceptable)
 
-### Resource Requirements (Self-Hosted)
+### Resource Requirements (Historical External Warehouse Option)
 - Minimum: 4 cores, 16GB RAM
 - Recommended: 8-16 cores, 64-128GB RAM
 - HA setup: minimum 2 nodes with 16+ cores, 64+ GB each
@@ -98,13 +99,13 @@ Multiple crates available:
 2. **klickhouse:** Native protocol, maximum performance
 3. **suharev7/clickhouse-rs:** Async/await with tokio
 
-We use the official `clickhouse-rs` for stability and support.
+The historical evaluation favored the official `clickhouse-rs` for stability and support.
 
-### ClickHouse Cloud vs Self-Hosted
+### Historical External Warehouse Deployment Notes
 - Cloud: starts at ~$172/month. Too expensive for launch.
 - Self-hosted minimum: **CPX51 (8 vCPU, 16GB RAM) on Hetzner — EUR 42/month**. CPX31 (8GB RAM) is below ClickHouse's minimum 16GB requirement and will OOM under load.
 - Cloud advantage: auto-scaling, no ops. Consider after EUR 1K+ MRR.
-- **Launch decision: don't use ClickHouse at all for cloud V1.** Use DuckDB-per-tenant (see cloud-platform-requirements.md). Add ClickHouse only when a tenant exceeds 5M events/month.
+- **Historical launch decision: do not add an external warehouse to the public self-host runtime.** Hosted-cloud warehouse decisions belong outside this public repository.
 
 ## Head-to-Head Comparison
 
@@ -123,7 +124,7 @@ We use the official `clickhouse-rs` for stability and support.
 | **SQL dialect** | PostgreSQL-like | ClickHouse SQL |
 | **Rust crate** | duckdb-rs (official) | clickhouse-rs (official) |
 | **Cost** | $0 (embedded) | EUR 16+/month (Hetzner) |
-| **Best for** | <1M events/day, self-hosted | >1M events/day, cloud |
+| **Best for** | <1M events/day, current public self-host | >1M events/day, historical external warehouse option |
 
 ## SQL Dialect Differences
 
@@ -195,9 +196,9 @@ impl QueryBuilder for ClickHouseQueryBuilder {
 
 **Cloud V1 also uses DuckDB** (one file per tenant). This is the lowest-risk path — DuckDB handles up to ~1M events/day per tenant, which covers every customer we'll have in Year 1.
 
-**Add ClickHouse** only when needed — when a cloud tenant exceeds 5M events/month, or when total cloud storage exceeds 50GB. Use the same test suite for both backends to ensure behavioral parity.
+**Historical external warehouse trigger:** evaluate this only outside the public self-host runtime if a hosted-cloud tenant exceeds 5M events/month or total hosted-cloud storage exceeds 50GB. Use the same test suite for behavioral parity.
 
-**Migration path (DuckDB → ClickHouse):**
+**Historical migration path (DuckDB → external warehouse):**
 ```bash
 # Export a tenant from DuckDB
 COPY (SELECT * FROM events WHERE website_id IN (...)) TO '/tmp/tenant.parquet';
@@ -207,6 +208,6 @@ clickhouse-client --query="INSERT INTO events FORMAT Parquet" < /tmp/tenant.parq
 ```
 This should be scripted and tested before being needed in production.
 
-**Design the abstraction layer early** (week 1). Even before adding ClickHouse, write the `AnalyticsBackend` trait and implement it for DuckDB. This forces clean separation and makes adding ClickHouse straightforward.
+**Design the abstraction layer early** (week 1). Keep the public runtime behind the `AnalyticsBackend` trait and implement it for DuckDB. Any external warehouse implementation should remain outside the public self-host repository.
 
 **Don't try to unify SQL.** The dialects are different enough that a generic SQL builder (like SQLx) won't work cleanly. Instead, use separate query builder implementations with a shared interface. It's more code but less surprising behavior.

@@ -3,13 +3,21 @@
 # Usage:
 #   1. Replace "analytics.example.com" below with your actual domain.
 #   2. Make sure port 80 and 443 are open on your server.
-#   3. Run: docker compose -f docker-compose.caddy.yml up -d
+#   3. Run: docker compose -f docker-compose.caddy.yml up --build -d
 #
 # Caddy handles TLS certificate issuance and renewal automatically.
 
 services:
   sparklytics:
-    image: sparklytics/sparklytics:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        # DuckDB's bundled C++ build can exceed small VPS memory when Cargo
+        # fans out. Keep the default conservative; set CARGO_BUILD_JOBS=4 on
+        # larger builders to speed up source builds.
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-1}
+    image: sparklytics/sparklytics:local
     volumes:
       - sparklytics-data:/data
     environment:

@@ -42,7 +42,7 @@ export function NotificationsSettingsPage({ websiteId }: NotificationsSettingsPa
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold text-ink">Notifications</h2>
-        <p className="text-xs text-ink-3 mt-0.5">
+        <p className="text-xs text-ink-3 mt-1">
           Configure scheduled reports and anomaly alerts for this website.
         </p>
       </div>
@@ -53,7 +53,7 @@ export function NotificationsSettingsPage({ websiteId }: NotificationsSettingsPa
             key={card.label}
             className="border border-line rounded-lg bg-surface-1 p-4"
           >
-            <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium truncate">
+            <p className="text-[11px] text-ink-3 uppercase font-medium truncate">
               {card.label}
             </p>
             {card.loading ? (

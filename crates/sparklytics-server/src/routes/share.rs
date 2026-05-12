@@ -13,6 +13,7 @@ use sparklytics_core::analytics::AnalyticsFilter;
 
 use crate::{
     error::AppError,
+    routes::collect,
     routes::query::{parse_defaulted_date_range_lenient, validate_date_span},
     state::AppState,
 };
@@ -44,16 +45,6 @@ pub struct ShareMetricsQuery {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Extract client IP from `X-Forwarded-For` or fall back to "unknown".
-fn client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
-}
 
 fn parse_dates(
     start: Option<&str>,
@@ -102,9 +93,10 @@ fn share_filter(
 async fn resolve_share(
     state: &AppState,
     share_id: &str,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: &HeaderMap,
 ) -> Result<String, AppError> {
-    let ip = client_ip(headers);
+    let ip = collect::extract_client_ip(headers, maybe_connect_info.0);
     if !state.check_rate_limit_with_max(&ip, SHARE_RATE_LIMIT).await {
         return Err(AppError::RateLimited);
     }
@@ -131,9 +123,10 @@ pub async fn share_stats(
     State(state): State<Arc<AppState>>,
     Path(share_id): Path<String>,
     Query(q): Query<ShareDateQuery>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let website_id = resolve_share(&state, &share_id, &headers).await?;
+    let website_id = resolve_share(&state, &share_id, maybe_connect_info, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref())?;
     let include_bots = state.default_include_bots(&website_id).await;
     let filter = share_filter(start_date, end_date, include_bots);
@@ -153,9 +146,10 @@ pub async fn share_pageviews(
     State(state): State<Arc<AppState>>,
     Path(share_id): Path<String>,
     Query(q): Query<ShareDateQuery>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let website_id = resolve_share(&state, &share_id, &headers).await?;
+    let website_id = resolve_share(&state, &share_id, maybe_connect_info, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref())?;
     let include_bots = state.default_include_bots(&website_id).await;
     let filter = share_filter(start_date, end_date, include_bots);
@@ -183,9 +177,10 @@ pub async fn share_overview(
     State(state): State<Arc<AppState>>,
     Path(share_id): Path<String>,
     Query(q): Query<ShareDateQuery>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let website_id = resolve_share(&state, &share_id, &headers).await?;
+    let website_id = resolve_share(&state, &share_id, maybe_connect_info, &headers).await?;
     let (start_date, end_date) = parse_dates(q.start_date.as_deref(), q.end_date.as_deref())?;
     let include_bots = state.default_include_bots(&website_id).await;
     let filter = share_filter(start_date, end_date, include_bots);
@@ -270,9 +265,10 @@ pub async fn share_metrics(
     State(state): State<Arc<AppState>>,
     Path(share_id): Path<String>,
     Query(q): Query<ShareMetricsQuery>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let website_id = resolve_share(&state, &share_id, &headers).await?;
+    let website_id = resolve_share(&state, &share_id, maybe_connect_info, &headers).await?;
 
     let metric_type = match q.metric_type.as_deref() {
         Some(t) => t,

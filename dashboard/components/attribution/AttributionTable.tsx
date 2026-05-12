@@ -51,7 +51,7 @@ export function AttributionTable({ rows, loading }: AttributionTableProps) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase tracking-wider">
+            <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase">
               <th className="px-4 py-2 text-left">Channel</th>
               <th className="px-4 py-2 text-right">Conversions</th>
               <th className="px-4 py-2 text-right">Revenue</th>

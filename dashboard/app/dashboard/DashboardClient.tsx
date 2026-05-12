@@ -270,7 +270,7 @@ export function DashboardClient() {
                     { label: 'Avg. duration', value: avgDur > 0 ? formatDuration(avgDur) : '—' },
                   ].map((card) => (
                     <div key={card.label} className="border border-line rounded-lg bg-surface-1 p-4">
-                      <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">{card.label}</p>
+                      <p className="text-[11px] text-ink-3 uppercase font-medium">{card.label}</p>
                       <p className="mt-1 text-2xl font-mono font-semibold tabular-nums text-ink">{card.value}</p>
                     </div>
                   ))}
@@ -310,12 +310,15 @@ export function DashboardClient() {
                     { label: 'Top country', value: topCountry?.value || '—' },
                     { label: 'Top city', value: topCity?.value || '—' },
                     { label: 'Languages', value: formatNumber(languageData?.data?.rows?.length ?? 0) },
-                  ].map((card) => (
+                  ].map((card) => {
+                    const isNumericCard = card.label === 'Countries' || card.label === 'Languages';
+                    return (
                     <div key={card.label} className="border border-line rounded-lg bg-surface-1 p-4">
-                      <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">{card.label}</p>
-                      <p className="mt-1 text-lg font-medium text-ink truncate">{card.value}</p>
+                      <p className="text-[11px] text-ink-3 uppercase font-medium">{card.label}</p>
+                      <p className={`mt-1 text-lg font-medium text-ink truncate ${isNumericCard ? 'font-mono tabular-nums' : ''}`}>{card.value}</p>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                   <WorldMap data={countriesData?.data?.rows} loading={countriesLoading} />
@@ -382,7 +385,7 @@ export function DashboardClient() {
                     <div key={card.label} className="border border-line rounded-lg bg-surface-1 p-4 flex items-center gap-3">
                       <span className="text-2xl">{card.icon}</span>
                       <div>
-                        <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">{card.label}</p>
+                        <p className="text-[11px] text-ink-3 uppercase font-medium">{card.label}</p>
                         <p className="text-2xl font-mono font-semibold tabular-nums text-ink">{card.value}</p>
                       </div>
                     </div>

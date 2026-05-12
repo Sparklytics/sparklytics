@@ -77,7 +77,7 @@ export function SessionsTable({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase tracking-wider">
+            <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase">
               <th className="px-3 py-2 text-left">Started</th>
               <th className="px-3 py-2 text-right">Duration</th>
               <th className="px-3 py-2 text-right">Pages</th>
@@ -144,9 +144,9 @@ export function SessionsTable({
           <button
             onClick={fetchNextPage}
             disabled={isFetchingNextPage}
-            className="w-full text-xs text-ink-3 hover:text-ink py-1.5 rounded-md border border-line hover:bg-surface-2 transition-colors disabled:opacity-50"
+            className="w-full text-xs text-ink-3 hover:text-ink py-2 rounded-md border border-line hover:bg-surface-2 transition-colors disabled:opacity-50"
           >
-            {isFetchingNextPage ? 'Loading…' : 'Load 50 more'}
+            {isFetchingNextPage ? 'Loading…' : <>Load <span className="font-mono tabular-nums">50</span> more</>}
           </button>
         </div>
       )}

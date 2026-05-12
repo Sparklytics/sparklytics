@@ -3,7 +3,7 @@
 **Component:** `sparklytics-server` + shared crates  
 **Language:** Rust 2021  
 **Framework:** Axum 0.8 + Tokio  
-**Status:** Aligned with current public repo state (2026-02-27)
+**Status:** Aligned with current public repo state (2026-05-11)
 
 ## Workspace Structure (Current)
 
@@ -11,7 +11,7 @@
 sparklytics/
 ├── Cargo.toml
 ├── crates/
-│   ├── sparklytics-core/      # shared models, config, analytics traits, billing trait
+│   ├── sparklytics-core/      # shared models, config, analytics traits, ingest admission trait
 │   ├── sparklytics-duckdb/    # DuckDB analytics + metadata implementation
 │   ├── sparklytics-metadata/  # metadata contracts (traits/types)
 │   └── sparklytics-server/    # Axum app, routes, auth, state, scheduler
@@ -24,7 +24,7 @@ sparklytics/
 - Public runtime binary: `sparklytics` (`crates/sparklytics-server/src/main.rs`)
 - Server wiring lives in `app.rs`, shared state in `state.rs`, route handlers in `routes/*`
 - Self-hosted mode uses DuckDB for analytics and metadata
-- Cloud runtime (ClickHouse/PostgreSQL/Billing wiring) lives in the private `sparklytics-cloud` repo and consumes public traits
+- Hosted-cloud runtime wiring lives in the private `sparklytics-cloud` repo and consumes only the minimal public traits needed at runtime
 
 ## Core Dependencies (Public Repo)
 
@@ -37,7 +37,7 @@ Key workspace dependencies from root `Cargo.toml`:
 - `argon2`, `jsonwebtoken`, `sha2`, `hex`, `rand`
 - `maxminddb`, `woothee`, `url`, `psl`, `ipnet`
 
-Public workspace intentionally does not include cloud-only dependencies like Clerk/ClickHouse/sqlx.
+Public workspace intentionally does not include cloud-only identity, warehouse, or SQL-driver dependencies.
 
 ## Configuration Contract
 
@@ -54,7 +54,7 @@ Configuration is defined in `sparklytics_core::config::Config` and loaded from e
 | `SPARKLYTICS_RETENTION_DAYS` | `365` | retention horizon |
 | `SPARKLYTICS_CORS_ORIGINS` | empty | allowlist for query endpoints |
 | `SPARKLYTICS_SESSION_DAYS` | `7` | session cookie lifetime days |
-| `SPARKLYTICS_MODE` | `selfhosted` | `selfhosted` \| `cloud` |
+| `SPARKLYTICS_MODE` | `selfhosted` | Internal compatibility switch; public self-host installs should leave it unset or `selfhosted` |
 | `SPARKLYTICS_ARGON2_MEMORY_KB` | `65536` | Argon2id memory cost |
 | `SPARKLYTICS_PUBLIC_URL` | `http://localhost:3000` | used in snippets/links |
 | `SPARKLYTICS_RATE_LIMIT_DISABLE` | `false` | benchmark-only bypass for collect limiter |
@@ -67,12 +67,12 @@ Fixed ingest settings in code:
 
 ## Auth and API Contracts
 
-- `GET /api/auth/status` is flat JSON (`mode`, `setup_required`, `authenticated`) and is not registered in `none` mode (404)
-- `POST /api/collect` is unauthenticated, rate-limited per IP (60/min), max batch size 50
-- API key generation is mode-aware:
-  - self-hosted: `spk_selfhosted_...`
-  - cloud runtime: `spk_live_...`
+- `GET /api/auth/status` is flat JSON (`mode`, `setup_required`, `authenticated`, `password_change_required`) and is not registered in `none` mode (404)
+- `POST /api/collect`, the short alias `POST /e`, and the built-in first-party alias `POST /_sl/e` are unauthenticated, rate-limited per IP (60/min), max batch size 50
+- Public runtime API key generation always uses `spk_selfhosted_...`
+- The private cloud runtime owns `spk_live_...` key generation
 - API key DB prefix storage currently uses first 20 characters of the raw key
+- `BillingGate` in the public repo is limited to ingest admission/persisted-event hooks; plan administration and tenant usage APIs belong to the private cloud runtime
 
 ## Data Integrity Requirements
 

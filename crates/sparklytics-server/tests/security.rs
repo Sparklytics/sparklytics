@@ -65,9 +65,13 @@ async fn setup() -> (Arc<AppState>, axum::Router) {
 }
 
 fn collect_req(body: &str) -> Request<Body> {
+    collect_req_to("/api/collect", body)
+}
+
+fn collect_req_to(uri: &str, body: &str) -> Request<Body> {
     Request::builder()
         .method("POST")
-        .uri("/api/collect")
+        .uri(uri)
         .header("content-type", "application/json")
         .header("x-forwarded-for", "10.0.0.1")
         .header("user-agent", "TestAgent/1.0")
@@ -245,6 +249,26 @@ async fn test_oversized_batch_rejected() {
     );
 }
 
+#[tokio::test]
+async fn test_short_ingest_alias_rejects_oversized_batch() {
+    let (_state, app) = setup().await;
+    let huge_url = "a".repeat(110_000);
+    let body = json!([{
+        "website_id": "site_sec",
+        "type": "pageview",
+        "url": huge_url
+    }]);
+    let resp = app
+        .oneshot(collect_req_to("/e", &body.to_string()))
+        .await
+        .expect("request");
+    assert!(
+        resp.status() == StatusCode::BAD_REQUEST || resp.status() == StatusCode::PAYLOAD_TOO_LARGE,
+        "expected 400 or 413, got {}",
+        resp.status()
+    );
+}
+
 // ─────────────────────────────────────────────────────────────
 // Feature: Malformed input handling
 // ─────────────────────────────────────────────────────────────
@@ -309,34 +333,36 @@ async fn test_cors_collect_allows_any_origin() {
     assert_eq!(acao, "*", "collect must return ACAO: *");
 }
 
-/// Scenario: /e allows any origin (Access-Control-Allow-Origin: *).
+/// Scenario: /e and /_sl/e allow any origin (Access-Control-Allow-Origin: *).
 #[tokio::test]
 async fn test_cors_collect_alias_allows_any_origin() {
     let (_state, app) =
         setup_with_config(config_with_cors(vec!["https://myapp.com".to_string()])).await;
-    let req = Request::builder()
-        .method("POST")
-        .uri("/e")
-        .header("content-type", "application/json")
-        .header("origin", "https://any-website.com")
-        .header("x-forwarded-for", "10.0.0.4")
-        .body(Body::from(
-            json!({
-                "website_id": "site_sec",
-                "type": "pageview",
-                "url": "/page"
-            })
-            .to_string(),
-        ))
-        .expect("build request");
-    let resp = app.oneshot(req).await.expect("request");
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    let acao = resp
-        .headers()
-        .get("access-control-allow-origin")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    assert_eq!(acao, "*", "collect alias must return ACAO: *");
+    for uri in ["/e", "/_sl/e"] {
+        let req = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json")
+            .header("origin", "https://any-website.com")
+            .header("x-forwarded-for", "10.0.0.4")
+            .body(Body::from(
+                json!({
+                    "website_id": "site_sec",
+                    "type": "pageview",
+                    "url": "/page"
+                })
+                .to_string(),
+            ))
+            .expect("build request");
+        let resp = app.clone().oneshot(req).await.expect("request");
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        let acao = resp
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert_eq!(acao, "*", "{uri} must return ACAO: *");
+    }
 }
 
 /// Scenario: Analytics query endpoint (GET /api/websites/:id/stats) blocks

@@ -282,7 +282,7 @@ export function ReportFormDialog({
                   onChange={(e) =>
                     setConfig((prev) => ({ ...prev, relative_days: Number(e.target.value) }))
                   }
-                  className={inputClass}
+                  className={`${inputClass} font-mono tabular-nums`}
                 />
               </div>
             ) : (

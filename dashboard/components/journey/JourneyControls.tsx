@@ -100,7 +100,7 @@ export function JourneyControls({
             id="journey-depth"
             value={String(maxDepth)}
             onChange={(event) => onMaxDepthChange(Number(event.target.value))}
-            className="h-8 w-16 bg-surface-input border border-line rounded-sm px-2 text-xs text-ink"
+            className="h-8 w-16 bg-surface-input border border-line rounded-sm px-2 text-xs font-mono tabular-nums text-ink"
           >
             {[1, 2, 3, 4, 5].map((depth) => (
               <option key={depth} value={depth}>

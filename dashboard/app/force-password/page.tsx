@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AUTH_QUERY_KEY } from '@/hooks/useAuth';
+import { getRuntimeAuthMode } from '@/lib/runtime';
 
 export default function ForcePasswordPage() {
   const router = useRouter();
@@ -21,6 +22,11 @@ export default function ForcePasswordPage() {
     let cancelled = false;
 
     (async () => {
+      if (getRuntimeAuthMode() === 'none') {
+        router.replace('/dashboard');
+        return;
+      }
+
       try {
         const status = await api.getAuthStatus();
         if (cancelled) return;
@@ -77,7 +83,7 @@ export default function ForcePasswordPage() {
     try {
       await api.changePassword(currentPassword, newPassword);
       await queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY, exact: true });
-      router.replace('/login');
+      window.location.href = '/login';
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Password update failed');
     } finally {
@@ -100,7 +106,7 @@ export default function ForcePasswordPage() {
     <div className="min-h-screen bg-canvas flex items-center justify-center">
       <div className="w-full max-w-sm px-6">
         <div className="mb-8 text-center">
-          <span className="text-lg font-semibold tracking-tight text-ink">
+          <span className="text-lg font-semibold text-ink">
             spark<span className="text-spark">lytics</span>
           </span>
         </div>

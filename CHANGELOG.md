@@ -14,11 +14,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Fresh self-hosted installs now start with zero websites and route new users through onboarding to create the first site.
 - First-run setup now hands off directly to sign-in before onboarding continues.
 - Release-facing install docs now consistently describe the Docker-first self-hosted flow, explicit HTTPS behavior, and user-created first website flow.
+- Public self-hosted API key generation now stays on the `spk_selfhosted_` prefix; `spk_live_` keys are reserved for the private cloud runtime.
 
 ### Fixed
 
 - Removed the seeded `site_default` first-run behavior that dropped new users into an empty dashboard instead of onboarding.
 - Fixed first-launch guidance drift across the README and runbooks so smoke checks use a created website id instead of assuming a default site.
+- Fixed self-hosted collect so ingested events always persist `tenant_id` as `NULL`, even if a local website row contains stale tenant metadata.
+- Ensured backend-only builds still embed and serve the tracking script at `/s.js`.
+- Fixed the Docker source-build image so the Next.js dashboard is exported before the Rust binary embeds `dashboard/out`.
+- Hardened the Docker build context so nested repos, private workspace files, local data, and secrets are excluded from public self-host images.
 
 ## [0.2.0] — 2026-02-27
 
@@ -31,7 +36,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - hashed user-agent in override cache key (lower memory footprint),
   - bounded eviction strategy (expire-first, oldest-next) across caches,
   - explicit fallback threshold constants for strict/balanced-off modes.
-- API key generation fully mode-aware (`spk_selfhosted_` and `spk_live_`) with updated docs and tests.
+- Metadata API key generation supported separate self-hosted/cloud prefixes before cloud-specific runtime logic moved out of the public repository.
 
 ### Changed
 

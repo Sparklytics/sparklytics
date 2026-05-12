@@ -82,3 +82,41 @@ async fn test_usage_endpoint_returns_404_in_selfhosted_mode() {
         "should return not_found error code"
     );
 }
+
+// ============================================================
+// BDD: Self-host startup does not create cloud billing artifacts
+// ============================================================
+#[tokio::test]
+async fn test_selfhost_startup_does_not_create_usage_sync_queue() {
+    let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
+    let config = test_config();
+    let data_dir = config.data_dir.clone();
+
+    let _state = AppState::new(db, config);
+
+    assert!(
+        !std::path::Path::new(&data_dir).join("usage-sync").exists(),
+        "public self-host runtime must not create cloud billing usage-sync artifacts"
+    );
+}
+
+// ============================================================
+// BDD: Cloud admin billing routes are not registered in public runtime
+// ============================================================
+#[tokio::test]
+async fn test_admin_limit_routes_are_absent_in_public_runtime() {
+    let (_state, app) = setup().await;
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/admin/limits/plans")
+        .body(Body::empty())
+        .expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("request");
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "cloud admin limit routes should not be registered in the public runtime"
+    );
+}

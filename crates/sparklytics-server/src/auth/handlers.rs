@@ -13,7 +13,7 @@ use sparklytics_core::config::AuthMode;
 
 use crate::{error::AppError, routes::collect, state::AppState};
 
-use super::api_keys::{generate_api_key, generate_key_id};
+use super::api_keys::{generate_api_key_with_prefix, generate_key_id, runtime_api_key_prefix};
 use super::jwt::{decode_jwt, encode_jwt};
 use super::password::{hash_password, validate_password_strength, verify_password};
 
@@ -415,7 +415,8 @@ pub async fn create_api_key_handler(
     }
 
     let key_id = generate_key_id();
-    let (raw_key, hash, prefix) = generate_api_key(&state.config.mode);
+    let api_key_prefix = runtime_api_key_prefix(&state.config.mode);
+    let (raw_key, hash, prefix) = generate_api_key_with_prefix(&api_key_prefix);
     state
         .metadata
         .create_api_key(&key_id, &req.name, &hash, &prefix)

@@ -23,24 +23,41 @@ const MIME = {
 
 http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
+  const proxyPath =
+    url === '/_sl/s.js' ? req.url.replace('/_sl/s.js', '/s.js') :
+    url === '/_sl/e' ? req.url.replace('/_sl/e', '/e') :
+    url.startsWith('/api/') ? req.url :
+    null;
 
-  if (url.startsWith('/api/')) {
+  if (proxyPath) {
     const body =
       req.method === 'GET' || req.method === 'HEAD'
         ? undefined
         : Buffer.concat(await Array.fromAsync(req, (chunk) => Buffer.from(chunk)));
-    const proxyResponse = await fetch(`${BACKEND_ORIGIN}${req.url}`, {
-      method: req.method,
-      headers: req.headers,
-      body,
-      duplex: body ? 'half' : undefined,
-    });
+    try {
+      const proxyResponse = await fetch(`${BACKEND_ORIGIN}${proxyPath}`, {
+        method: req.method,
+        headers: req.headers,
+        body,
+        duplex: body ? 'half' : undefined,
+      });
 
-    res.writeHead(proxyResponse.status, Object.fromEntries(proxyResponse.headers.entries()));
-    if (proxyResponse.body) {
-      for await (const chunk of proxyResponse.body) {
-        res.write(chunk);
+      res.writeHead(proxyResponse.status, Object.fromEntries(proxyResponse.headers.entries()));
+      if (proxyResponse.body) {
+        for await (const chunk of proxyResponse.body) {
+          res.write(chunk);
+        }
       }
+    } catch (error) {
+      console.error('[serve-spa] backend proxy failed', error);
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.write(JSON.stringify({
+        error: {
+          code: 'backend_unavailable',
+          message: 'Sparklytics backend is unavailable',
+          field: null,
+        },
+      }));
     }
     res.end();
     return;

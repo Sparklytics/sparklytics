@@ -41,7 +41,7 @@ export function ReportCard({ report, isRunning, onRun, onEdit, onDelete }: Repor
             onClick={() => onRun(report.id)}
             disabled={isRunning}
             aria-label="Run report"
-            className="p-1.5 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-md transition-colors disabled:opacity-50"
+            className="p-2 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-md transition-colors disabled:opacity-50"
             title="Run report"
           >
             <Play className="w-3.5 h-3.5" />
@@ -50,7 +50,7 @@ export function ReportCard({ report, isRunning, onRun, onEdit, onDelete }: Repor
             type="button"
             onClick={() => onEdit(report.id)}
             aria-label="Edit report"
-            className="p-1.5 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-md transition-colors"
+            className="p-2 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-md transition-colors"
             title="Edit report"
           >
             <Pencil className="w-3.5 h-3.5" />
@@ -59,7 +59,7 @@ export function ReportCard({ report, isRunning, onRun, onEdit, onDelete }: Repor
             type="button"
             onClick={() => onDelete(report.id)}
             aria-label="Delete report"
-            className="p-1.5 text-ink-3 hover:text-down hover:bg-down/10 rounded-md transition-colors"
+            className="p-2 text-ink-3 hover:text-down hover:bg-down/10 rounded-md transition-colors"
             title="Delete report"
           >
             <Trash2 className="w-3.5 h-3.5" />

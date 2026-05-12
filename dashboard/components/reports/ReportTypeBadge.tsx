@@ -20,7 +20,7 @@ export function ReportTypeBadge({ type }: ReportTypeBadgeProps) {
   return (
     <span
       className={cn(
-        'text-xs rounded-sm px-1.5 py-0.5 font-medium',
+        'text-xs rounded-sm px-2 py-1 font-medium',
         type === 'stats' && 'bg-neutral/10 text-neutral',
         type === 'pageviews' && 'bg-indigo-500/10 text-indigo-400',
         type === 'metrics' && 'bg-amber-500/10 text-amber-400',

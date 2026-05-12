@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Check } from 'lucide-react';
 import { api } from '@/lib/api';
+import { getRuntimeAuthMode } from '@/lib/runtime';
 
 const MIN_PASSWORD_LENGTH = 12;
 
@@ -20,6 +21,11 @@ export default function SetupPage() {
     let cancelled = false;
 
     (async () => {
+      if (getRuntimeAuthMode() === 'none') {
+        router.replace('/dashboard');
+        return;
+      }
+
       try {
         const status = await api.getAuthStatus();
         if (cancelled) return;
@@ -76,7 +82,7 @@ export default function SetupPage() {
     setLoading(true);
     try {
       await api.setup(normalizedBootstrapPassword, password);
-      router.push('/login');
+      window.location.href = '/login';
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed');
     } finally {
@@ -105,7 +111,7 @@ export default function SetupPage() {
     <div className="min-h-screen bg-canvas flex items-center justify-center">
       <div className="w-full max-w-sm px-6">
         <div className="mb-8 text-center">
-          <span className="text-lg font-semibold tracking-tight text-ink">
+          <span className="text-lg font-semibold text-ink">
             spark<span className="text-spark">lytics</span>
           </span>
         </div>

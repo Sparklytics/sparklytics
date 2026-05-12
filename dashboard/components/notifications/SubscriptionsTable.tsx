@@ -32,9 +32,9 @@ function Row({
       <td className="px-3 py-2 text-xs text-ink">
         {subscription.channel}: {subscription.target}
       </td>
-      <td className="px-3 py-2 text-xs text-ink-2">{subscription.next_run_at}</td>
+      <td className="px-3 py-2 text-xs text-ink-2 font-mono tabular-nums">{subscription.next_run_at}</td>
       <td className="px-3 py-2 text-xs">
-        <span className={`px-1.5 py-0.5 rounded-sm border ${subscription.is_active ? 'border-spark text-spark' : 'border-line text-ink-3'}`}>
+        <span className={`px-2 py-1 rounded-sm border ${subscription.is_active ? 'border-spark text-spark' : 'border-line text-ink-3'}`}>
           {subscription.is_active ? 'Active' : 'Inactive'}
         </span>
       </td>

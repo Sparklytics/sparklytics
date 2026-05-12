@@ -4,6 +4,7 @@ use anyhow::Result;
 use tracing::info;
 use url::Url;
 
+use sparklytics_core::config::{AppMode, Config};
 use sparklytics_server::auth::handlers::{
     bootstrap_password_is_default, effective_bootstrap_password,
 };
@@ -25,14 +26,30 @@ fn run_health_check() -> ! {
 fn public_url_uses_loopback_host(public_url: &str) -> bool {
     Url::parse(public_url)
         .ok()
-        .and_then(|url| url.host_str().map(str::to_string))
-        .is_some_and(|host| {
-            host.eq_ignore_ascii_case("localhost")
-                || host
-                    .parse::<std::net::IpAddr>()
-                    .map(|ip| ip.is_loopback())
-                    .unwrap_or(false)
+        .is_some_and(|url| match url.host() {
+            Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            None => false,
         })
+}
+
+fn validate_public_url_https_config(cfg: &Config) -> Result<()> {
+    if matches!(cfg.mode, AppMode::SelfHosted) && public_url_uses_loopback_host(&cfg.public_url) {
+        if cfg.https {
+            return Err(anyhow::anyhow!(
+                "SPARKLYTICS_PUBLIC_URL must be set to your real public origin when SPARKLYTICS_HTTPS=true. \
+                 For localhost development, set SPARKLYTICS_HTTPS=false."
+            ));
+        }
+
+        tracing::warn!(
+            public_url = %cfg.public_url,
+            "SPARKLYTICS_PUBLIC_URL still points to localhost. Tracking snippets and share URLs will be wrong until it is set to your real public origin."
+        );
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -68,25 +85,11 @@ async fn main() -> Result<()> {
             geoip_path = %cfg.geoip_path,
             "GeoIP database not found. Events stored with NULL geo fields. \
              Run scripts/download-geoip.sh to fetch DB-IP City Lite (free, no key required), \
-             then set SPARKLYTICS_GEOIP_PATH. Docker images bundle DB-IP automatically."
+             then set SPARKLYTICS_GEOIP_PATH."
         );
     }
 
-    if matches!(cfg.mode, sparklytics_core::config::AppMode::SelfHosted)
-        && public_url_uses_loopback_host(&cfg.public_url)
-    {
-        if cfg.https {
-            return Err(anyhow::anyhow!(
-                "SPARKLYTICS_PUBLIC_URL must be set to your real public origin when SPARKLYTICS_HTTPS=true. \
-                 For localhost development, set SPARKLYTICS_HTTPS=false."
-            ));
-        }
-
-        tracing::warn!(
-            public_url = %cfg.public_url,
-            "SPARKLYTICS_PUBLIC_URL still points to localhost. Tracking snippets and share URLs will be wrong until it is set to your real public origin."
-        );
-    }
+    validate_public_url_https_config(&cfg)?;
 
     // Auth initialization for password/local modes.
     match &cfg.auth_mode {
@@ -123,10 +126,22 @@ async fn main() -> Result<()> {
     }
 
     let state = Arc::new(AppState::new(db, cfg.clone()));
-    match state.metadata.prune_login_attempts().await {
+    let (login_attempts_pruned, retention_pruned) =
+        sparklytics_server::scheduler::run_startup_maintenance(&state).await;
+    match login_attempts_pruned {
         Ok(pruned) if pruned > 0 => info!(pruned, "Pruned stale login attempts"),
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "Failed to prune stale login attempts"),
+    }
+    match retention_pruned {
+        Ok(stats) if stats.events_deleted > 0 || stats.sessions_deleted > 0 => info!(
+            events_deleted = stats.events_deleted,
+            sessions_deleted = stats.sessions_deleted,
+            retention_days = cfg.retention_days,
+            "Pruned analytics rows beyond retention horizon"
+        ),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "Failed to prune analytics retention"),
     }
     state.restore_ingest_queue_from_wal().await;
 
@@ -182,7 +197,30 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::public_url_uses_loopback_host;
+    use super::{public_url_uses_loopback_host, validate_public_url_https_config};
+    use sparklytics_core::config::{AppMode, AuthMode, Config};
+
+    fn test_config(public_url: &str, https: bool, mode: AppMode) -> Config {
+        Config {
+            port: 0,
+            data_dir: "./data".to_string(),
+            geoip_path: "/nonexistent/GeoLite2-City.mmdb".to_string(),
+            auth_mode: AuthMode::None,
+            bootstrap_password: None,
+            https,
+            retention_days: 365,
+            cors_origins: vec![],
+            session_days: 7,
+            buffer_flush_interval_ms: 5000,
+            buffer_max_size: 100,
+            mode,
+            argon2_memory_kb: 65536,
+            public_url: public_url.to_string(),
+            tracking_public_base: public_url.to_string(),
+            rate_limit_disable: false,
+            duckdb_memory_limit: "1GB".to_string(),
+        }
+    }
 
     #[test]
     fn detects_loopback_hosts_exactly() {
@@ -199,5 +237,32 @@ mod tests {
         assert!(!public_url_uses_loopback_host(
             "https://127.0.0.1.example.com"
         ));
+    }
+
+    #[test]
+    fn rejects_loopback_public_url_when_https_is_enabled_for_self_hosted() {
+        let cfg = test_config("http://localhost:3000", true, AppMode::SelfHosted);
+
+        let err = validate_public_url_https_config(&cfg).expect_err("invalid config");
+
+        assert!(
+            err.to_string()
+                .contains("SPARKLYTICS_PUBLIC_URL must be set"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn allows_loopback_public_url_when_https_is_disabled_for_local_development() {
+        let cfg = test_config("http://localhost:3000", false, AppMode::SelfHosted);
+
+        validate_public_url_https_config(&cfg).expect("local http config");
+    }
+
+    #[test]
+    fn allows_public_url_when_https_is_enabled_for_self_hosted() {
+        let cfg = test_config("https://analytics.example.com", true, AppMode::SelfHosted);
+
+        validate_public_url_https_config(&cfg).expect("public https config");
     }
 }

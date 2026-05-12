@@ -60,7 +60,8 @@ export function RealtimePage({ websiteId }: RealtimePageProps) {
           {data ? formatNumber(data.active_visitors) : '0'}
         </p>
         <p className="text-sm text-ink-3 mt-2">
-          {data?.active_visitors === 1 ? 'visitor' : 'visitors'} active in the last 30 minutes
+          {data?.active_visitors === 1 ? 'visitor' : 'visitors'} active in the last{' '}
+          <span className="font-mono tabular-nums">30</span> minutes
         </p>
       </div>
 
@@ -74,12 +75,16 @@ export function RealtimePage({ websiteId }: RealtimePageProps) {
             </span>
             <span className="text-sm font-medium text-ink">Recent activity</span>
           </div>
-          <span className="text-xs text-ink-3">Auto-refreshes every 10s</span>
+          <span className="text-xs text-ink-3">
+            Auto-refreshes every <span className="font-mono tabular-nums">10s</span>
+          </span>
         </div>
 
         {events.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-sm text-ink-3 mb-4">No activity in the last 30 minutes</p>
+            <p className="text-sm text-ink-3 mb-4">
+              No activity in the last <span className="font-mono tabular-nums">30</span> minutes
+            </p>
             <button
               onClick={() => navigate(`/dashboard/${websiteId}/settings/snippet`)}
               className="text-xs text-spark hover:underline"
@@ -119,7 +124,7 @@ export function RealtimePage({ websiteId }: RealtimePageProps) {
         {pagination && events.length > 0 && (
           <div className="px-6 py-3 border-t border-line">
             <p className="text-xs text-ink-4">
-              Showing <span className="font-mono tabular-nums">{events.length}</span> of <span className="font-mono tabular-nums">{pagination.total_in_window}</span> events in last 30 minutes
+              Showing <span className="font-mono tabular-nums">{events.length}</span> of <span className="font-mono tabular-nums">{pagination.total_in_window}</span> events in last <span className="font-mono tabular-nums">30</span> minutes
             </p>
           </div>
         )}

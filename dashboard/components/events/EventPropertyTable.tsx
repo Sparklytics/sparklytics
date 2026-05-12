@@ -24,7 +24,7 @@ export function EventPropertyTable({ properties }: EventPropertyTableProps) {
     <div className="divide-y divide-line">
       {Object.entries(grouped).map(([key, rows]) => (
         <div key={key} className="px-4 py-3">
-          <h5 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-2">
+          <h5 className="text-xs font-semibold text-ink-3 uppercase mb-2">
             {key}
           </h5>
           <div className="space-y-1">

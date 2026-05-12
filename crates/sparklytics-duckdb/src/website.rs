@@ -220,15 +220,13 @@ impl DuckDbBackend {
 
     /// Delete a website and all associated data.
     ///
-    /// DuckDB 1.4+ enforces the FK constraint on events.website_id immediately
-    /// at statement execution time. Wrapping all operations in a single
-    /// transaction ensures that the EXISTS check and the cascade deletes share
-    /// the same MVCC snapshot: when DELETE FROM websites runs, DuckDB sees the
-    /// events as already deleted within the current transaction and the FK check
-    /// passes. The EXISTS check must be inside the same transaction for this
-    /// to work correctly. Order: events → sessions → saved_reports → goals
-    /// → subscriptions/alerts/deliveries → campaign_links → tracking_pixels
-    /// → funnel_steps → funnels → website.
+    /// DuckDB enforces FK constraints immediately, so deletion is app-managed
+    /// and child-first. New databases no longer declare an events.website_id FK,
+    /// while older databases may still carry it until migration cleanup; keeping
+    /// the full cascade in one transaction preserves the child-before-parent
+    /// ordering for both cases. Order: events → sessions → saved_reports → goals
+    /// → attribution/bot tables → subscriptions/alerts/deliveries
+    /// → campaign_links → tracking_pixels → funnel_steps → funnels → website.
     pub async fn delete_website(&self, id: &str) -> Result<bool> {
         let mut conn = self.conn.lock().await;
         let tx = conn.transaction()?;
@@ -241,8 +239,8 @@ impl DuckDbBackend {
             return Ok(false);
         }
 
-        // Cascade delete inside the transaction. DuckDB's FK check on
-        // DELETE FROM websites sees the events as deleted within this tx.
+        // Cascade delete inside the transaction so children are removed before
+        // the parent and stale partially-deleted states cannot be committed.
         tx.execute(
             "DELETE FROM events WHERE website_id = ?1",
             duckdb::params![id],
@@ -257,6 +255,30 @@ impl DuckDbBackend {
         )?;
         tx.execute(
             "DELETE FROM goals WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM attribution_cache WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM bot_policies WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM bot_allowlist WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM bot_blocklist WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM bot_policy_audit WHERE website_id = ?1",
+            duckdb::params![id],
+        )?;
+        tx.execute(
+            "DELETE FROM bot_recompute_runs WHERE website_id = ?1",
             duckdb::params![id],
         )?;
         tx.execute(

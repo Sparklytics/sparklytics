@@ -1,6 +1,14 @@
 services:
   sparklytics:
-    image: sparklytics/sparklytics:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        # DuckDB's bundled C++ build can exceed small VPS memory when Cargo
+        # fans out. Keep the default conservative; set CARGO_BUILD_JOBS=4 on
+        # larger builders to speed up source builds.
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-1}
+    image: sparklytics/sparklytics:local
     ports:
       - "3000:3000"
     volumes:
@@ -14,12 +22,13 @@ services:
       # Set this explicitly in production.
       - SPARKLYTICS_BOOTSTRAP_PASSWORD=replace-this-bootstrap-password
 
-      # IMPORTANT: keep "true" (default) when accessed over HTTPS.
-      # Only set to "false" for plain-HTTP local development.
-      - SPARKLYTICS_HTTPS=true
+      # Local source-build compose serves plain HTTP on localhost.
+      # Use docker-compose.caddy.yml or set this to true behind real HTTPS.
+      - SPARKLYTICS_HTTPS=false
 
       # Public origin used in onboarding snippets and share links.
-      - SPARKLYTICS_PUBLIC_URL=https://analytics.example.com
+      # Use your real HTTPS origin in production.
+      - SPARKLYTICS_PUBLIC_URL=http://localhost:3000
       # Optional canonical tracker base. Set this when serving the snippet through
       # a same-origin proxy path such as https://example.com/_sl
       # - SPARKLYTICS_TRACKING_PUBLIC_BASE=https://example.com/_sl

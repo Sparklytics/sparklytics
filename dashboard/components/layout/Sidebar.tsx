@@ -30,7 +30,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WebsitePicker } from './WebsitePicker';
-import { UsageBadge } from './UsageBadge';
 import { useWebsites } from '@/hooks/useWebsites';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
@@ -143,7 +142,7 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
 
   const SectionLabel = ({ label }: { label: string }) => (
     <div className="px-3 pt-4 pb-1">
-      <span className="text-[10px] font-semibold text-ink-4 uppercase tracking-[0.08em]">
+      <span className="text-[10px] font-semibold text-ink-4 uppercase">
         {label}
       </span>
     </div>
@@ -158,9 +157,9 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
           <div className="flex items-center gap-2 mb-3">
             {/* App mark */}
             <div className="w-[22px] h-[22px] rounded bg-spark flex items-center justify-center shrink-0">
-              <span className="text-[9px] font-bold text-black leading-none tracking-tight">sp</span>
+              <span className="text-[9px] font-bold text-black leading-none">sp</span>
             </div>
-            <span className="text-[13px] font-semibold text-ink tracking-tight">sparklytics</span>
+            <span className="text-[13px] font-semibold text-ink">sparklytics</span>
             {/* Mobile close */}
             <button
               onClick={onNavigate}
@@ -213,12 +212,11 @@ export function Sidebar({ websiteId, currentPath, onAddWebsite, onNavigate }: Si
           </div>
         )}
 
-        {/* ── Bottom: usage + logout ───────────────── */}
+        {/* ── Bottom: logout ───────────────── */}
         <div className="shrink-0 border-t border-line px-2 py-2">
-          <UsageBadge />
           <button
             onClick={handleLogout}
-            className="mt-1 group flex items-center gap-2 w-full px-3 py-2 text-[13px] text-ink-3 hover:text-ink-2 hover:bg-ink/[0.04] rounded-md transition-colors"
+            className="group flex items-center gap-2 w-full px-3 py-2 text-[13px] text-ink-3 hover:text-ink-2 hover:bg-ink/[0.04] rounded-md transition-colors"
           >
             <LogOut className="w-5 h-5 shrink-0 text-ink-4 group-hover:text-ink-3" />
             Log out

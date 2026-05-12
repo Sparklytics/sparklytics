@@ -45,17 +45,17 @@ export function SessionTimelineItem({ event, isLast }: SessionTimelineItemProps)
 
       {/* Content */}
       <div className="pb-4 flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
+        <div className="flex items-center gap-2 mb-1">
           <span className="text-xs text-ink-3 font-mono tabular-nums shrink-0">{time}</span>
           {!isPageview && event.event_name && (
-            <span className="text-xs bg-spark/10 text-spark px-1.5 py-0.5 rounded-sm font-medium truncate">
+            <span className="text-xs bg-spark/10 text-spark px-2 py-1 rounded-sm font-medium truncate">
               {event.event_name}
             </span>
           )}
         </div>
         <p className="text-sm text-ink truncate">{displayUrl}</p>
         {event.event_data && (
-          <p className="text-xs text-ink-3 font-mono mt-0.5 truncate">{event.event_data}</p>
+          <p className="text-xs text-ink-3 font-mono mt-1 truncate">{event.event_data}</p>
         )}
       </div>
     </li>

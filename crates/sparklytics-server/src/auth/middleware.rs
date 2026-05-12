@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::state::AppState;
 
-use super::api_keys::hash_api_key;
+use super::api_keys::{hash_api_key, runtime_api_key_prefix};
 use super::handlers::is_password_change_required;
 use super::jwt::decode_jwt;
 
@@ -111,6 +111,11 @@ async fn require_auth_impl(
                         })),
                     )
                         .into_response();
+                }
+
+                let api_key_prefix = runtime_api_key_prefix(&state.config.mode);
+                if !token.starts_with(&api_key_prefix) {
+                    return unauthorized_response();
                 }
 
                 let key_hash = hash_api_key(token);

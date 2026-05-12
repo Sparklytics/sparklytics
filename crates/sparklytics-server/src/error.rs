@@ -57,10 +57,6 @@ pub enum AppError {
     #[error("ingest queue overloaded")]
     IngestOverloaded { retry_after_seconds: u64 },
 
-    /// Cloud-mode billing gate blocked the request (plan event limit exceeded).
-    #[error("plan limit exceeded")]
-    PlanLimitExceeded,
-
     #[error("internal error: {0}")]
     Internal(#[from] anyhow::Error),
 }
@@ -148,12 +144,6 @@ impl IntoResponse for AppError {
                 "ingest_overloaded",
                 "Ingestion queue is overloaded, retry later",
                 Some(*retry_after_seconds),
-            ),
-            AppError::PlanLimitExceeded => (
-                StatusCode::TOO_MANY_REQUESTS,
-                "plan_limit_exceeded",
-                "Event limit reached",
-                None,
             ),
             AppError::Internal(e) => {
                 tracing::error!("Internal error: {e}");

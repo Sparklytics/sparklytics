@@ -3,11 +3,9 @@
 import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/button';
-import { AdminLimitsPanel } from '@/components/settings/AdminLimitsPanel';
 import { CreateWebsiteDialog } from '@/components/settings/CreateWebsiteDialog';
 import { useWebsites } from '@/hooks/useWebsites';
 import { useAuth } from '@/hooks/useAuth';
-import { IS_CLOUD } from '@/lib/config';
 
 
 
@@ -73,8 +71,6 @@ export default function SettingsPage() {
             </div>
           )}
         </section>
-
-        {IS_CLOUD && <AdminLimitsPanel />}
       </div>
 
       <CreateWebsiteDialog open={showCreate} onClose={() => setShowCreate(false)} />

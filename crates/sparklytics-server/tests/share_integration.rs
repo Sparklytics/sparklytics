@@ -1,12 +1,14 @@
-/// BDD integration tests for the public share link feature.
-///
-/// All tests use `AuthMode::None` (no auth on protected routes) to exercise the
-/// self-hosted share management endpoints and the public share analytics endpoints.
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+// BDD integration tests for the public share link feature.
+//
+// All tests use `AuthMode::None` (no auth on protected routes) to exercise the
+// self-hosted share management endpoints and the public share analytics endpoints.
 mod common;
 
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -16,6 +18,37 @@ use sparklytics_core::config::{AppMode, AuthMode, Config};
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
 use sparklytics_server::state::AppState;
+
+static TRUSTED_PROXY_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+
+    fn unset(key: &'static str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::remove_var(key);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            std::env::set_var(self.key, previous);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
+}
 
 fn test_config() -> Config {
     Config {
@@ -69,6 +102,21 @@ async fn create_website(app: &axum::Router) -> String {
     assert_eq!(response.status(), StatusCode::CREATED);
     let json = json_body(response).await;
     json["data"]["id"].as_str().expect("id").to_string()
+}
+
+fn share_stats_request_with_connect_info(
+    share_id: &str,
+    spoofed_forwarded_for: &str,
+    remote_addr: SocketAddr,
+) -> Request<Body> {
+    let mut request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/share/{share_id}/stats"))
+        .header("x-forwarded-for", spoofed_forwarded_for)
+        .body(Body::empty())
+        .expect("build request");
+    request.extensions_mut().insert(ConnectInfo(remote_addr));
+    request
 }
 
 // ============================================================
@@ -295,6 +343,87 @@ async fn test_unknown_share_id_returns_404() {
 
     let json = json_body(resp).await;
     assert_eq!(json["error"]["code"], "not_found");
+}
+
+#[tokio::test]
+async fn test_share_rate_limit_uses_socket_ip_when_proxy_not_trusted() {
+    let _guard = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::unset("SPARKLYTICS_TRUSTED_PROXIES");
+    let (_state, app) = setup().await;
+    let website_id = create_website(&app).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/websites/{website_id}/share"))
+        .body(Body::empty())
+        .expect("build request");
+    let resp = app.clone().oneshot(req).await.expect("enable share");
+    let json = json_body(resp).await;
+    let share_id = json["data"]["share_id"]
+        .as_str()
+        .expect("share_id")
+        .to_string();
+
+    let remote_addr = SocketAddr::from((Ipv4Addr::new(198, 51, 100, 10), 12345));
+
+    for idx in 1..=30 {
+        let req = share_stats_request_with_connect_info(
+            &share_id,
+            &format!("203.0.113.{idx}"),
+            remote_addr,
+        );
+        let resp = app.clone().oneshot(req).await.expect("share stats");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "request {idx} should be accepted"
+        );
+    }
+
+    let req = share_stats_request_with_connect_info(&share_id, "203.0.113.250", remote_addr);
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("rate-limited share stats");
+
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn test_share_rate_limit_uses_forwarded_ip_when_proxy_is_trusted() {
+    let _guard = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::set("SPARKLYTICS_TRUSTED_PROXIES", "10.0.0.0/8");
+    let (_state, app) = setup().await;
+    let website_id = create_website(&app).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/websites/{website_id}/share"))
+        .body(Body::empty())
+        .expect("build request");
+    let resp = app.clone().oneshot(req).await.expect("enable share");
+    let json = json_body(resp).await;
+    let share_id = json["data"]["share_id"]
+        .as_str()
+        .expect("share_id")
+        .to_string();
+
+    let trusted_proxy_addr = SocketAddr::from((Ipv4Addr::new(10, 0, 0, 10), 12345));
+
+    for idx in 1..=35 {
+        let req = share_stats_request_with_connect_info(
+            &share_id,
+            &format!("203.0.113.{idx}"),
+            trusted_proxy_addr,
+        );
+        let resp = app.clone().oneshot(req).await.expect("share stats");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "request {idx} should be accepted because each forwarded IP is distinct"
+        );
+    }
 }
 
 // ============================================================

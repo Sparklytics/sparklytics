@@ -24,6 +24,7 @@ const browserTimezone = getBrowserTimezone();
 const DEFAULT_TIMEZONE = AVAILABLE_TIMEZONES.has(browserTimezone) ? browserTimezone : 'UTC';
 
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
+  const [hydrated, setHydrated] = useState(false);
   const [step, setStep] = useState<Step>('create');
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
@@ -34,6 +35,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     if (!AVAILABLE_TIMEZONES.has(timezone)) {
@@ -118,6 +123,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My Blog"
+                disabled={!hydrated}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
             </label>
@@ -127,6 +133,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 placeholder="example.com"
+                disabled={!hydrated}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               />
               <span className="mt-1 block text-[11px] text-ink-4">
@@ -139,6 +146,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
               <select
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
+                disabled={!hydrated}
                 className="w-full bg-canvas border border-line rounded-md px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-spark focus:border-spark"
               >
                 {Object.entries(TIMEZONE_GROUPS).map(([group, zones]) => (
@@ -152,7 +160,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
             </label>
           </div>
           {error && <p className="text-xs text-down">{error}</p>}
-          <Button onClick={handleCreate} disabled={creating} className="w-full gap-2">
+          <Button onClick={handleCreate} disabled={!hydrated || creating} className="w-full gap-2">
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
             Create website
           </Button>

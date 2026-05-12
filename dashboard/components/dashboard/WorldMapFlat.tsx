@@ -1,10 +1,8 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { ComposableMap, Geographies, Geography } from 'react-simple-maps';
-// world-atlas countries-110m.json is bundled at build time — no CDN request needed
-import topology from 'world-atlas/countries-110m.json';
-import { ISO_NUMERIC_TO_A2 } from '@/lib/iso-numeric-to-alpha2';
+import { geoNaturalEarth1, geoPath } from 'd3-geo';
+import { COUNTRY_FEATURES, getCountryA2 } from '@/lib/world-map-geometry';
 import { formatDuration } from '@/lib/utils';
 import type { MetricRow } from '@/lib/api';
 
@@ -72,6 +70,12 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
     return 'rgb(var(--spark-rgb) / 0.65)';
   };
 
+  const projection = useMemo(
+    () => geoNaturalEarth1().scale(130).center([0, 10]).translate([400, 300]),
+    [],
+  );
+  const path = useMemo(() => geoPath(projection), [projection]);
+
   // ── Tooltip via event delegation (pointer events support mouse + touch) ─
   const onPointerTrackContainer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as SVGPathElement;
@@ -116,8 +120,8 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
         className="absolute pointer-events-none z-20 bg-surface-2 border border-line rounded-lg px-3 py-2 text-[12px] leading-relaxed"
         style={{ left, top, minWidth: TW }}
       >
-        <p className="font-medium text-ink mb-1.5">{name}</p>
-        <div className="space-y-0.5">
+        <p className="font-medium text-ink mb-2">{name}</p>
+        <div className="space-y-1">
           {stat('Visitors', row ? fmtNum(row.visitors) : '—')}
           {row?.pageviews !== undefined && stat('Pageviews', fmtNum(row.pageviews!))}
           {row && stat('Bounce', `${(row.bounce_rate ?? 0).toFixed(1)}%`)}
@@ -135,38 +139,31 @@ export function WorldMapFlat({ data, selectedCountry }: WorldMapFlatProps) {
       onPointerLeave={onPointerLeaveContainer}
       onPointerCancel={onPointerLeaveContainer}
     >
-      <ComposableMap
-        projectionConfig={{ scale: 130, center: [0, 10] }}
-        style={{ width: '100%', height: 'auto', display: 'block' }}
-      >
-        <Geographies geography={topology}>
-          {({ geographies }) =>
-            geographies.map((geo) => {
-              const a2 = ISO_NUMERIC_TO_A2[String(geo.id).padStart(3, '0')] ?? null;
-              const visitors = a2 ? (visitorsByA2[a2] ?? 0) : 0;
-              const fill = getFill(a2, visitors);
-              const hoverFill = getHoverFill(a2, visitors);
-
-              return (
-                <Geography
-                  key={geo.rsmKey}
-                  geography={geo}
-                  fill={fill}
-                  stroke="var(--canvas)"
-                  strokeWidth={0.4}
-                  // data-a2 read by the container's pointer handlers for tooltip
-                  data-a2={a2 ?? ''}
-                  style={{
-                    default: { outline: 'none', cursor: 'default' },
-                    hover: { fill: hoverFill, outline: 'none', cursor: 'default' },
-                    pressed: { outline: 'none' },
-                  }}
-                />
-              );
-            })
-          }
-        </Geographies>
-      </ComposableMap>
+      <svg viewBox="0 0 800 600" className="block h-auto w-full" role="img" aria-label="Visitors by country map">
+        {COUNTRY_FEATURES.map((geo) => {
+          const a2 = getCountryA2(geo);
+          const visitors = a2 ? (visitorsByA2[a2] ?? 0) : 0;
+          const d = path(geo);
+          if (!d) return null;
+          return (
+            <path
+              key={String(geo.id)}
+              d={d}
+              fill={getFill(a2, visitors)}
+              stroke="var(--canvas)"
+              strokeWidth={0.4}
+              data-a2={a2 ?? ''}
+              className="cursor-default outline-none transition-colors"
+              onPointerEnter={(event) => {
+                event.currentTarget.setAttribute('fill', getHoverFill(a2, visitors));
+              }}
+              onPointerLeave={(event) => {
+                event.currentTarget.setAttribute('fill', getFill(a2, visitors));
+              }}
+            />
+          );
+        })}
+      </svg>
 
       {/* Tooltip — positioned absolutely within the map container */}
       {renderTooltip()}

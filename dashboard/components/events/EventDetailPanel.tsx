@@ -66,7 +66,7 @@ export function EventDetailPanel({
 
       {/* Mini timeseries chart */}
       <div className="px-4 py-3 border-b border-line shrink-0">
-        <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider mb-2">
+        <h4 className="text-xs font-semibold text-ink-3 uppercase mb-2">
           Occurrences
         </h4>
         {tsLoading ? (
@@ -79,13 +79,13 @@ export function EventDetailPanel({
       {/* Property breakdown */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-4 py-3 border-b border-line flex items-center justify-between">
-          <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-wider">
+          <h4 className="text-xs font-semibold text-ink-3 uppercase">
             Properties
           </h4>
           {sampled && result && (
             <span className="text-xs text-ink-3">
-              Sampled {result.sample_size.toLocaleString()} of{' '}
-              {result.total_occurrences.toLocaleString()}
+              Sampled <span className="font-mono tabular-nums">{result.sample_size.toLocaleString()}</span> of{' '}
+              <span className="font-mono tabular-nums">{result.total_occurrences.toLocaleString()}</span>
             </span>
           )}
         </div>

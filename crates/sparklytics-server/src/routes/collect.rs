@@ -60,16 +60,15 @@ where
 /// None required. Events for unknown `website_id` values are rejected with 404.
 ///
 /// ## Rate limiting
-/// 60 req/min per IP — enforced by Tower middleware (Sprint 1).
-/// The response headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and
-/// `X-RateLimit-Reset` are added by the rate-limit middleware (Sprint 1).
+/// 60 req/min per resolved client IP, using trusted proxy headers only when
+/// the socket peer matches `SPARKLYTICS_TRUSTED_PROXIES`.
 ///
 /// ## Batch rules (CLAUDE.md critical facts)
 /// - Maximum **50** events per batch (returns 400 `batch_too_large` otherwise).
 /// - `tenant_id` is always `NULL` in self-hosted mode (critical fact #2).
 ///
 /// ## Enrichment (Sprint 0 deliverables)
-/// - `visitor_id`: `sha256(salt_epoch + ip + user_agent)[0..8]` → 16 hex chars.
+/// - `visitor_id`: `sha256(salt_epoch + ip + user_agent)[0:16]` hex chars.
 /// - `referrer_domain`: parsed from the `referrer` URL field.
 /// - `country`, `region`, `city`: GeoIP via `maxminddb` (stubbed if .mmdb absent).
 /// - `browser`, `browser_version`, `os`, `os_version`, `device_type`: UA parsing
@@ -162,7 +161,7 @@ pub async fn collect(
         return Err(AppError::RateLimited);
     }
 
-    // --- Apply cloud plan admission limits ---
+    // --- Apply cloud BillingGate admission ---
     let mut payloads = payloads;
     let mut dropped_monthly_limit = 0usize;
     let mut dropped_peak_rate = 0usize;
@@ -328,9 +327,13 @@ pub async fn collect(
         events.push(Event {
             id: uuid::Uuid::new_v4().to_string(),
             website_id,
-            tenant_id: websites_by_id
-                .get(&p.website_id)
-                .and_then(|website| website.tenant_id.clone()),
+            tenant_id: if state.config.mode == AppMode::Cloud {
+                websites_by_id
+                    .get(&p.website_id)
+                    .and_then(|website| website.tenant_id.clone())
+            } else {
+                None
+            },
             // Session is resolved in the ingest worker right before persistence.
             session_id: AppState::pending_session_marker().to_string(),
             visitor_id,
@@ -467,42 +470,57 @@ fn build_collect_response(
 
 /// Extract client IP.
 ///
-/// Prefer the direct socket address when available. `X-Forwarded-For` is only
-/// used as fallback when socket metadata is unavailable.
+/// Prefer the direct socket address unless it belongs to a trusted proxy CIDR.
+/// Trusted proxies may provide the real client through `X-Forwarded-For` or
+/// `X-Real-IP`. Header IPs are used as fallback when socket metadata is
+/// unavailable, which keeps router-level tests and non-TCP deployments working.
 pub(crate) fn extract_client_ip(headers: &HeaderMap, remote_addr: Option<SocketAddr>) -> String {
-    let forwarded_ip = parse_forwarded_ip(headers);
+    extract_client_ip_with_trusted(headers, remote_addr, &trusted_proxy_cidrs())
+}
+
+pub(crate) fn extract_client_ip_with_trusted(
+    headers: &HeaderMap,
+    remote_addr: Option<SocketAddr>,
+    trusted: &[ipnet::IpNet],
+) -> String {
+    let proxy_header_ip = parse_proxy_header_ip(headers);
     if let Some(addr) = remote_addr {
         let remote_ip = addr.ip();
-        if trusted_proxy_cidrs()
-            .iter()
-            .any(|cidr| cidr.contains(&remote_ip))
-        {
-            return forwarded_ip.unwrap_or(remote_ip).to_string();
+        if trusted.iter().any(|cidr| cidr.contains(&remote_ip)) {
+            return proxy_header_ip.unwrap_or(remote_ip).to_string();
         }
         return remote_ip.to_string();
     }
 
-    forwarded_ip
+    proxy_header_ip
         .map(|ip| ip.to_string())
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn parse_forwarded_ip(headers: &HeaderMap) -> Option<IpAddr> {
+fn parse_proxy_header_ip(headers: &HeaderMap) -> Option<IpAddr> {
     warn_if_forwarded_headers_untrusted(headers);
     headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.split(',').next())
         .and_then(|s| s.trim().parse::<IpAddr>().ok())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.trim().parse::<IpAddr>().ok())
+        })
 }
 
 fn warn_if_forwarded_headers_untrusted(headers: &HeaderMap) {
     static WARN_ONCE: Once = Once::new();
 
-    if headers.contains_key("x-forwarded-for") && trusted_proxy_cidrs().is_empty() {
+    if (headers.contains_key("x-forwarded-for") || headers.contains_key("x-real-ip"))
+        && trusted_proxy_cidrs().is_empty()
+    {
         WARN_ONCE.call_once(|| {
             tracing::warn!(
-                "Received X-Forwarded-For but SPARKLYTICS_TRUSTED_PROXIES is unset or has no valid CIDRs. Real client IP, GeoIP, visitor_id, and per-IP rate limits may resolve to the proxy address."
+                "Received proxy client IP headers but SPARKLYTICS_TRUSTED_PROXIES is unset or has no valid CIDRs. Real client IP, GeoIP, visitor_id, and per-IP rate limits may resolve to the proxy address."
             );
         });
     }
@@ -513,7 +531,7 @@ fn parse_trusted_proxy_cidrs(raw: &str) -> (Vec<ipnet::IpNet>, Vec<String>) {
     let mut invalid = Vec::new();
 
     for entry in raw
-        .split(',')
+        .split(|c: char| c == ',' || c.is_whitespace())
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
     {
@@ -526,25 +544,22 @@ fn parse_trusted_proxy_cidrs(raw: &str) -> (Vec<ipnet::IpNet>, Vec<String>) {
     (trusted, invalid)
 }
 
-fn trusted_proxy_cidrs() -> &'static Vec<ipnet::IpNet> {
-    static TRUSTED: OnceLock<Vec<ipnet::IpNet>> = OnceLock::new();
-    TRUSTED.get_or_init(|| {
-        std::env::var("SPARKLYTICS_TRUSTED_PROXIES")
-            .ok()
-            .map(|raw| {
-                let (trusted, invalid) = parse_trusted_proxy_cidrs(&raw);
+fn trusted_proxy_cidrs() -> Vec<ipnet::IpNet> {
+    std::env::var("SPARKLYTICS_TRUSTED_PROXIES")
+        .ok()
+        .map(|raw| {
+            let (trusted, invalid) = parse_trusted_proxy_cidrs(&raw);
 
-                if !invalid.is_empty() {
-                    tracing::warn!(
-                        invalid_entries = %invalid.join(","),
-                        "Ignoring invalid SPARKLYTICS_TRUSTED_PROXIES entries. Requests from those proxies will not trust X-Forwarded-For until the CIDRs are fixed."
-                    );
-                }
+            if !invalid.is_empty() {
+                tracing::warn!(
+                    invalid_entries = %invalid.join(","),
+                    "Ignoring invalid SPARKLYTICS_TRUSTED_PROXIES entries. Requests from those proxies will not trust X-Forwarded-For until the CIDRs are fixed."
+                );
+            }
 
-                trusted
-            })
-            .unwrap_or_default()
-    })
+            trusted
+        })
+        .unwrap_or_default()
 }
 
 /// GeoIP result from a MaxMind lookup.
@@ -601,12 +616,12 @@ mod tests {
 
     use axum::http::HeaderMap;
 
-    use super::{extract_client_ip, parse_trusted_proxy_cidrs};
+    use super::{extract_client_ip, extract_client_ip_with_trusted, parse_trusted_proxy_cidrs};
 
     #[test]
     fn parse_trusted_proxy_cidrs_keeps_valid_and_reports_invalid_entries() {
         let (trusted, invalid) =
-            parse_trusted_proxy_cidrs("10.0.0.0/8, definitely-not-a-cidr, 192.168.0.0/16");
+            parse_trusted_proxy_cidrs("10.0.0.0/8, definitely-not-a-cidr 192.168.0.0/16");
 
         assert_eq!(trusted.len(), 2);
         assert_eq!(invalid, vec!["definitely-not-a-cidr".to_string()]);
@@ -622,12 +637,37 @@ mod tests {
 
     #[test]
     fn extract_client_ip_prefers_socket_ip_when_proxy_not_trusted() {
-        let headers = HeaderMap::new();
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.7".parse().unwrap());
         let remote_addr = SocketAddr::from((Ipv4Addr::new(198, 51, 100, 10), 12345));
 
         let ip = extract_client_ip(&headers, Some(remote_addr));
 
         assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(198, 51, 100, 10)).to_string());
+    }
+
+    #[test]
+    fn extract_client_ip_uses_forwarded_ip_when_proxy_is_trusted() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.7, 10.0.0.9".parse().unwrap());
+        let remote_addr = SocketAddr::from((Ipv4Addr::new(10, 0, 0, 9), 12345));
+        let trusted = vec!["10.0.0.0/8".parse().unwrap()];
+
+        let ip = extract_client_ip_with_trusted(&headers, Some(remote_addr), &trusted);
+
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)).to_string());
+    }
+
+    #[test]
+    fn extract_client_ip_uses_real_ip_when_trusted_proxy_has_no_forwarded_for() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-real-ip", "203.0.113.8".parse().unwrap());
+        let remote_addr = SocketAddr::from((Ipv4Addr::new(10, 0, 0, 9), 12345));
+        let trusted = vec!["10.0.0.0/8".parse().unwrap()];
+
+        let ip = extract_client_ip_with_trusted(&headers, Some(remote_addr), &trusted);
+
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(203, 0, 113, 8)).to_string());
     }
 }
 

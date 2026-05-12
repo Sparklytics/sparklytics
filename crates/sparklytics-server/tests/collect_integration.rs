@@ -1,9 +1,11 @@
 mod common;
 
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -13,9 +15,35 @@ use tower::ServiceExt;
 use async_trait::async_trait;
 use sparklytics_core::billing::{BillingAdmission, BillingGate, BillingLimitReason};
 use sparklytics_core::config::{AppMode, AuthMode, Config};
+use sparklytics_core::visitor::compute_visitor_id;
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
 use sparklytics_server::state::AppState;
+
+static TRUSTED_PROXY_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            std::env::set_var(self.key, previous);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
+}
 
 /// Build a test Config with sensible defaults for integration tests.
 fn test_config() -> Config {
@@ -329,6 +357,31 @@ async fn test_collect_batch_too_large() {
     assert_eq!(json["error"]["code"], "batch_too_large");
 }
 
+#[tokio::test]
+async fn test_short_ingest_alias_uses_same_batch_limit() {
+    let (_state, app) = setup().await;
+
+    let events: Vec<Value> = (0..51)
+        .map(|i| {
+            json!({
+                "website_id": "site_test",
+                "type": "pageview",
+                "url": format!("/alias-page{}", i)
+            })
+        })
+        .collect();
+    let body = serde_json::to_string(&events).expect("serialize");
+
+    let response = app
+        .oneshot(collect_request_to("/e", &body))
+        .await
+        .expect("request");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let json = json_body(response).await;
+    assert_eq!(json["error"]["code"], "batch_too_large");
+}
+
 // ============================================================
 // BDD: Reject unknown website_id
 // ============================================================
@@ -458,6 +511,179 @@ async fn test_visitor_id_deterministic_within_day() {
     assert!(
         vid.chars().all(|c| c.is_ascii_hexdigit()),
         "visitor_id must be hex only"
+    );
+}
+
+#[tokio::test]
+async fn test_collect_ignores_spoofed_forwarded_for_when_proxy_not_trusted() {
+    let (state, app) = setup().await;
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/proxy-test"
+    });
+    let mut request = collect_request(&body.to_string());
+    let remote_addr = SocketAddr::from((Ipv4Addr::new(198, 51, 100, 10), 3210));
+    request.extensions_mut().insert(ConnectInfo(remote_addr));
+
+    let response = app.oneshot(request).await.expect("request");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    state.flush_buffer().await;
+
+    let conn = state.db.conn_for_test().await;
+    let (source_ip, visitor_id): (String, String) = conn
+        .query_row(
+            "SELECT source_ip, visitor_id FROM events WHERE website_id = ?1 AND url = ?2",
+            sparklytics_duckdb::duckdb::params!["site_test", "/proxy-test"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("stored event");
+
+    let expected_ip = remote_addr.ip().to_string();
+    assert_eq!(
+        source_ip, expected_ip,
+        "untrusted proxy headers must not override the socket IP"
+    );
+    assert_eq!(
+        visitor_id,
+        compute_visitor_id(&expected_ip, "Mozilla/5.0 Chrome/120"),
+        "visitor_id must be derived from the resolved socket IP when proxy is not trusted"
+    );
+}
+
+#[tokio::test]
+async fn test_collect_uses_forwarded_for_when_proxy_is_trusted() {
+    let _lock = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::set("SPARKLYTICS_TRUSTED_PROXIES", "10.0.0.0/8");
+
+    let (state, app) = setup().await;
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/trusted-proxy-test"
+    });
+    let mut request = collect_request(&body.to_string());
+    let remote_addr = SocketAddr::from((Ipv4Addr::new(10, 0, 0, 9), 3210));
+    request.extensions_mut().insert(ConnectInfo(remote_addr));
+
+    let response = app.oneshot(request).await.expect("request");
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    state.flush_buffer().await;
+
+    let conn = state.db.conn_for_test().await;
+    let (source_ip, visitor_id): (String, String) = conn
+        .query_row(
+            "SELECT source_ip, visitor_id FROM events WHERE website_id = ?1 AND url = ?2",
+            sparklytics_duckdb::duckdb::params!["site_test", "/trusted-proxy-test"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("stored event");
+
+    let expected_ip = "1.2.3.4";
+    assert_eq!(
+        source_ip, expected_ip,
+        "trusted proxy headers should provide the real client IP"
+    );
+    assert_eq!(
+        visitor_id,
+        compute_visitor_id(expected_ip, "Mozilla/5.0 Chrome/120"),
+        "visitor_id must be derived from X-Forwarded-For when the proxy is trusted"
+    );
+}
+
+#[tokio::test]
+async fn test_collect_rate_limit_uses_forwarded_for_when_proxy_is_trusted() {
+    let _lock = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::set("SPARKLYTICS_TRUSTED_PROXIES", "10.0.0.0/8");
+    let (_state, app) = setup().await;
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/trusted-proxy-rate-limit"
+    });
+    let remote_addr = SocketAddr::from((Ipv4Addr::new(10, 0, 0, 9), 3210));
+    let mut last_status = StatusCode::OK;
+
+    for i in 0..61 {
+        let mut request = collect_request(&body.to_string());
+        request.extensions_mut().insert(ConnectInfo(remote_addr));
+        let response = app.clone().oneshot(request).await.expect("request");
+        last_status = response.status();
+        if i < 60 {
+            assert_eq!(
+                last_status,
+                StatusCode::ACCEPTED,
+                "trusted forwarded client request {} should be accepted",
+                i + 1
+            );
+        }
+    }
+
+    assert_eq!(
+        last_status,
+        StatusCode::TOO_MANY_REQUESTS,
+        "collect rate limit should bucket by trusted forwarded client IP"
+    );
+}
+
+#[tokio::test]
+async fn test_explicit_visitor_id_overrides_server_generated_default() {
+    let (state, app) = setup().await;
+
+    let body = json!([
+        {
+            "website_id": "site_test",
+            "type": "pageview",
+            "url": "/identified",
+            "visitor_id": "identified-user-123"
+        },
+        {
+            "website_id": "site_test",
+            "type": "pageview",
+            "url": "/anonymous"
+        }
+    ]);
+
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    state.flush_buffer().await;
+
+    let conn = state.db.conn_for_test().await;
+    let mut stmt = conn
+        .prepare("SELECT url, visitor_id FROM events WHERE website_id = ?1 ORDER BY url")
+        .expect("prepare");
+    let rows: Vec<(String, String)> = stmt
+        .query_map(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .expect("query")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect");
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows[1],
+        ("/identified".to_string(), "identified-user-123".to_string())
+    );
+    assert_eq!(rows[0].0, "/anonymous");
+    assert_eq!(
+        rows[0].1.len(),
+        16,
+        "anonymous event should use server-generated visitor_id"
+    );
+    assert!(
+        rows[0].1.chars().all(|c| c.is_ascii_hexdigit()),
+        "server-generated visitor_id must be hex"
     );
 }
 
@@ -786,6 +1012,48 @@ async fn test_tenant_id_null_in_self_hosted() {
     );
 }
 
+#[tokio::test]
+async fn test_self_hosted_collect_ignores_stale_website_tenant_id() {
+    let (state, app) = setup().await;
+    {
+        let conn = state.db.conn_for_test().await;
+        conn.execute(
+            "UPDATE websites SET tenant_id = ?1 WHERE id = ?2",
+            sparklytics_duckdb::duckdb::params!["org_stale", "site_test"],
+        )
+        .expect("assign stale tenant to website");
+    }
+
+    let body = json!({
+        "website_id": "site_test",
+        "type": "pageview",
+        "url": "/home"
+    });
+
+    let response = app
+        .oneshot(collect_request(&body.to_string()))
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    state.flush_buffer().await;
+
+    let conn = state.db.conn_for_test().await;
+    let mut stmt = conn
+        .prepare("SELECT tenant_id FROM events WHERE website_id = ?1")
+        .expect("prepare");
+    let tenant_id: Option<String> = stmt
+        .query_row(sparklytics_duckdb::duckdb::params!["site_test"], |row| {
+            row.get(0)
+        })
+        .expect("query");
+
+    assert!(
+        tenant_id.is_none(),
+        "self-hosted collect must not inherit website.tenant_id"
+    );
+}
+
 // ============================================================
 // BDD: cloud collect resolves tenant from website and checks billing gate
 // ============================================================
@@ -848,10 +1116,10 @@ async fn test_cloud_collect_rejects_missing_website_tenant() {
 }
 
 // ============================================================
-// BDD: cloud collect enforces billing plan limit
+// BDD: cloud collect respects BillingGate admission
 // ============================================================
 #[tokio::test]
-async fn test_cloud_collect_plan_limit_exceeded() {
+async fn test_cloud_collect_respects_billing_gate_admission() {
     let (_state, app, seen_tenants) = setup_cloud(
         Some("org_acme"),
         BillingAdmission::limited(0, BillingLimitReason::MonthlyLimit),

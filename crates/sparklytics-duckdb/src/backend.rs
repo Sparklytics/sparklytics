@@ -35,6 +35,12 @@ pub struct DuckDbBackend {
     pub(crate) conn: Arc<Mutex<Connection>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetentionPruneStats {
+    pub events_deleted: usize,
+    pub sessions_deleted: usize,
+}
+
 impl DuckDbBackend {
     /// Open (or create) a DuckDB database file at `path`.
     ///
@@ -46,7 +52,7 @@ impl DuckDbBackend {
         let conn = Connection::open(path)?;
         conn.execute_batch(MIGRATIONS_TABLE_SQL)?;
         conn.execute_batch(&init_sql(memory_limit))?;
-        // Seed settings (daily_salt, install_id, etc.) if this is a fresh database.
+        // Seed settings (legacy salt diagnostics, install_id, etc.) if this is a fresh database.
         Self::seed_settings_sync(&conn)?;
         info!(
             "DuckDB opened at {} with memory_limit={}, threads=2",
@@ -74,8 +80,8 @@ impl DuckDbBackend {
     /// Seed the `settings` table with initial values if they don't already exist.
     ///
     /// Uses `INSERT OR IGNORE` so re-runs on every startup are safe.
-    /// - `daily_salt`:    32-byte random hex, used for visitor_id hashing
-    /// - `previous_salt`: same as daily_salt initially; updated by midnight rotation
+    /// - `daily_salt`:    legacy 32-byte random hex retained for diagnostics/backward compatibility
+    /// - `previous_salt`: previous legacy salt value, updated by midnight rotation
     /// - `version`:       schema version "1"
     /// - `install_id`:    unique 8-byte hex installation identifier
     fn seed_settings_sync(conn: &Connection) -> Result<()> {
@@ -102,7 +108,7 @@ impl DuckDbBackend {
         Ok(())
     }
 
-    /// Read the current `daily_salt` from the `settings` table.
+    /// Read the current legacy `daily_salt` from the `settings` table.
     pub async fn get_daily_salt(&self) -> Result<String> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = 'daily_salt'")?;
@@ -110,11 +116,11 @@ impl DuckDbBackend {
         Ok(salt)
     }
 
-    /// Rotate the daily salt at midnight UTC.
+    /// Rotate the legacy daily salt at midnight UTC.
     ///
-    /// Moves `daily_salt` → `previous_salt` (for the 5-min grace period),
-    /// then generates a new `daily_salt`. Both updates run in a single
-    /// transaction so there is never a window with a missing salt.
+    /// Moves `daily_salt` → `previous_salt`, then generates a new
+    /// `daily_salt`. Visitor IDs are computed from `salt_epoch + ip +
+    /// user_agent` in `sparklytics-core`, not from this setting.
     pub async fn rotate_salt(&self) -> Result<()> {
         let mut conn = self.conn.lock().await;
         let tx = conn.transaction()?;
@@ -243,6 +249,36 @@ impl DuckDbBackend {
         let conn = self.conn.lock().await;
         conn.execute_batch("SELECT 1")?;
         Ok(())
+    }
+
+    /// Delete analytics rows older than the configured retention horizon.
+    ///
+    /// `SPARKLYTICS_RETENTION_DAYS=0` is treated as one day to avoid an
+    /// accidental full wipe from a malformed env value.
+    pub async fn prune_analytics_retention(
+        &self,
+        retention_days: u32,
+    ) -> Result<RetentionPruneStats> {
+        let bounded_days = retention_days.max(1);
+        let cutoff = Utc::now() - chrono::Duration::days(i64::from(bounded_days));
+        let cutoff = cutoff.to_rfc3339();
+
+        let mut conn = self.conn.lock().await;
+        let tx = conn.transaction()?;
+        let events_deleted = tx.execute(
+            "DELETE FROM events WHERE created_at < CAST(?1 AS TIMESTAMP)",
+            duckdb::params![cutoff],
+        )?;
+        let sessions_deleted = tx.execute(
+            "DELETE FROM sessions WHERE last_seen < CAST(?1 AS TIMESTAMP)",
+            duckdb::params![cutoff],
+        )?;
+        tx.commit()?;
+
+        Ok(RetentionPruneStats {
+            events_deleted,
+            sessions_deleted,
+        })
     }
 
     /// Acquire the DuckDB connection lock for direct queries.

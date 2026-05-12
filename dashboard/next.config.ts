@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
   // Static export for production (embedded in Rust binary).
   // Dev runs without export so rewrites/HMR work normally.
   ...(isDev ? {} : { output: 'export' }),
+  ...(isDev
+    ? {
+        allowedDevOrigins: ['127.0.0.1'],
+      }
+    : {}),
   trailingSlash: true,
   images: { unoptimized: true },
   env: {
@@ -20,6 +25,22 @@ const nextConfig: NextConfig = {
             {
               source: '/api/:path*',
               destination: 'http://localhost:3000/api/:path*',
+            },
+            {
+              source: '/s.js',
+              destination: 'http://localhost:3000/s.js',
+            },
+            {
+              source: '/e',
+              destination: 'http://localhost:3000/e',
+            },
+            {
+              source: '/_sl/s.js',
+              destination: 'http://localhost:3000/s.js',
+            },
+            {
+              source: '/_sl/e',
+              destination: 'http://localhost:3000/e',
             },
           ];
         },

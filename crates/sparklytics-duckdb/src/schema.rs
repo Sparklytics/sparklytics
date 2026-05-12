@@ -39,8 +39,8 @@ SET threads = 2;
 -- SETTINGS (self-hosted only)
 -- ===========================================
 -- Keys stored in this table:
---   'daily_salt'     – 32-byte random hex for visitor_id hashing (rotated daily at midnight UTC)
---   'previous_salt'  – Previous day's salt, kept for 5-minute grace period after midnight UTC rotation
+--   'daily_salt'     – Legacy 32-byte random hex retained for diagnostics/backward compatibility
+--   'previous_salt'  – Previous legacy salt value, rotated at midnight UTC
 --   'version'        – Database schema version (for migrations)
 --   'install_id'     – Unique installation identifier
 CREATE TABLE IF NOT EXISTS settings (
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS settings (
 -- ===========================================
 CREATE TABLE IF NOT EXISTS websites (
     id              VARCHAR PRIMARY KEY,           -- 'site_' + nanoid(10)
-    tenant_id       VARCHAR,                       -- NULL in self-hosted mode; Clerk org_id in cloud
+    tenant_id       VARCHAR,                       -- NULL in self-hosted mode; private cloud tenant id otherwise
     name            VARCHAR NOT NULL,
     domain          VARCHAR NOT NULL,
     timezone        VARCHAR(64) NOT NULL DEFAULT 'UTC',  -- IANA timezone string
@@ -80,7 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_websites_share_id ON websites(share_id);
 CREATE TABLE IF NOT EXISTS sessions (
     session_id      VARCHAR PRIMARY KEY,
     website_id      VARCHAR NOT NULL,
-    tenant_id       VARCHAR,                       -- NULL in self-hosted; Clerk org_id in cloud
+    tenant_id       VARCHAR,                       -- NULL in self-hosted; private cloud tenant id otherwise
     visitor_id      VARCHAR NOT NULL,
     first_seen      TIMESTAMP NOT NULL,
     last_seen       TIMESTAMP NOT NULL,
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS events (
     -- Identity
     id              VARCHAR NOT NULL,              -- UUID v4
     website_id      VARCHAR NOT NULL,
-    tenant_id       VARCHAR,                       -- NULL in self-hosted; Clerk org_id in cloud
+    tenant_id       VARCHAR,                       -- NULL in self-hosted; private cloud tenant id otherwise
     session_id      VARCHAR NOT NULL,
     visitor_id      VARCHAR NOT NULL,              -- sha256(salt_epoch + ip + ua)[0:16]
 
@@ -204,7 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_events_name_date
 CREATE INDEX IF NOT EXISTS idx_events_country_date
     ON events(website_id, country, created_at);
 
--- Schema-parity index with ClickHouse cloud schema (tenant_id always NULL in self-hosted)
+-- Tenant-compatible index; tenant_id always NULL in self-hosted
 CREATE INDEX IF NOT EXISTS idx_events_tenant
     ON events(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_link_id_time
@@ -444,13 +444,13 @@ CREATE INDEX IF NOT EXISTS idx_funnel_steps_funnel_order
 -- ===========================================
 -- LOCAL API KEYS (self-hosted only)
 -- Cloud equivalent lives in PostgreSQL api_keys table.
--- Self-hosted key prefix: 'spk_selfhosted_' (15 chars) + display chars = 25 chars total.
+-- Self-hosted key prefix: column allows 25 chars; current code stores first 20 chars.
 -- ===========================================
 CREATE TABLE IF NOT EXISTS local_api_keys (
     id              VARCHAR PRIMARY KEY,           -- 'key_' + nanoid(10)
     name            VARCHAR NOT NULL,
     key_hash        VARCHAR(64) NOT NULL UNIQUE,   -- sha256(raw_key); never stored raw
-    key_prefix      VARCHAR(25) NOT NULL,          -- first 25 chars: 'spk_selfhosted_' + display
+    key_prefix      VARCHAR(25) NOT NULL,          -- first 20 chars of raw key today
     created_at      TIMESTAMP NOT NULL,
     last_used_at    TIMESTAMP,                     -- NULL until first use
     revoked_at      TIMESTAMP                      -- NULL = active; set to revoke

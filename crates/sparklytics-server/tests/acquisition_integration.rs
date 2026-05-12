@@ -1,18 +1,46 @@
 mod common;
 
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::sync::Arc;
 
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use sparklytics_core::config::{AppMode, AuthMode, Config};
+use sparklytics_core::visitor::compute_visitor_id;
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
 use sparklytics_server::state::AppState;
+
+static TRUSTED_PROXY_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            std::env::set_var(self.key, previous);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
+}
 
 fn test_config() -> Config {
     Config {
@@ -65,6 +93,17 @@ fn get_request(uri: &str) -> Request<Body> {
         .header("user-agent", "Mozilla/5.0 Chrome/120")
         .body(Body::empty())
         .expect("request")
+}
+
+fn trusted_proxy_get_request(uri: &str) -> Request<Body> {
+    let mut request = get_request(uri);
+    request
+        .extensions_mut()
+        .insert(ConnectInfo(SocketAddr::from((
+            Ipv4Addr::new(10, 0, 0, 9),
+            3210,
+        ))));
+    request
 }
 
 async fn json_body(response: axum::http::Response<Body>) -> Value {
@@ -163,6 +202,51 @@ async fn create_link_and_track_redirect_records_event() {
     assert!(stored_link_id.is_some());
     assert_eq!(stored_utm_source.as_deref(), Some("newsletter"));
     assert_eq!(stored_event_name.as_deref(), Some("link_click"));
+}
+
+#[tokio::test]
+async fn campaign_link_uses_forwarded_for_when_proxy_is_trusted() {
+    let _lock = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::set("SPARKLYTICS_TRUSTED_PROXIES", "10.0.0.0/8");
+    let (state, app) = setup().await;
+
+    let create_response = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/websites/site_test/links",
+            json!({
+                "name": "Trusted Proxy Link",
+                "destination_url": "https://example.com/pricing"
+            }),
+        ))
+        .await
+        .expect("create link");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let created = json_body(create_response).await;
+    let slug = created["data"]["slug"].as_str().expect("slug");
+
+    let redirect_response = app
+        .oneshot(trusted_proxy_get_request(&format!("/l/{slug}")))
+        .await
+        .expect("redirect");
+    assert_eq!(redirect_response.status(), StatusCode::FOUND);
+
+    state.flush_buffer().await;
+    let conn = state.db.conn_for_test().await;
+    let (source_ip, visitor_id): (String, String) = conn
+        .query_row(
+            "SELECT source_ip, visitor_id FROM events WHERE website_id = ?1 AND event_name = 'link_click'",
+            sparklytics_duckdb::duckdb::params!["site_test"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("link event");
+
+    assert_eq!(source_ip, "198.51.100.10");
+    assert_eq!(
+        visitor_id,
+        compute_visitor_id("198.51.100.10", "Mozilla/5.0 Chrome/120")
+    );
 }
 
 #[tokio::test]
@@ -303,6 +387,51 @@ async fn pixel_endpoint_returns_gif_and_records_event() {
         .expect("event row");
     assert!(stored_pixel_id.is_some());
     assert_eq!(stored_event_name.as_deref(), Some("pixel_view"));
+}
+
+#[tokio::test]
+async fn tracking_pixel_uses_forwarded_for_when_proxy_is_trusted() {
+    let _lock = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::set("SPARKLYTICS_TRUSTED_PROXIES", "10.0.0.0/8");
+    let (state, app) = setup().await;
+
+    let create_response = app
+        .clone()
+        .oneshot(json_request(
+            "POST",
+            "/api/websites/site_test/pixels",
+            json!({
+                "name": "Trusted Proxy Pixel",
+                "default_url": "https://example.com/docs"
+            }),
+        ))
+        .await
+        .expect("create pixel");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let created = json_body(create_response).await;
+    let pixel_key = created["data"]["pixel_key"].as_str().expect("pixel key");
+
+    let pixel_response = app
+        .oneshot(trusted_proxy_get_request(&format!("/p/{pixel_key}.gif")))
+        .await
+        .expect("pixel");
+    assert_eq!(pixel_response.status(), StatusCode::OK);
+
+    state.flush_buffer().await;
+    let conn = state.db.conn_for_test().await;
+    let (source_ip, visitor_id): (String, String) = conn
+        .query_row(
+            "SELECT source_ip, visitor_id FROM events WHERE website_id = ?1 AND event_name = 'pixel_view'",
+            sparklytics_duckdb::duckdb::params!["site_test"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("pixel event");
+
+    assert_eq!(source_ip, "198.51.100.10");
+    assert_eq!(
+        visitor_id,
+        compute_visitor_id("198.51.100.10", "Mozilla/5.0 Chrome/120")
+    );
 }
 
 #[tokio::test]
