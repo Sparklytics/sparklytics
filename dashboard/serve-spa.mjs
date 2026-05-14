@@ -21,6 +21,14 @@ const MIME = {
   '.txt': 'text/plain',
 };
 
+async function readRequestBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
 http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   const proxyPath =
@@ -33,7 +41,7 @@ http.createServer(async (req, res) => {
     const body =
       req.method === 'GET' || req.method === 'HEAD'
         ? undefined
-        : Buffer.concat(await Array.fromAsync(req, (chunk) => Buffer.from(chunk)));
+        : await readRequestBody(req);
     try {
       const proxyResponse = await fetch(`${BACKEND_ORIGIN}${proxyPath}`, {
         method: req.method,
