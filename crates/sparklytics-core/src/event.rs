@@ -46,7 +46,7 @@ pub enum CollectOrBatch {
 pub struct Event {
     pub id: String,
     pub website_id: String,
-    /// NULL in self-hosted mode; set to Clerk org_id in cloud mode.
+    /// NULL in self-hosted mode; set by private cloud runtime when applicable.
     pub tenant_id: Option<String>,
     pub session_id: String,
     pub visitor_id: String,

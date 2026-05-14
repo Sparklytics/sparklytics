@@ -40,8 +40,8 @@ function CustomTooltip({ active, payload, label }: any) {
       <div className="text-ink font-medium mb-3">{dateStr}</div>
       <div className="flex flex-col gap-2">
         {rows.map((p: any) => (
-          <div key={p.name} className="flex justify-between items-center tabular-nums">
-            <div className="flex items-center gap-1.5 text-ink-3 capitalize">
+          <div key={p.name} className="flex justify-between items-center font-mono tabular-nums">
+            <div className="flex items-center gap-2 text-ink-3 capitalize">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: p.color }} />
               {p.name}
             </div>
@@ -91,13 +91,13 @@ export function PageviewsChart({ data, compareData, loading }: PageviewsChartPro
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-[13px] font-medium text-ink">Traffic Overview</h2>
 
-        <div className="flex items-center bg-surface-2 p-0.5 rounded-lg border border-line">
+        <div className="flex items-center bg-surface-2 p-1 rounded-lg border border-line">
           {(['both', 'visitors', 'pageviews'] as const).map((m) => (
             <button
               key={m}
               onClick={() => setMetric(m)}
               className={cn(
-                'px-2.5 py-1 text-[11px] rounded-md transition-all duration-150 capitalize',
+                'px-3 py-1 text-[11px] rounded-md transition-all duration-150 capitalize',
                 metric === m
                   ? 'bg-canvas text-ink font-medium border border-line'
                   : 'text-ink-3 hover:text-ink-2'

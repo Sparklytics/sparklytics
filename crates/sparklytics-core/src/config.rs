@@ -83,6 +83,9 @@ impl Config {
                         let pw = get_var("SPARKLYTICS_PASSWORD").ok_or_else(|| {
                             "SPARKLYTICS_PASSWORD required when AUTH=password".to_string()
                         })?;
+                        if pw.trim().is_empty() {
+                            return Err("SPARKLYTICS_PASSWORD must not be empty".to_string());
+                        }
                         AuthMode::Password(pw)
                     }
                     _ => AuthMode::Local,
@@ -227,5 +230,45 @@ mod tests {
         let cfg = Config::from_env_with(|key| vars.get(key).cloned()).expect("config");
 
         assert_eq!(cfg.bootstrap_password, None);
+    }
+
+    #[test]
+    fn defaults_auth_mode_to_local() {
+        let vars = HashMap::<&str, String>::new();
+
+        let cfg = Config::from_env_with(|key| vars.get(key).cloned()).expect("config");
+
+        assert_eq!(cfg.auth_mode, super::AuthMode::Local);
+    }
+
+    #[test]
+    fn password_auth_requires_password_env() {
+        let vars = HashMap::from([("SPARKLYTICS_AUTH", "password".to_string())]);
+
+        let err =
+            Config::from_env_with(|key| vars.get(key).cloned()).expect_err("missing password");
+
+        assert_eq!(err, "SPARKLYTICS_PASSWORD required when AUTH=password");
+    }
+
+    #[test]
+    fn password_auth_rejects_blank_password() {
+        let vars = HashMap::from([
+            ("SPARKLYTICS_AUTH", "password".to_string()),
+            ("SPARKLYTICS_PASSWORD", "   ".to_string()),
+        ]);
+
+        let err = Config::from_env_with(|key| vars.get(key).cloned()).expect_err("blank password");
+
+        assert_eq!(err, "SPARKLYTICS_PASSWORD must not be empty");
+    }
+
+    #[test]
+    fn defaults_duckdb_memory_limit_to_one_gb() {
+        let vars = HashMap::<&str, String>::new();
+
+        let cfg = Config::from_env_with(|key| vars.get(key).cloned()).expect("config");
+
+        assert_eq!(cfg.duckdb_memory_limit, "1GB");
     }
 }

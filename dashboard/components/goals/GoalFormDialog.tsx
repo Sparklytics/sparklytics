@@ -190,7 +190,7 @@ export function GoalFormDialog({ websiteId, open, onClose, editingGoal }: GoalFo
                 type="text"
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-                className={inputClass}
+                className={`${inputClass} font-mono tabular-nums`}
                 maxLength={8}
                 placeholder="USD"
               />
@@ -206,7 +206,7 @@ export function GoalFormDialog({ websiteId, open, onClose, editingGoal }: GoalFo
                 step="0.01"
                 value={fixedValue}
                 onChange={(e) => setFixedValue(e.target.value)}
-                className={inputClass}
+                className={`${inputClass} font-mono tabular-nums`}
                 placeholder="e.g. 49.99"
               />
             </div>

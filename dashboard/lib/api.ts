@@ -1,12 +1,5 @@
 const BASE = typeof window !== 'undefined' ? '' : 'http://localhost:3000';
 
-// In cloud mode, ClerkTokenSync registers this so request() can attach Bearer tokens.
-let _tokenGetter: (() => Promise<string | null>) | null = null;
-
-export function setTokenGetter(fn: () => Promise<string | null>): void {
-  _tokenGetter = fn;
-}
-
 type RequestOptions = {
   method?: string;
   body?: unknown;
@@ -22,10 +15,6 @@ export type AuthStatus = {
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (_tokenGetter) {
-    const token = await _tokenGetter();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-  }
 
   const res = await fetch(`${BASE}${path}`, {
     method: opts.method ?? 'GET',
@@ -143,45 +132,6 @@ export const api = {
     ),
   disableSharing: (websiteId: string) =>
     request(`/api/websites/${websiteId}/share`, { method: 'DELETE' }),
-
-  // Usage (cloud only — returns null if 404 in self-hosted mode)
-  getUsage: async (): Promise<UsageResponse | null> => {
-    const headers: Record<string, string> = {};
-    if (_tokenGetter) {
-      const token = await _tokenGetter();
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-    }
-    const res = await fetch(`${BASE}/api/usage`, { credentials: 'include', headers });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error('Failed to fetch usage');
-    const json = await res.json();
-    return json.data;
-  },
-  listPlanLimits: () =>
-    request<{ data: PlanLimit[] }>('/api/admin/limits/plans'),
-  updatePlanLimit: (plan: string, payload: { peak_events_per_sec: number; monthly_event_limit: number }) =>
-    request<{ data: PlanLimit }>(`/api/admin/limits/plans/${encodeURIComponent(plan)}`, {
-      method: 'PUT',
-      body: payload,
-    }),
-  getTenantLimits: (tenantId: string) =>
-    request<{ data: TenantLimitResponse }>(`/api/admin/limits/tenants/${encodeURIComponent(tenantId)}`),
-  updateTenantLimits: (
-    tenantId: string,
-    payload: {
-      peak_events_per_sec?: number | null;
-      monthly_event_limit?: number | null;
-      clear?: boolean;
-    },
-  ) =>
-    request<{ data: TenantLimitResponse }>(`/api/admin/limits/tenants/${encodeURIComponent(tenantId)}`, {
-      method: 'PUT',
-      body: payload,
-    }),
-  getTenantUsage: (tenantId: string, month?: string) =>
-    request<{ data: TenantUsage }>(
-      `/api/admin/usage/tenants/${encodeURIComponent(tenantId)}${month ? `?${toQuery({ month })}` : ''}`
-    ),
 
   // Export — triggers a file download
   getExportUrl: (websiteId: string, startDate: string, endDate: string): string =>
@@ -497,50 +447,6 @@ export interface ApiKey {
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
-}
-
-export interface UsageResponse {
-  month: string;
-  event_count: number;
-  event_limit: number;
-  percent_used: number;
-  plan: string;
-}
-
-export interface PlanLimit {
-  plan: string;
-  peak_events_per_sec: number;
-  monthly_event_limit: number;
-}
-
-export interface TenantLimitsEffective {
-  tenant_id: string;
-  plan: string;
-  peak_events_per_sec: number;
-  monthly_event_limit: number;
-  override_peak_events_per_sec: number | null;
-  override_monthly_event_limit: number | null;
-}
-
-export interface TenantLimitsOverride {
-  tenant_id: string;
-  peak_events_per_sec: number | null;
-  monthly_event_limit: number | null;
-  updated_by: string | null;
-  updated_at: string | null;
-}
-
-export interface TenantLimitResponse {
-  effective: TenantLimitsEffective;
-  override: TenantLimitsOverride | null;
-}
-
-export interface TenantUsage {
-  tenant_id: string;
-  month: string;
-  event_count: number;
-  event_limit: number;
-  percent_used: number;
 }
 
 // --- Custom Events response types ---

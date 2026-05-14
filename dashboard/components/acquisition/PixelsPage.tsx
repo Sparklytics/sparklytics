@@ -39,7 +39,7 @@ function SummaryCards({
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       {cards.map(({ label, value }) => (
         <div key={label} className="border border-line rounded-lg bg-surface-1 p-4">
-          <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium mb-1">
+          <p className="text-[11px] text-ink-3 uppercase font-medium mb-1">
             {label}
           </p>
           {isLoading ? (
@@ -61,7 +61,7 @@ function SkeletonRows() {
       {[0, 1, 2].map((i) => (
         <tr key={i} className="border-t border-line">
           <td className="px-3 py-3">
-            <div className="animate-pulse space-y-1.5">
+            <div className="animate-pulse space-y-2">
               <div className="bg-surface-2 rounded h-3.5 w-32" />
               <div className="bg-surface-2 rounded h-3 w-48" />
             </div>
@@ -99,7 +99,7 @@ function EmptyState() {
               documentation pages where JavaScript is unavailable.
             </p>
           </div>
-          <p className="text-xs text-ink-3 border border-line rounded px-2.5 py-1 bg-surface-2">
+          <p className="text-xs text-ink-3 border border-line rounded px-3 py-1 bg-surface-2">
             Click <span className="text-ink font-medium">Create Pixel</span> above to get started.
           </p>
         </div>
@@ -131,7 +131,7 @@ function PixelRow({
     >
       <td className="px-3 py-2">
         <p className="text-sm text-ink font-medium">{pixel.name}</p>
-        <p className="text-xs text-ink-3 mt-0.5">{pixel.default_url ?? 'No default URL'}</p>
+        <p className="text-xs text-ink-3 mt-1">{pixel.default_url ?? 'No default URL'}</p>
       </td>
       <td className="px-3 py-2">
         <div className="text-xs text-ink-3">
@@ -141,7 +141,7 @@ function PixelRow({
         </div>
       </td>
       <td className="px-3 py-2">
-        <code className="text-xs text-ink bg-surface-2 px-1.5 py-0.5 rounded">{pixel.pixel_key}</code>
+        <code className="text-xs text-ink bg-surface-2 px-2 py-1 rounded">{pixel.pixel_key}</code>
       </td>
       <td className="px-3 py-2">
         <span
@@ -241,7 +241,7 @@ export function PixelsPage({ websiteId }: PixelsPageProps) {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-ink">Tracking Pixels</h2>
-        <p className="text-xs text-ink-3 mt-0.5">
+        <p className="text-xs text-ink-3 mt-1">
           Use 1x1 image beacons for email and documentation channels without JavaScript.
         </p>
       </div>

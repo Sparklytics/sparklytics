@@ -1,8 +1,10 @@
 mod common;
 
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -14,6 +16,36 @@ use sparklytics_server::app::build_app;
 use sparklytics_server::state::AppState;
 
 const TEST_PASSWORD: &str = "strong_password_123";
+static TRUSTED_PROXY_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+
+    fn unset(key: &'static str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::remove_var(key);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            std::env::set_var(self.key, previous);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
+}
 
 fn config(auth_mode: AuthMode) -> Config {
     Config {
@@ -73,6 +105,21 @@ async fn create_website(app: &axum::Router) -> String {
     assert_eq!(response.status(), StatusCode::CREATED);
     let json = json_body(response).await;
     json["data"]["id"].as_str().expect("id").to_string()
+}
+
+fn list_funnels_request_with_connect_info(
+    website_id: &str,
+    spoofed_forwarded_for: &str,
+    remote_addr: SocketAddr,
+) -> Request<Body> {
+    let mut request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/websites/{website_id}/funnels"))
+        .header("x-forwarded-for", spoofed_forwarded_for)
+        .body(Body::empty())
+        .expect("build request");
+    request.extensions_mut().insert(ConnectInfo(remote_addr));
+    request
 }
 
 fn create_funnel_request(name: &str) -> Value {
@@ -939,6 +986,61 @@ async fn test_funnel_results_returns_429_when_query_slot_busy() {
         .expect("build request");
     let blocked_res = app.clone().oneshot(blocked_req).await.expect("request");
     assert_eq!(blocked_res.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn test_funnels_rate_limit_uses_socket_ip_when_proxy_not_trusted() {
+    let _guard = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::unset("SPARKLYTICS_TRUSTED_PROXIES");
+    let (_state, app) = setup_none().await;
+    let website_id = create_website(&app).await;
+    let remote_addr = SocketAddr::from((Ipv4Addr::new(198, 51, 100, 20), 12345));
+
+    for idx in 1..=60 {
+        let req = list_funnels_request_with_connect_info(
+            &website_id,
+            &format!("203.0.113.{idx}"),
+            remote_addr,
+        );
+        let resp = app.clone().oneshot(req).await.expect("list funnels");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "request {idx} should be accepted"
+        );
+    }
+
+    let req = list_funnels_request_with_connect_info(&website_id, "203.0.113.250", remote_addr);
+    let resp = app
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("rate-limited list funnels");
+
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn test_funnels_rate_limit_uses_forwarded_ip_when_proxy_is_trusted() {
+    let _guard = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::set("SPARKLYTICS_TRUSTED_PROXIES", "10.0.0.0/8");
+    let (_state, app) = setup_none().await;
+    let website_id = create_website(&app).await;
+    let trusted_proxy_addr = SocketAddr::from((Ipv4Addr::new(10, 0, 0, 20), 12345));
+
+    for idx in 1..=65 {
+        let req = list_funnels_request_with_connect_info(
+            &website_id,
+            &format!("203.0.113.{idx}"),
+            trusted_proxy_addr,
+        );
+        let resp = app.clone().oneshot(req).await.expect("list funnels");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "request {idx} should be accepted because each forwarded IP is distinct"
+        );
+    }
 }
 
 #[tokio::test]

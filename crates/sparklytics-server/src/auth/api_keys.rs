@@ -1,25 +1,44 @@
 use sha2::{Digest, Sha256};
 use sparklytics_core::config::AppMode;
 
-/// Generate a new mode-aware API key.
+const SELF_HOSTED_API_KEY_PREFIX: &str = "spk_selfhosted_";
+
+/// Runtime API key prefix.
+///
+/// Self-hosted mode is intentionally fixed to `spk_selfhosted_`. Cloud builds
+/// may override the prefix from their private runtime before constructing the
+/// shared server state; the public self-host binary does not document or use
+/// that private override.
+pub fn runtime_api_key_prefix(mode: &AppMode) -> String {
+    if *mode == AppMode::Cloud {
+        if let Ok(prefix) = std::env::var("SPARKLYTICS_CLOUD_API_KEY_PREFIX") {
+            let trimmed = prefix.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+
+    SELF_HOSTED_API_KEY_PREFIX.to_string()
+}
+
+/// Generate a new self-hosted API key.
 ///
 /// Returns (raw_key, hash, prefix).
-/// Raw key format:
-/// - self-hosted: `spk_selfhosted_` + 32 random hex chars
-/// - cloud: `spk_live_` + 32 random hex chars
+/// Raw key format: `spk_selfhosted_` + 32 random hex chars.
 ///
 /// Prefix: first 20 chars of raw key (for display/storage parity).
-pub fn generate_api_key(mode: &AppMode) -> (String, String, String) {
+pub fn generate_api_key() -> (String, String, String) {
+    generate_api_key_with_prefix(SELF_HOSTED_API_KEY_PREFIX)
+}
+
+pub fn generate_api_key_with_prefix(api_key_prefix: &str) -> (String, String, String) {
     use rand::RngCore;
     let mut buf = [0u8; 16];
     rand::thread_rng().fill_bytes(&mut buf);
     let random_part = hex::encode(buf);
 
-    let prefix_base = match mode {
-        AppMode::SelfHosted => "spk_selfhosted_",
-        AppMode::Cloud => "spk_live_",
-    };
-    let raw_key = format!("{prefix_base}{random_part}");
+    let raw_key = format!("{api_key_prefix}{random_part}");
     let hash = hash_api_key(&raw_key);
     let prefix = raw_key.chars().take(20).collect::<String>();
 
@@ -51,22 +70,12 @@ pub fn hash_api_key(raw_key: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use sparklytics_core::config::AppMode;
-
     use super::generate_api_key;
 
     #[test]
     fn generate_selfhosted_key_uses_selfhosted_prefix() {
-        let (raw_key, hash, prefix) = generate_api_key(&AppMode::SelfHosted);
+        let (raw_key, hash, prefix) = generate_api_key();
         assert!(raw_key.starts_with("spk_selfhosted_"));
-        assert_eq!(prefix.len(), 20);
-        assert_eq!(hash.len(), 64);
-    }
-
-    #[test]
-    fn generate_cloud_key_uses_live_prefix() {
-        let (raw_key, hash, prefix) = generate_api_key(&AppMode::Cloud);
-        assert!(raw_key.starts_with("spk_live_"));
         assert_eq!(prefix.len(), 20);
         assert_eq!(hash.len(), 64);
     }

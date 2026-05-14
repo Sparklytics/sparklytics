@@ -126,6 +126,121 @@ async fn seed_events(state: &AppState, app: &axum::Router, website_id: &str) {
     state.flush_buffer().await;
 }
 
+async fn seed_delete_cascade_children(state: &AppState, website_id: &str) {
+    let conn = state.db.conn_for_test().await;
+
+    conn.execute(
+        "INSERT INTO goals (id, website_id, name, goal_type, match_value, match_operator)
+         VALUES ('goal_cascade', ?1, 'Cascade Goal', 'page_view', '/pricing', 'equals')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed goal");
+    conn.execute(
+        "INSERT INTO saved_reports (id, website_id, name, description, config_json)
+         VALUES ('report_cascade', ?1, 'Cascade Report', 'delete cascade test', '{}')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed saved report");
+    conn.execute(
+        "INSERT INTO attribution_cache (website_id, goal_id, model, range_start, range_end, payload_json)
+         VALUES (?1, 'goal_cascade', 'first_touch', '2026-01-01 00:00:00', '2026-01-02 00:00:00', '{}')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed attribution cache");
+    conn.execute(
+        "INSERT INTO bot_policies (website_id, mode, threshold_score)
+         VALUES (?1, 'balanced', 70)",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed bot policy");
+    conn.execute(
+        "INSERT INTO bot_allowlist (id, website_id, match_type, match_value, note)
+         VALUES ('allow_cascade', ?1, 'ip_exact', '203.0.113.10', 'cascade test')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed bot allowlist");
+    conn.execute(
+        "INSERT INTO bot_blocklist (id, website_id, match_type, match_value, note)
+         VALUES ('block_cascade', ?1, 'ua_contains', 'BadBot', 'cascade test')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed bot blocklist");
+    conn.execute(
+        "INSERT INTO bot_policy_audit (id, website_id, actor, action, payload)
+         VALUES ('audit_cascade', ?1, 'test', 'policy_update', '{}')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed bot audit");
+    conn.execute(
+        "INSERT INTO bot_recompute_runs (id, website_id, start_date, end_date, status)
+         VALUES ('recompute_cascade', ?1, '2026-01-01 00:00:00', '2026-01-02 00:00:00', 'queued')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed bot recompute");
+    conn.execute(
+        "INSERT INTO report_subscriptions (id, website_id, report_id, schedule, timezone, channel, target, next_run_at)
+         VALUES ('sub_cascade', ?1, 'report_cascade', 'daily', 'UTC', 'webhook', 'https://example.com/hook', '2026-01-02 00:00:00')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed report subscription");
+    conn.execute(
+        "INSERT INTO alert_rules (id, website_id, name, metric, condition_type, threshold_value, channel, target)
+         VALUES ('alert_cascade', ?1, 'Cascade Alert', 'pageviews', 'threshold_above', 100, 'webhook', 'https://example.com/hook')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed alert rule");
+    conn.execute(
+        "INSERT INTO notification_deliveries (id, source_type, source_id, idempotency_key, status)
+         VALUES ('delivery_sub_cascade', 'subscription', 'sub_cascade', 'delivery_sub_cascade_key', 'sent')",
+        [],
+    )
+    .expect("seed subscription delivery");
+    conn.execute(
+        "INSERT INTO notification_deliveries (id, source_type, source_id, idempotency_key, status)
+         VALUES ('delivery_alert_cascade', 'alert', 'alert_cascade', 'delivery_alert_cascade_key', 'sent')",
+        [],
+    )
+    .expect("seed alert delivery");
+    conn.execute(
+        "INSERT INTO campaign_links (id, website_id, name, slug, destination_url)
+         VALUES ('link_cascade', ?1, 'Cascade Link', 'cascade-link', 'https://example.com')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed campaign link");
+    conn.execute(
+        "INSERT INTO tracking_pixels (id, website_id, name, pixel_key, default_url)
+         VALUES ('pixel_cascade', ?1, 'Cascade Pixel', 'px_cascade', 'https://example.com/pixel')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed tracking pixel");
+    conn.execute(
+        "INSERT INTO funnels (id, website_id, name)
+         VALUES ('funnel_cascade', ?1, 'Cascade Funnel')",
+        sparklytics_duckdb::duckdb::params![website_id],
+    )
+    .expect("seed funnel");
+    conn.execute(
+        "INSERT INTO funnel_steps (id, funnel_id, step_order, step_type, match_value, label)
+         VALUES ('step_cascade', 'funnel_cascade', 1, 'page_view', '/pricing', 'Pricing')",
+        [],
+    )
+    .expect("seed funnel step");
+}
+
+fn count_rows_for_website(
+    conn: &sparklytics_duckdb::duckdb::Connection,
+    table: &str,
+    website_id: &str,
+) -> i64 {
+    let sql = format!("SELECT COUNT(*) FROM {table} WHERE website_id = ?1");
+    conn.prepare(&sql)
+        .expect("prepare count")
+        .query_row(sparklytics_duckdb::duckdb::params![website_id], |row| {
+            row.get(0)
+        })
+        .expect("count rows")
+}
+
 // ============================================================
 // BDD: Create a website in self-hosted mode
 // ============================================================
@@ -210,6 +325,40 @@ async fn test_create_website_uses_tracking_public_base_when_configured() {
         snippet.contains(r#"src="https://example.com/_sl/s.js""#),
         "tracking snippet must use the configured public tracking base"
     );
+}
+
+#[tokio::test]
+async fn test_tracking_script_is_served() {
+    let (_state, app) = setup().await;
+
+    for uri in ["/s.js", "/_sl/s.js"] {
+        let request = Request::builder()
+            .method("GET")
+            .uri(uri)
+            .body(Body::empty())
+            .expect("build request");
+
+        let response = app.clone().oneshot(request).await.expect("request");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/javascript")
+        );
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("read body")
+            .to_bytes();
+        let script = std::str::from_utf8(&bytes).expect("script utf8");
+        assert!(
+            script.contains("Sparklytics tracking script"),
+            "{uri} must serve the embedded tracker"
+        );
+    }
 }
 
 // ============================================================
@@ -309,6 +458,7 @@ async fn test_delete_website_cascade() {
 
     // Seed some events so we can verify cascade delete.
     seed_events(&state, &app, &website_id).await;
+    seed_delete_cascade_children(&state, &website_id).await;
 
     // DELETE the website.
     let request = Request::builder()
@@ -345,6 +495,51 @@ async fn test_delete_website_cascade() {
         })
         .expect("count");
     assert_eq!(count, 0, "events should be cascade deleted");
+    for table in [
+        "sessions",
+        "saved_reports",
+        "goals",
+        "attribution_cache",
+        "bot_policies",
+        "bot_allowlist",
+        "bot_blocklist",
+        "bot_policy_audit",
+        "bot_recompute_runs",
+        "report_subscriptions",
+        "alert_rules",
+        "campaign_links",
+        "tracking_pixels",
+        "funnels",
+    ] {
+        assert_eq!(
+            count_rows_for_website(&conn, table, &website_id),
+            0,
+            "{table} should be cascade deleted"
+        );
+    }
+
+    let notification_count: i64 = conn
+        .prepare(
+            "SELECT COUNT(*) FROM notification_deliveries
+             WHERE source_id IN ('sub_cascade', 'alert_cascade')",
+        )
+        .expect("prepare notification count")
+        .query_row([], |row| row.get(0))
+        .expect("count notification deliveries");
+    assert_eq!(
+        notification_count, 0,
+        "notification deliveries should be cascade deleted before their sources"
+    );
+
+    let step_count: i64 = conn
+        .prepare("SELECT COUNT(*) FROM funnel_steps WHERE funnel_id = 'funnel_cascade'")
+        .expect("prepare funnel step count")
+        .query_row([], |row| row.get(0))
+        .expect("count funnel steps");
+    assert_eq!(
+        step_count, 0,
+        "funnel steps should be cascade deleted before funnels"
+    );
 }
 
 // ============================================================
@@ -499,6 +694,10 @@ async fn test_realtime_active_visitors() {
     assert!(
         data["recent_events"].is_array(),
         "realtime should contain recent_events (not recent_pageviews)"
+    );
+    assert!(
+        data.get("recent_pageviews").is_none(),
+        "realtime must not expose the stale recent_pageviews field"
     );
 }
 

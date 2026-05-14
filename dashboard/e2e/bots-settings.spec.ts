@@ -66,9 +66,6 @@ test('bots settings supports policy, list overrides, recompute, and audit visibi
     if (path === '/api/auth/status') {
       return json(404, { error: { code: 'not_found', message: 'Not found', field: null } });
     }
-    if (path === '/api/usage') {
-      return route.fulfill({ status: 404 });
-    }
     if (path === '/api/websites') {
       return json(200, {
         data: [

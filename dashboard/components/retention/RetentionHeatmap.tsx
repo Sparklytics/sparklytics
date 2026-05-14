@@ -147,7 +147,7 @@ export function RetentionHeatmap({
               <tr key={row.cohort_start}>
                 <th
                   scope="row"
-                  className="sticky left-0 z-10 bg-surface-1 px-2 py-1 text-xs text-ink font-mono whitespace-nowrap"
+                  className="sticky left-0 z-10 bg-surface-1 px-2 py-1 text-xs text-ink font-mono tabular-nums whitespace-nowrap"
                 >
                   {row.cohort_start.slice(0, 10)}
                 </th>
@@ -212,9 +212,9 @@ export function RetentionHeatmap({
         <span className="text-[10px] text-ink-4">Retention</span>
         <div className="flex items-center gap-1">
           {LEGEND_BANDS.map((band) => (
-            <div key={band.label} className="flex flex-col items-center gap-0.5">
+            <div key={band.label} className="flex flex-col items-center gap-1">
               <div className={`w-6 h-3 rounded-sm border border-line/40 ${band.color}`} />
-              <span className="text-[9px] text-ink-4 tabular-nums">{band.label}</span>
+              <span className="text-[9px] text-ink-4 font-mono tabular-nums">{band.label}</span>
             </div>
           ))}
         </div>

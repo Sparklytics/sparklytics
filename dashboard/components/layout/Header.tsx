@@ -72,7 +72,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       {/* Hamburger — mobile only */}
       <button
         onClick={onMenuClick}
-        className="md:hidden p-1.5 text-ink-3 hover:text-ink hover:bg-surface-1 rounded-md transition-colors"
+        className="md:hidden p-2 text-ink-3 hover:text-ink hover:bg-surface-1 rounded-md transition-colors"
         aria-label="Open menu"
       >
         <Menu className="w-5 h-5" />
@@ -82,9 +82,9 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-medium text-ink truncate max-w-[200px]">{title}</h1>
           {websiteId && activeVisitors > 0 && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-line bg-surface-1" title={`${activeVisitors} current active visitors`}>
+            <div className="flex items-center gap-2 px-2 py-1 rounded-full border border-line bg-surface-1" title={`${activeVisitors} current active visitors`}>
               <div className="w-1.5 h-1.5 rounded-full bg-spark animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]" />
-              <span className="text-[10px] font-medium text-ink-2">{activeVisitors} active</span>
+              <span className="text-[10px] font-mono tabular-nums font-medium text-ink-2">{activeVisitors} active</span>
             </div>
           )}
         </div>

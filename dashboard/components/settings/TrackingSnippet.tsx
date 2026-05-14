@@ -34,6 +34,7 @@ const MODE_OPTIONS: { id: TrackingMode; label: string; hint: string }[] = [
 
 export function TrackingSnippet({ websiteId, snippet }: TrackingSnippetProps) {
   const [copied, setCopied] = useState(false);
+  const [customized, setCustomized] = useState(false);
   const [mode, setMode] = useState<TrackingMode>(() => inferTrackingMode(snippet, 'direct'));
   const [directBase, setDirectBase] = useState<string | null>(() => {
     const inferredMode = inferTrackingMode(snippet, 'direct');
@@ -48,6 +49,7 @@ export function TrackingSnippet({ websiteId, snippet }: TrackingSnippetProps) {
     setDirectBase(inferredMode === 'direct' ? extractTrackingBase(snippet) : null);
     setMode(inferredMode);
     setProxyPath(extractProxyPath(snippet) ?? DEFAULT_FIRST_PARTY_PROXY_PATH);
+    setCustomized(false);
   }, [snippet]);
 
   useEffect(() => {
@@ -58,11 +60,15 @@ export function TrackingSnippet({ websiteId, snippet }: TrackingSnippetProps) {
   }, [directBase]);
 
   const resolvedSnippet = useMemo(() => {
+    if (snippet && !customized) {
+      return snippet;
+    }
+
     if (mode === 'first_party') {
       return buildFirstPartyTrackingSnippet(websiteId, proxyPath);
     }
     return buildTrackingSnippet(websiteId, directBase ?? '');
-  }, [directBase, mode, proxyPath, websiteId]);
+  }, [customized, directBase, mode, proxyPath, snippet, websiteId]);
 
   async function handleCopy() {
     await navigator.clipboard.writeText(resolvedSnippet);
@@ -93,8 +99,11 @@ export function TrackingSnippet({ websiteId, snippet }: TrackingSnippetProps) {
                 name="tracking-mode"
                 value={option.id}
                 checked={mode === option.id}
-                onChange={() => setMode(option.id)}
-                className="mt-0.5 h-4 w-4 accent-[var(--spark)]"
+                onChange={() => {
+                  setMode(option.id);
+                  setCustomized(true);
+                }}
+                className="mt-1 h-4 w-4 accent-[var(--spark)]"
               />
               <span className="space-y-1">
                 <span className="block text-xs font-medium text-ink">{option.label}</span>
@@ -108,14 +117,16 @@ export function TrackingSnippet({ websiteId, snippet }: TrackingSnippetProps) {
               <span className="mb-1 block text-xs text-ink-2">Proxy path</span>
               <input
                 value={proxyPath}
-                onChange={(event) => setProxyPath(normalizeProxyPath(event.target.value))}
+                onChange={(event) => {
+                  setProxyPath(normalizeProxyPath(event.target.value));
+                  setCustomized(true);
+                }}
                 className="w-full rounded-md border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-spark focus:outline-none focus:ring-2 focus:ring-spark"
               />
               <span className="mt-1 block text-[11px] text-ink-4">
-                Route <code className="text-ink-3">{normalizeProxyPath(proxyPath)}/s.js</code> to
-                Sparklytics <code className="text-ink-3">/s.js</code> and{' '}
-                <code className="text-ink-3">{normalizeProxyPath(proxyPath)}/e</code> to{' '}
-                <code className="text-ink-3">/e</code>.
+                Sparklytics serves <code className="text-ink-3">{normalizeProxyPath(proxyPath)}/s.js</code>{' '}
+                and <code className="text-ink-3">{normalizeProxyPath(proxyPath)}/e</code> directly on this
+                origin. Proxy those paths only when they live on another app or domain.
               </span>
             </label>
           )}

@@ -8,8 +8,7 @@ use crate::state::AppState;
 /// `GET /health` — liveness check.
 ///
 /// Returns `200 OK` when DuckDB is reachable (normal idle state).
-/// Returns `503 Service Unavailable` when DuckDB is unreachable (file locked,
-/// disk full, or last flush attempt returned an error).
+/// Returns `503 Service Unavailable` only when DuckDB is unreachable.
 ///
 /// Response shape:
 /// ```json

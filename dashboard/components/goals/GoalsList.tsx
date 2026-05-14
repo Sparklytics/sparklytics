@@ -18,7 +18,7 @@ function GoalTypeBadge({ type }: { type: 'page_view' | 'event' }) {
   return (
     <span
       className={cn(
-        'text-xs rounded-sm px-1.5 py-0.5 font-medium',
+        'text-xs rounded-sm px-2 py-1 font-medium',
         type === 'page_view'
           ? 'bg-neutral/10 text-neutral'
           : 'bg-spark/10 text-spark'
@@ -51,7 +51,7 @@ function GoalRow({
       <td className="px-4 py-3 text-sm text-ink-2 max-w-[200px] truncate font-mono">
         {goal.match_value}
       </td>
-      <td className="px-4 py-3 text-xs text-ink-3 font-mono">
+      <td className="px-4 py-3 text-xs text-ink-3 font-mono tabular-nums">
         {goal.value_mode === 'fixed'
           ? `${goal.currency} ${goal.fixed_value ?? 0}`
           : goal.value_mode === 'event_property'
@@ -68,14 +68,14 @@ function GoalRow({
         <div className="flex items-center gap-1 justify-end">
           <button
             onClick={() => onEdit(goal)}
-            className="p-1.5 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-md transition-colors"
+            className="p-2 text-ink-3 hover:text-ink hover:bg-surface-2 rounded-md transition-colors"
             title="Edit goal"
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => onDelete(goal)}
-            className="p-1.5 text-ink-3 hover:text-down hover:bg-down/10 rounded-md transition-colors"
+            className="p-2 text-ink-3 hover:text-down hover:bg-down/10 rounded-md transition-colors"
             title="Delete goal"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -123,7 +123,7 @@ export function GoalsList({ websiteId }: GoalsListProps) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase tracking-wider">
+              <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase">
                 <th className="px-4 py-2 text-left">Goal Name</th>
                 <th className="px-4 py-2 text-left">Type</th>
                 <th className="px-4 py-2 text-left">Match Value</th>

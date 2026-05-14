@@ -81,7 +81,11 @@ export function ShareDashboard({ shareId }: ShareDashboardProps) {
                       : 'text-ink-3 hover:text-ink'
                   }`}
                 >
-                  {preset.label}
+                  {/\d/.test(preset.label) ? (
+                    <span className="font-mono tabular-nums">{preset.label}</span>
+                  ) : (
+                    preset.label
+                  )}
                 </button>
               ))}
             </div>

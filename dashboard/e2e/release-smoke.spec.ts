@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 test('fresh local install completes setup, onboarding, collect, and dashboard verification', async ({
   page,
 }) => {
+  const backendOrigin = process.env.PLAYWRIGHT_RELEASE_BACKEND_URL ?? 'http://127.0.0.1:3000';
   const password = 'correct horse battery staple';
   const websiteName = 'Fresh Site';
   const websiteDomain = 'fresh.example.com';
@@ -43,11 +44,14 @@ test('fresh local install completes setup, onboarding, collect, and dashboard ve
   await expect(page.getByRole('heading', { name: /Install the tracking snippet/i })).toBeVisible();
   await expect(page.getByText('Direct analytics subdomain', { exact: true })).toBeVisible();
   await expect(page.getByText('First-party proxy path', { exact: true })).toBeVisible();
-  await expect(page.locator('pre')).toContainText('src="http://localhost:3000/s.js"');
+  await expect(page.locator('pre')).toContainText(`src="${backendOrigin}/s.js"`);
   await page.getByLabel(/First-party proxy path/i).check();
   await expect(page.locator('pre')).toContainText('src="/_sl/s.js"');
+  const firstPartyScript = await page.request.get('/_sl/s.js');
+  expect(firstPartyScript.status()).toBe(200);
+  await expect(firstPartyScript.text()).resolves.toContain('Sparklytics tracking script');
   await page.getByLabel(/Direct analytics subdomain/i).check();
-  await expect(page.locator('pre')).toContainText('src="http://localhost:3000/s.js"');
+  await expect(page.locator('pre')).toContainText(`src="${backendOrigin}/s.js"`);
   await page.getByRole('button', { name: /Done, verify installation/i }).click();
 
   await expect(page.getByRole('heading', { name: /Verify installation/i })).toBeVisible();
@@ -62,7 +66,7 @@ test('fresh local install completes setup, onboarding, collect, and dashboard ve
   expect(website.name).toBe(websiteName);
   expect(website.domain).toBe(websiteDomain);
 
-  const collectResponse = await page.request.post('/api/collect', {
+  const collectResponse = await page.request.post('/_sl/e', {
     data: {
       website_id: website.id,
       type: 'pageview',
@@ -72,7 +76,7 @@ test('fresh local install completes setup, onboarding, collect, and dashboard ve
       language: 'en-US',
     },
   });
-  expect(collectResponse.ok()).toBeTruthy();
+  expect(collectResponse.status()).toBe(202);
 
   await page.getByRole('button', { name: /Check for pageviews/i }).click();
   await expect(page.getByText(/Tracking is working!/i)).toBeVisible();

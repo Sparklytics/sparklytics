@@ -54,7 +54,7 @@ export function SessionsPage({ websiteId }: SessionsPageProps) {
             key={card.label}
             className="border border-line rounded-lg bg-surface-1 p-4"
           >
-            <p className="text-[11px] text-ink-3 uppercase tracking-[0.07em] font-medium">
+            <p className="text-[11px] text-ink-3 uppercase font-medium">
               {card.label}
             </p>
             {statsLoading ? (

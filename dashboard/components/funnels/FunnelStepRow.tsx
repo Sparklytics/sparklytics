@@ -25,7 +25,7 @@ export function FunnelStepRow({ index, step, canDelete, onChange, onDelete, sugg
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-ink-4 font-mono text-xs w-4 shrink-0 text-center">{index + 1}</span>
+      <span className="text-ink-4 font-mono tabular-nums text-xs w-4 shrink-0 text-center">{index + 1}</span>
 
       <select
         value={step.step_type}

@@ -1,12 +1,40 @@
 .git
 .github
 .gitignore
+.dockerignore
 target
 **/target
 **/node_modules
 dashboard/.next
 dashboard/out
+dashboard/tsconfig.tsbuildinfo
+.pnpm-store
+*.tsbuildinfo
 .env
 .env.*
+**/.env
+**/.env.*
 .DS_Store
 *.log
+
+# Nested repositories and private/runtime-adjacent workspaces must never enter
+# the public self-host image build context.
+cloud
+docs
+marketing
+sdk/next
+sdk/js
+sdk/vue
+
+# Local data/secrets/artifacts
+*.db
+*.db.wal
+*.db-wal
+*.db-shm
+*.duckdb
+*.duckdb.wal
+*.mmdb
+*.pem
+*.key
+ops
+migrations

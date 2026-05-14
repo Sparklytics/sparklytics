@@ -12,7 +12,7 @@ No open-source analytics platform has built-in A/B testing. This is our moat.
 
 ## Solution
 
-Built-in experiment framework that uses the same tracking infrastructure as analytics. Client-side variant assignment (deterministic, no cookies), server-side statistical analysis (ClickHouse chi-squared functions for cloud, DuckDB equivalent for self-hosted).
+Built-in experiment framework that uses the same tracking infrastructure as analytics. Client-side variant assignment (deterministic, no cookies), raw aggregate reads from the active analytics store, and statistical analysis in Rust. Public self-hosted builds use DuckDB; private hosted-cloud warehouse details live outside this public repo.
 
 ## Architecture
 
@@ -26,7 +26,7 @@ Client (useExperiment hook)
 Server (Rust backend)
   │
   ├─ Store in experiments table (same ingestion pipeline as events)
-  ├─ Materialized view for experiment stats (ClickHouse)
+  ├─ Query raw exposure/conversion counts from DuckDB
   └─ Statistical significance calculation (chi-squared test)
 
 Dashboard
@@ -92,59 +92,15 @@ CREATE TABLE IF NOT EXISTS experiments (
 
 DuckDB delete behavior note: cascading cleanup is handled by application code (child-first deletes in one transaction), not `ON DELETE CASCADE`.
 
-### ClickHouse (Cloud)
+### Hosted Cloud
 
-```sql
-CREATE TABLE IF NOT EXISTS experiment_exposures (
-    id              UUID,
-    website_id      String,
-    visitor_id      String,
-    experiment_id   String,
-    variant         LowCardinality(String),
-    url             Nullable(String),
-    created_at      DateTime64(3, 'UTC')
-)
-ENGINE = MergeTree()
-PARTITION BY toYYYYMM(created_at)
-ORDER BY (website_id, experiment_id, created_at, visitor_id)
-TTL toDateTime(created_at) + INTERVAL 12 MONTH;
-
-CREATE TABLE IF NOT EXISTS experiment_conversions (
-    id              UUID,
-    website_id      String,
-    visitor_id      String,
-    experiment_id   String,
-    variant         LowCardinality(String),
-    conversion_name String,
-    conversion_data Nullable(String),
-    revenue         Nullable(Float64),
-    created_at      DateTime64(3, 'UTC')
-)
-ENGINE = MergeTree()
-PARTITION BY toYYYYMM(created_at)
-ORDER BY (website_id, experiment_id, created_at, visitor_id)
-TTL toDateTime(created_at) + INTERVAL 12 MONTH;
-
--- Materialized view for real-time experiment results
-CREATE MATERIALIZED VIEW IF NOT EXISTS mv_experiment_results
-ENGINE = AggregatingMergeTree()
-ORDER BY (website_id, experiment_id, variant)
-AS
-SELECT
-    website_id,
-    experiment_id,
-    variant,
-    uniqState(visitor_id) AS unique_visitors,
-    countState() AS total_exposures
-FROM experiment_exposures
-GROUP BY website_id, experiment_id, variant;
-```
+Hosted-cloud warehouse schema, materialized views, and operational DDL are owned by the private cloud repo. The public self-hosted contract is the DuckDB schema above plus Rust-side statistical calculations.
 
 ## Statistical Significance
 
 ### Architecture: Application-Layer, Not SQL
 
-**All significance calculations run in Rust, not in SQL.** The DB (DuckDB or ClickHouse) only returns raw counts: `(exposures, conversions)` per variant. Rust then runs the statistical test. This applies to both backends equally — no separate SQL-level chi-squared implementations.
+**All significance calculations run in Rust, not in SQL.** DuckDB only returns raw counts: `(exposures, conversions)` per variant. Rust then runs the statistical test.
 
 The `statrs` crate provides the chi-squared distribution. Add to Cargo.toml:
 ```toml
@@ -186,25 +142,13 @@ fn chi_squared_p_value(data: &[(u64, u64)]) -> f64 {
 }
 ```
 
-**SQL queries** (same shape for DuckDB and ClickHouse — just raw counts, no stats in SQL):
+**SQL queries** (raw counts only, no stats in SQL):
 
 ```sql
 -- DuckDB
 SELECT variant,
        COUNT(DISTINCT e.visitor_id) AS exposures,
        COUNT(DISTINCT c.visitor_id) AS conversions
-FROM experiment_exposures e
-LEFT JOIN experiment_conversions c
-    ON e.visitor_id = c.visitor_id AND e.experiment_id = c.experiment_id
-WHERE e.website_id = ? AND e.experiment_id = ?
-GROUP BY variant;
-```
-
-```sql
--- ClickHouse (same logic, different distinct count syntax)
-SELECT variant,
-       uniq(e.visitor_id) AS exposures,
-       uniqIf(c.visitor_id, c.visitor_id != '') AS conversions
 FROM experiment_exposures e
 LEFT JOIN experiment_conversions c
     ON e.visitor_id = c.visitor_id AND e.experiment_id = c.experiment_id

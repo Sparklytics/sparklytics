@@ -41,7 +41,7 @@ export function AttributionModelToggle({ model, onChange }: AttributionModelTogg
               )}
             >
               <p className="text-xs font-medium">{option.label}</p>
-              <p className="text-[11px] text-ink-4 mt-0.5">{option.hint}</p>
+              <p className="text-[11px] text-ink-4 mt-1">{option.hint}</p>
             </button>
           );
         })}

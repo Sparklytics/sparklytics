@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { ComposableMap, Geographies, Geography, Sphere, Graticule } from 'react-simple-maps';
-import topology from 'world-atlas/countries-110m.json';
-import { ISO_NUMERIC_TO_A2 } from '@/lib/iso-numeric-to-alpha2';
+import { geoGraticule, geoOrthographic, geoPath } from 'd3-geo';
+import { COUNTRY_FEATURES, getCountryA2 } from '@/lib/world-map-geometry';
 import type { MetricRow } from '@/lib/api';
 import { useFilters } from '@/hooks/useFilters';
 import { cn, formatDuration } from '@/lib/utils';
@@ -156,13 +155,21 @@ export function WorldMap({ data = [], loading }: WorldMapProps) {
     [rowByA2, maxVisitors, selectedCountry],
   );
 
+  const projection = useMemo(
+    () => geoOrthographic().rotate(rotation).scale(185).translate([200, 200]),
+    [rotation],
+  );
+  const path = useMemo(() => geoPath(projection), [projection]);
+  const spherePath = useMemo(() => path({ type: 'Sphere' }), [path]);
+  const graticulePath = useMemo(() => path(geoGraticule()()), [path]);
+
   // ── Toggle button helper ──────────────────────────────────────────────────
   const toggleBtn = (mode: MapMode, label: string) => (
     <button
       key={mode}
       onClick={() => setMapMode(mode)}
       className={cn(
-        'px-2.5 py-1 text-[11px] rounded-md transition-all duration-150',
+        'px-3 py-1 text-[11px] rounded-md transition-all duration-150',
         mapMode === mode
           ? 'bg-canvas text-ink font-medium border border-line'
           : 'text-ink-3 hover:text-ink-2',
@@ -208,8 +215,8 @@ export function WorldMap({ data = [], loading }: WorldMapProps) {
         className="absolute pointer-events-none z-20 bg-surface-2 border border-line rounded-lg px-3 py-2 text-[12px] leading-relaxed"
         style={{ left, top, minWidth: TW }}
       >
-        <p className="font-medium text-ink mb-1.5">{name}</p>
-        <div className="space-y-0.5">
+        <p className="font-medium text-ink mb-2">{name}</p>
+        <div className="space-y-1">
           {stat('Visitors', row ? fmtNum(row.visitors) : '—')}
           {row?.pageviews !== undefined && stat('Pageviews', fmtNum(row.pageviews!))}
           {row && stat('Bounce', `${(row.bounce_rate ?? 0).toFixed(1)}%`)}
@@ -225,7 +232,7 @@ export function WorldMap({ data = [], loading }: WorldMapProps) {
       {/* Header: title + Globe/Map toggle */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-[13px] font-medium text-ink">Visitors by Country</h3>
-        <div className="flex bg-surface-2 p-0.5 rounded-lg border border-line">
+        <div className="flex bg-surface-2 p-1 rounded-lg border border-line">
           {toggleBtn('globe', 'Globe')}
           {toggleBtn('flat', 'Map')}
         </div>
@@ -242,46 +249,36 @@ export function WorldMap({ data = [], loading }: WorldMapProps) {
           onMouseMove={onMouseMoveContainer}
           onMouseLeave={onMouseLeaveContainer}
         >
-          <ComposableMap
-            projection="geoOrthographic"
-            projectionConfig={{ rotate: rotation, scale: 185 }}
-            width={400}
-            height={400}
-            style={{ width: '100%', height: '100%' }}
-          >
+          <svg viewBox="0 0 400 400" className="w-full h-full" role="img" aria-label="Visitors by country globe">
             {/* Ocean — darker than no-data countries for contrast */}
-            <Sphere id="rsm-sphere" fill="var(--canvas)" stroke="var(--surface-2)" strokeWidth={0.8} />
+            {spherePath && (
+              <path d={spherePath} fill="var(--canvas)" stroke="var(--surface-2)" strokeWidth={0.8} />
+            )}
 
             {/* Graticule grid lines */}
-            <Graticule stroke="var(--surface-2)" strokeWidth={0.3} strokeOpacity={0.6} />
+            {graticulePath && (
+              <path d={graticulePath} fill="none" stroke="var(--surface-2)" strokeWidth={0.3} strokeOpacity={0.6} />
+            )}
 
             {/* Countries — choropleth fill + data-a2 for tooltip delegation */}
-            <Geographies geography={topology}>
-              {({ geographies }) =>
-                geographies.map((geo) => {
-                  const a2 = ISO_NUMERIC_TO_A2[String(geo.id).padStart(3, '0')] ?? null;
-                  const fill = getFill(a2);
-                  const isSelected = a2 !== null && a2 === selectedCountry;
-                  return (
-                    <Geography
-                      key={geo.rsmKey}
-                      geography={geo}
-                      fill={fill}
-                      stroke={isSelected ? '#ffffff' : 'var(--canvas)'}
-                      strokeWidth={isSelected ? 0.8 : 0.3}
-                      // data-a2 read by the container's onMouseMove for tooltip
-                      data-a2={a2 ?? ''}
-                      style={{
-                        default: { outline: 'none' },
-                        hover: { outline: 'none' },
-                        pressed: { outline: 'none' },
-                      }}
-                    />
-                  );
-                })
-              }
-            </Geographies>
-          </ComposableMap>
+            {COUNTRY_FEATURES.map((geo) => {
+              const a2 = getCountryA2(geo);
+              const d = path(geo);
+              if (!d) return null;
+              const isSelected = a2 !== null && a2 === selectedCountry;
+              return (
+                <path
+                  key={String(geo.id)}
+                  d={d}
+                  fill={getFill(a2)}
+                  stroke={isSelected ? '#ffffff' : 'var(--canvas)'}
+                  strokeWidth={isSelected ? 0.8 : 0.3}
+                  data-a2={a2 ?? ''}
+                  className="outline-none"
+                />
+              );
+            })}
+          </svg>
 
           {/* Tooltip — positioned absolutely within the globe container */}
           {renderTooltip()}

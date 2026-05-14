@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: "2"
   RUST_LOG: "sparklytics=warn"
 
 jobs:
@@ -16,6 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Public repo boundary check
+        run: node scripts/check-public-boundary.mjs
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -28,28 +37,50 @@ jobs:
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
+      - name: cargo check
+        run: cargo check
+
       - name: cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: cargo test
-        run: cargo test --all
+        run: cargo test
 
       - name: cargo audit
         run: |
           cargo install cargo-audit --quiet
           cargo audit
 
+      - name: Setup Node 20 for release dashboard
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build dashboard for embedded release binary
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run build
+
       - name: cargo build --release
         run: cargo build --release
 
   dashboard:
-    name: Dashboard — build + bundle size
+    name: Dashboard — lint / type-check / build / smoke
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: dashboard
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -60,9 +91,22 @@ jobs:
 
       - run: npm ci
 
-      - run: npm test --if-present
+      - run: npm run lint
+
+      - run: npm run type-check
 
       - run: npm run build
+
+      - run: npm run test:tracking-script
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: First launch onboarding smoke
+        run: npm run test:e2e -- first-launch-onboarding.spec.ts
+
+      - name: Release smoke
+        run: npm run test:release-smoke
 
       - name: Bundle size check (largest chunk < 150KB gzipped)
         run: |
@@ -93,3 +137,5 @@ jobs:
           platforms: linux/amd64
           push: false
           tags: sparklytics/sparklytics:ci
+          build-args: |
+            CARGO_BUILD_JOBS=2

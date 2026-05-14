@@ -82,7 +82,7 @@ export function CreateAlertDialog({ websiteId }: CreateAlertDialogProps) {
               value={thresholdValue}
               onChange={(e) => setThresholdValue(e.target.value)}
               type="number"
-              className="w-full bg-canvas border border-line rounded-md px-2 py-2 text-sm text-ink"
+              className="w-full bg-canvas border border-line rounded-md px-2 py-2 text-sm font-mono tabular-nums text-ink"
             />
           </label>
           <label className="space-y-1">
@@ -92,7 +92,7 @@ export function CreateAlertDialog({ websiteId }: CreateAlertDialogProps) {
               value={lookbackDays}
               onChange={(e) => setLookbackDays(e.target.value)}
               type="number"
-              className="w-full bg-canvas border border-line rounded-md px-2 py-2 text-sm text-ink"
+              className="w-full bg-canvas border border-line rounded-md px-2 py-2 text-sm font-mono tabular-nums text-ink"
             />
           </label>
           <label className="space-y-1">

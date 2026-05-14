@@ -39,6 +39,20 @@ test('local auth first launch guides the user through setup, login, and onboardi
       return json(200, { data: [] });
     }
 
+    if (path === '/api/websites' && method === 'POST') {
+      return json(201, {
+        data: {
+          id: 'site_first_party',
+          name: 'First Party Site',
+          domain: 'example.com',
+          timezone: 'UTC',
+          share_id: null,
+          tracking_snippet:
+            '<script defer src="https://example.com/_sl/s.js" data-website-id="site_first_party"></script>',
+        },
+      });
+    }
+
     return json(404, {
       error: { code: 'not_found', message: 'Not found', field: null },
     });
@@ -66,6 +80,13 @@ test('local auth first launch guides the user through setup, login, and onboardi
   await expect(page.getByLabel('Website name')).toBeVisible();
   await expect(page.getByLabel('Domain')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Create website' })).toBeVisible();
+
+  await page.getByLabel('Website name').fill('First Party Site');
+  await page.getByLabel('Domain').fill('example.com');
+  await page.getByRole('button', { name: 'Create website' }).click();
+
+  await expect(page.getByRole('heading', { name: /install the tracking snippet/i })).toBeVisible();
+  await expect(page.locator('pre')).toContainText('src="https://example.com/_sl/s.js"');
 });
 
 test('forced password guards redirect /settings and /force-password correctly', async ({ page }) => {

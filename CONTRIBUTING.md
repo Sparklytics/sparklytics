@@ -8,7 +8,7 @@ Thank you for your interest in contributing. This document covers setup, workflo
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Rust | stable (≥ 1.82) | Backend |
+| Rust | stable | Backend |
 | Node.js | ≥ 20 | Dashboard + SDK |
 | Docker | ≥ 24 | Container builds |
 | `cargo-audit` | latest | Security audit |
@@ -27,11 +27,18 @@ cd sparklytics
 cargo build
 cargo test
 
-# Dashboard (runs at :3001, proxies /api to :3000)
-cd dashboard && npm ci && npm run dev
+# Dashboard checks
+cd dashboard
+npm ci
+npm run lint
+npm run type-check
+npm run build
 
-# SDK
-cd sdk && npm ci && npm run build && npm test
+# Optional SDK work (separate nested repo checkout)
+cd ../sdk/next
+npm ci
+npm run build
+npm test
 ```
 
 ---
@@ -42,11 +49,20 @@ cd sdk && npm ci && npm run build && npm test
 2. Make your changes
 3. Run the full test suite:
    ```bash
-   cargo fmt --all -- --check
-   cargo clippy -- -D warnings
+   cargo fmt --check
+   cargo check
    cargo test
-   cd dashboard && npm run build
-   cd sdk && npm test && npm run build
+   cargo clippy --all-targets --all-features -- -D warnings
+
+   cd dashboard
+   npm run lint
+   npm run type-check
+   npm run build
+   npm run test:e2e -- first-launch-onboarding.spec.ts
+   npm run test:release-smoke
+
+   cd ..
+   cargo build --release
    ```
 4. Open a Pull Request against `main`
 
@@ -56,9 +72,12 @@ cd sdk && npm ci && npm run build && npm test
 
 **Rust**
 - `cargo fmt` before every commit (enforced by CI)
-- `cargo clippy -- -D warnings` must pass (zero warnings)
+- `cargo clippy --all-targets --all-features -- -D warnings` must pass (zero warnings)
 - Errors via `thiserror` + `anyhow`; no `.unwrap()` in production paths
 - DuckDB SQL: use `?1`, `?2` positional params; never string-interpolate user input
+- Public self-hosted code must not add Clerk, Stripe, ClickHouse runtime,
+  private ops config, or secrets. Cloud integrations belong in the private
+  `sparklytics-cloud` repository behind existing integration boundaries.
 
 **TypeScript (Dashboard + SDK)**
 - `strict: true` in all `tsconfig.json` files
@@ -73,9 +92,26 @@ cd sdk && npm ci && npm run build && npm test
 |-------|---------|---------|
 | Rust unit tests | `cargo test` | Core logic, visitor ID, config |
 | Rust integration tests | `cargo test` | HTTP routes, auth, security |
-| SDK unit tests | `cd sdk && npm test` | All BDD scenarios (21 tests) |
+| Dashboard lint/type/build | `cd dashboard && npm run lint && npm run type-check && npm run build` | Static dashboard checks |
+| Browser smoke | `cd dashboard && npm run test:e2e -- first-launch-onboarding.spec.ts && npm run test:release-smoke` | First-launch and release flow |
+| SDK unit tests | `cd sdk/next && npm test` | `@sparklytics/next` package tests |
 
 All tests must pass before a PR is merged.
+
+---
+
+## Nested Repositories
+
+The local workspace can contain nested repositories:
+
+- `cloud/` — private cloud runtime
+- `docs/` — public docs repository
+- `marketing/` — public marketing site
+- `sdk/next/` — public `@sparklytics/next` package
+
+Before committing, verify which repository owns the files you changed. From the
+root public runtime repo, do not use `git add -A` or `git add .`; stage explicit
+paths only.
 
 ---
 

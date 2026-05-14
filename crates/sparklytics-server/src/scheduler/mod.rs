@@ -23,12 +23,33 @@ pub async fn process_once(state: &Arc<AppState>) -> anyhow::Result<(usize, usize
     Ok((subscription_runs, alert_deliveries))
 }
 
+pub async fn prune_retention_once(
+    state: &Arc<AppState>,
+) -> anyhow::Result<sparklytics_duckdb::RetentionPruneStats> {
+    state
+        .db
+        .prune_analytics_retention(state.config.retention_days)
+        .await
+}
+
+pub async fn run_startup_maintenance(
+    state: &Arc<AppState>,
+) -> (
+    anyhow::Result<u64>,
+    anyhow::Result<sparklytics_duckdb::RetentionPruneStats>,
+) {
+    let login_attempts = state.metadata.prune_login_attempts().await;
+    let retention = prune_retention_once(state).await;
+    (login_attempts, retention)
+}
+
 pub async fn run_scheduler_loop(state: Arc<AppState>) {
     let tick = scheduler_tick_seconds();
     info!(tick_seconds = tick, "Notifications scheduler started");
     let mut interval = tokio::time::interval(Duration::from_secs(tick));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_login_attempt_prune = std::time::Instant::now();
+    let mut last_retention_prune = std::time::Instant::now();
     loop {
         interval.tick().await;
         if last_login_attempt_prune.elapsed() >= Duration::from_secs(24 * 60 * 60) {
@@ -38,6 +59,19 @@ pub async fn run_scheduler_loop(state: Arc<AppState>) {
                 Err(err) => error!(error = %err, "Failed to prune stale login attempts"),
             }
             last_login_attempt_prune = std::time::Instant::now();
+        }
+        if last_retention_prune.elapsed() >= Duration::from_secs(24 * 60 * 60) {
+            match prune_retention_once(&state).await {
+                Ok(stats) if stats.events_deleted > 0 || stats.sessions_deleted > 0 => info!(
+                    events_deleted = stats.events_deleted,
+                    sessions_deleted = stats.sessions_deleted,
+                    retention_days = state.config.retention_days,
+                    "Pruned analytics rows beyond retention horizon"
+                ),
+                Ok(_) => {}
+                Err(err) => error!(error = %err, "Failed to prune analytics retention"),
+            }
+            last_retention_prune = std::time::Instant::now();
         }
         if let Err(err) = process_once(&state).await {
             error!(error = %err, "notifications scheduler iteration failed");

@@ -17,11 +17,11 @@ interface SessionDetailDrawerProps {
   onClose: () => void;
 }
 
-function MetaChip({ label, value }: { label: string; value: string }) {
+function MetaChip({ label, value, numeric = false }: { label: string; value: string; numeric?: boolean }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs text-ink-3 uppercase tracking-wider">{label}</span>
-      <span className="text-sm text-ink font-medium">{value}</span>
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-ink-3 uppercase">{label}</span>
+      <span className={`text-sm text-ink font-medium ${numeric ? 'font-mono tabular-nums' : ''}`}>{value}</span>
     </div>
   );
 }
@@ -67,8 +67,8 @@ export function SessionDetailDrawer({
           {detail && (
             <>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-3 sm:grid-cols-4">
-                <MetaChip label="Duration" value={formatDuration(detail.session.duration_seconds)} />
-                <MetaChip label="Pages" value={String(detail.session.pageview_count)} />
+                <MetaChip label="Duration" value={formatDuration(detail.session.duration_seconds)} numeric />
+                <MetaChip label="Pages" value={String(detail.session.pageview_count)} numeric />
                 <MetaChip label="Country" value={detail.session.country ?? '—'} />
                 <MetaChip label="Browser" value={detail.session.browser ?? '—'} />
               </div>

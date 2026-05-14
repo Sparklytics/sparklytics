@@ -130,7 +130,7 @@ export function DataTable({ title, filterKey, data = [], loading, showPageviews 
             return (
               <div
                 key={row.value}
-                className="relative flex items-center justify-between py-2 border-b border-line last:border-0 hover:bg-ink/[0.03] -mx-1.5 px-1.5 cursor-pointer transition-colors rounded-md"
+                className="relative flex items-center justify-between py-2 border-b border-line last:border-0 hover:bg-ink/[0.03] -mx-2 px-2 cursor-pointer transition-colors rounded-md"
                 onClick={() => setFilter(filterKey, row.value)}
               >
                 {/* Background bar */}

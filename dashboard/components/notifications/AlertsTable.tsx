@@ -29,12 +29,12 @@ function Row({
       <td className="px-3 py-2 text-sm text-ink">{rule.name}</td>
       <td className="px-3 py-2 text-xs text-ink">{rule.metric}</td>
       <td className="px-3 py-2 text-xs text-ink">{rule.condition_type}</td>
-      <td className="px-3 py-2 text-xs text-ink">{rule.threshold_value}</td>
+      <td className="px-3 py-2 text-xs text-ink font-mono tabular-nums">{rule.threshold_value}</td>
       <td className="px-3 py-2 text-xs text-ink">
         {rule.channel}: {rule.target}
       </td>
       <td className="px-3 py-2 text-xs">
-        <span className={`px-1.5 py-0.5 rounded-sm border ${rule.is_active ? 'border-spark text-spark' : 'border-line text-ink-3'}`}>
+        <span className={`px-2 py-1 rounded-sm border ${rule.is_active ? 'border-spark text-spark' : 'border-line text-ink-3'}`}>
           {rule.is_active ? 'Active' : 'Inactive'}
         </span>
       </td>

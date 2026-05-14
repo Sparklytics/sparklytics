@@ -83,7 +83,7 @@ SPARKLYTICS_NOTIFICATION_EMAIL=       # Email for notifications
 For Docker deployments, auto-update works differently:
 - Checks for new Docker image tag
 - Sends notification to user (can't auto-update a running container)
-- Provides one-liner to update: `docker pull sparklytics/sparklytics:latest && docker restart sparklytics`
+- Provides one-liner to update: `docker pull ghcr.io/sparklytics/sparklytics:latest && docker restart sparklytics`
 
 **Binary mode (recommended for auto-update):**
 
@@ -215,13 +215,7 @@ cleanup_old_backups(&backup_dir, config.backup_retain)?;
 info!("Backup complete: {} ({} compressed)", backup_name, compressed_size);
 ```
 
-**ClickHouse backup (self-hosted ClickHouse on VPS):**
-
-```bash
-# Uses ClickHouse native backup
-clickhouse-client --query "BACKUP TABLE sparklytics.events, sparklytics.sessions \
-    TO Disk('backups', 'daily/$(date +%Y%m%d)')"
-```
+Hosted-cloud warehouse backups are outside this public self-hosted daemon spec.
 
 ### 4. Notifications
 

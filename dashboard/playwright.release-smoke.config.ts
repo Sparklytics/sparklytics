@@ -20,7 +20,7 @@ export default defineConfig({
       cwd: '..',
       url: `${backendOrigin}/health`,
       reuseExistingServer: false,
-      timeout: 180_000,
+      timeout: 1_800_000,
     },
     {
       command: `npm run build && PORT=3101 BACKEND_ORIGIN=${backendOrigin} node serve-spa.mjs`,

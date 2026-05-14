@@ -5,17 +5,14 @@ use crate::backend::rand_hex;
 use crate::DuckDbBackend;
 
 #[cfg(test)]
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Mutex,
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(test)]
 static AUTH_WRITE_FAIL_AFTER: AtomicUsize = AtomicUsize::new(usize::MAX);
 #[cfg(test)]
 static AUTH_WRITE_COUNT: AtomicUsize = AtomicUsize::new(0);
 #[cfg(test)]
-static AUTH_WRITE_TEST_LOCK: Mutex<()> = Mutex::new(());
+static AUTH_WRITE_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 impl DuckDbBackend {
     fn get_setting_tx(tx: &duckdb::Transaction<'_>, key: &str) -> Result<Option<String>> {
@@ -273,7 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn complete_admin_setup_rolls_back_on_write_failure() {
-        let _guard = AUTH_WRITE_TEST_LOCK.lock().expect("test lock");
+        let _guard = AUTH_WRITE_TEST_LOCK.lock().await;
         let db = DuckDbBackend::open_in_memory().expect("db");
         DuckDbBackend::inject_auth_write_failure_after(1);
 
@@ -297,7 +294,7 @@ mod tests {
 
     #[tokio::test]
     async fn complete_password_change_rolls_back_on_write_failure() {
-        let _guard = AUTH_WRITE_TEST_LOCK.lock().expect("test lock");
+        let _guard = AUTH_WRITE_TEST_LOCK.lock().await;
         let db = DuckDbBackend::open_in_memory().expect("db");
         db.set_setting("admin_password_hash", "old_hash")
             .await
@@ -334,7 +331,7 @@ mod tests {
 
     #[tokio::test]
     async fn complete_admin_setup_refuses_to_overwrite_existing_admin() {
-        let _guard = AUTH_WRITE_TEST_LOCK.lock().expect("test lock");
+        let _guard = AUTH_WRITE_TEST_LOCK.lock().await;
         let db = DuckDbBackend::open_in_memory().expect("db");
         db.set_setting("admin_password_hash", "existing_hash")
             .await

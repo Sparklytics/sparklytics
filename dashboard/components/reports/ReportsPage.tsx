@@ -63,7 +63,7 @@ export function ReportsPage({ websiteId }: ReportsPageProps) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-ink">Reports</h2>
-          <p className="text-xs text-ink-3 mt-0.5">
+          <p className="text-xs text-ink-3 mt-1">
             Save reusable analytics views and run them on demand.
           </p>
         </div>

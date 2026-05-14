@@ -87,7 +87,7 @@ export function EventsTable({
 
       {/* Column headers */}
       {!loading && rows.length > 0 && (
-        <div className="px-4 py-2 flex items-center gap-2 text-xs font-medium text-ink-3 uppercase tracking-wider border-b border-line">
+        <div className="px-4 py-2 flex items-center gap-2 text-xs font-medium text-ink-3 uppercase border-b border-line">
           <span className="flex-1">Event</span>
           <span className="w-20 text-right">Visitors</span>
           <span className="w-20 text-right">Count</span>

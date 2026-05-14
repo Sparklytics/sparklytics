@@ -2,18 +2,20 @@ use sha2::{Digest, Sha256};
 
 /// Compute a visitor ID from IP and User-Agent.
 ///
-/// Formula: sha256(salt_epoch + ip + user_agent)[0..8] encoded as 16 hex chars.
+/// Formula: sha256(salt_epoch + ip + user_agent)[0:16] as hex chars.
 ///
 /// The salt_epoch = floor(unix_utc_timestamp / 86400) rotates daily at midnight UTC.
-/// This function is called only to *generate* a new visitor ID (e.g., when localStorage
-/// is empty on the client). Existing IDs stored client-side are reused directly and
-/// are never recalculated on subsequent requests — so midnight UTC rotation does not
-/// break in-progress sessions.
+/// The server uses this as the default anonymous visitor identifier. Clients may
+/// still send an explicit `visitor_id` after a deliberate identify() call.
 pub fn compute_visitor_id(ip: &str, user_agent: &str) -> String {
     let salt_epoch = chrono::Utc::now().timestamp() / 86400;
+    compute_visitor_id_for_epoch(salt_epoch, ip, user_agent)
+}
+
+fn compute_visitor_id_for_epoch(salt_epoch: i64, ip: &str, user_agent: &str) -> String {
     let input = format!("{}{}{}", salt_epoch, ip, user_agent);
     let hash = Sha256::digest(input.as_bytes());
-    // First 8 bytes → 16 hex characters.
+    // First 8 bytes produce the first 16 hex characters.
     hex::encode(&hash[..8])
 }
 
@@ -57,6 +59,14 @@ mod tests {
         let id1 = compute_visitor_id("1.2.3.4", "Mozilla/5.0 Chrome/120");
         let id2 = compute_visitor_id("1.2.3.4", "Mozilla/5.0 Chrome/120");
         assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn visitor_id_uses_salt_epoch_ip_and_user_agent_in_order() {
+        let id = compute_visitor_id_for_epoch(20_000, "203.0.113.10", "TestAgent/1.0");
+        let expected = Sha256::digest(b"20000203.0.113.10TestAgent/1.0");
+
+        assert_eq!(id, hex::encode(&expected[..8]));
     }
 
     #[test]

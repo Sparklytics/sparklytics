@@ -33,10 +33,10 @@ export function DeliveryHistoryTable({ websiteId }: DeliveryHistoryTableProps) {
           ) : (
             history.map((row) => (
               <tr key={row.id} className="border-t border-line">
-                <td className="px-3 py-2 text-xs text-ink">{row.delivered_at}</td>
+                <td className="px-3 py-2 text-xs text-ink font-mono tabular-nums">{row.delivered_at}</td>
                 <td className="px-3 py-2 text-xs text-ink">{row.source_type}:{row.source_id}</td>
                 <td className="px-3 py-2 text-xs">
-                  <span className={`px-1.5 py-0.5 rounded-sm border ${row.status === 'sent' ? 'border-spark text-spark' : 'border-down text-down'}`}>
+                  <span className={`px-2 py-1 rounded-sm border ${row.status === 'sent' ? 'border-spark text-spark' : 'border-down text-down'}`}>
                     {row.status}
                   </span>
                 </td>

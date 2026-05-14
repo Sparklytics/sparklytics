@@ -1,7 +1,6 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    net::IpAddr,
     sync::Arc,
     time::Duration,
 };
@@ -21,9 +20,12 @@ use sparklytics_core::analytics::{
 
 use crate::{
     error::AppError,
-    routes::query::{
-        normalize_optional_filter, normalize_timezone_non_empty, parse_defaulted_date_range_strict,
-        validate_date_span,
+    routes::{
+        collect,
+        query::{
+            normalize_optional_filter, normalize_timezone_non_empty,
+            parse_defaulted_date_range_strict, validate_date_span,
+        },
     },
     state::AppState,
 };
@@ -50,41 +52,23 @@ fn unprocessable(code: &str, message: &str, field: Option<&str>) -> (StatusCode,
     )
 }
 
-fn forwarded_ip(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .and_then(parse_ip)
-}
-
-fn parse_ip(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() || trimmed.len() > 64 {
-        return None;
-    }
-    trimmed.parse::<IpAddr>().ok().map(|ip| ip.to_string())
-}
-
 fn fingerprint_key(prefix: &str, value: &str) -> String {
     let mut hasher = DefaultHasher::new();
     value.hash(&mut hasher);
     format!("{prefix}:{:016x}", hasher.finish())
 }
 
-fn client_bucket_key(headers: &HeaderMap) -> String {
+fn client_bucket_key(headers: &HeaderMap, maybe_connect_info: collect::MaybeConnectInfo) -> String {
+    let ip = collect::extract_client_ip(headers, maybe_connect_info.0);
+    if ip != "unknown" {
+        return ip;
+    }
+
     headers
-        .get("x-real-ip")
+        .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .and_then(parse_ip)
-        .or_else(|| forwarded_ip(headers))
-        .or_else(|| {
-            headers
-                .get("authorization")
-                .and_then(|v| v.to_str().ok())
-                .filter(|s| !s.trim().is_empty() && s.len() <= 4096)
-                .map(|s| fingerprint_key("auth", s))
-        })
+        .filter(|s| !s.trim().is_empty() && s.len() <= 4096)
+        .map(|s| fingerprint_key("auth", s))
         .or_else(|| {
             headers
                 .get("user-agent")
@@ -98,6 +82,7 @@ fn client_bucket_key(headers: &HeaderMap) -> String {
 async fn enforce_rate_limit(
     state: &AppState,
     headers: &HeaderMap,
+    maybe_connect_info: collect::MaybeConnectInfo,
     scope_key: Option<&str>,
     max_per_min: usize,
     scope_max_per_min: usize,
@@ -105,7 +90,7 @@ async fn enforce_rate_limit(
     if state.config.rate_limit_disable {
         return Ok(());
     }
-    let bucket = client_bucket_key(headers);
+    let bucket = client_bucket_key(headers, maybe_connect_info);
     if !state
         .check_rate_limit_with_max(&format!("bucket:{bucket}"), max_per_min)
         .await
@@ -209,6 +194,7 @@ pub struct FunnelResultsQuery {
 pub async fn list_funnels(
     State(state): State<Arc<AppState>>,
     Path(website_id): Path<String>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     if !state.is_valid_website(&website_id).await {
@@ -217,6 +203,7 @@ pub async fn list_funnels(
     enforce_rate_limit(
         &state,
         &headers,
+        maybe_connect_info,
         Some(&format!("website:{website_id}:funnels:read")),
         FUNNELS_READ_RATE_LIMIT,
         FUNNELS_SCOPE_READ_RATE_LIMIT,
@@ -234,6 +221,7 @@ pub async fn list_funnels(
 pub async fn get_funnel(
     State(state): State<Arc<AppState>>,
     Path((website_id, funnel_id)): Path<(String, String)>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     if !state.is_valid_website(&website_id).await {
@@ -242,6 +230,7 @@ pub async fn get_funnel(
     enforce_rate_limit(
         &state,
         &headers,
+        maybe_connect_info,
         Some(&format!("website:{website_id}:funnel:{funnel_id}:read")),
         FUNNELS_READ_RATE_LIMIT,
         FUNNELS_SCOPE_READ_RATE_LIMIT,
@@ -260,6 +249,7 @@ pub async fn get_funnel(
 pub async fn create_funnel(
     State(state): State<Arc<AppState>>,
     Path(website_id): Path<String>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
     Json(req): Json<CreateFunnelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -269,6 +259,7 @@ pub async fn create_funnel(
     enforce_rate_limit(
         &state,
         &headers,
+        maybe_connect_info,
         Some(&format!("website:{website_id}:funnels:mutation")),
         FUNNELS_MUTATION_RATE_LIMIT,
         FUNNELS_SCOPE_MUTATION_RATE_LIMIT,
@@ -317,6 +308,7 @@ pub async fn create_funnel(
 pub async fn update_funnel(
     State(state): State<Arc<AppState>>,
     Path((website_id, funnel_id)): Path<(String, String)>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
     Json(req): Json<UpdateFunnelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -326,6 +318,7 @@ pub async fn update_funnel(
     enforce_rate_limit(
         &state,
         &headers,
+        maybe_connect_info,
         Some(&format!("website:{website_id}:funnel:{funnel_id}:mutation")),
         FUNNELS_MUTATION_RATE_LIMIT,
         FUNNELS_SCOPE_MUTATION_RATE_LIMIT,
@@ -381,6 +374,7 @@ pub async fn update_funnel(
 pub async fn delete_funnel(
     State(state): State<Arc<AppState>>,
     Path((website_id, funnel_id)): Path<(String, String)>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     if !state.is_valid_website(&website_id).await {
@@ -389,6 +383,7 @@ pub async fn delete_funnel(
     enforce_rate_limit(
         &state,
         &headers,
+        maybe_connect_info,
         Some(&format!("website:{website_id}:funnel:{funnel_id}:mutation")),
         FUNNELS_MUTATION_RATE_LIMIT,
         FUNNELS_SCOPE_MUTATION_RATE_LIMIT,
@@ -410,6 +405,7 @@ pub async fn delete_funnel(
 pub async fn get_funnel_results(
     State(state): State<Arc<AppState>>,
     Path((website_id, funnel_id)): Path<(String, String)>,
+    maybe_connect_info: collect::MaybeConnectInfo,
     headers: HeaderMap,
     Query(query): Query<FunnelResultsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -419,6 +415,7 @@ pub async fn get_funnel_results(
     enforce_rate_limit(
         &state,
         &headers,
+        maybe_connect_info,
         Some(&format!("website:{website_id}:funnel:{funnel_id}:results")),
         FUNNELS_RESULTS_RATE_LIMIT,
         FUNNELS_SCOPE_RESULTS_RATE_LIMIT,

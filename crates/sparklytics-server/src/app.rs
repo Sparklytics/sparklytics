@@ -139,6 +139,20 @@ async fn serve_dashboard(State(state): State<Arc<AppState>>, uri: Uri) -> Respon
     StatusCode::NOT_FOUND.into_response()
 }
 
+async fn serve_tracking_script() -> Response {
+    let Some(file) = DASHBOARD.get_file("s.js") else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    match Response::builder()
+        .header(CONTENT_TYPE, "application/javascript")
+        .body(Body::from(file.contents().to_vec()))
+    {
+        Ok(resp) => resp,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 /// Build the CORS layer for analytics query + auth routes.
 ///
 /// If `SPARKLYTICS_CORS_ORIGINS` is set, only those origins are allowed.
@@ -176,6 +190,7 @@ pub fn build_app(state: Arc<AppState>) -> Router {
     let collect_router = Router::new()
         .route("/api/collect", post(routes::collect::collect))
         .route("/e", post(routes::collect::collect))
+        .route("/_sl/e", post(routes::collect::collect))
         .layer(collect_cors)
         .layer(DefaultBodyLimit::max(routes::collect::COLLECT_BODY_LIMIT));
 
@@ -204,6 +219,9 @@ pub fn build_app(state: Arc<AppState>) -> Router {
     // Always-public routes.
     let mut app = Router::new()
         .route("/health", get(routes::health::health))
+        .route("/api/usage", get(routes::export::usage_not_found))
+        .route("/s.js", get(serve_tracking_script))
+        .route("/_sl/s.js", get(serve_tracking_script))
         .merge(collect_router)
         .merge(share_router)
         .merge(acquisition_public_router);
@@ -425,24 +443,6 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                     "/api/websites/{id}/export",
                     get(routes::export::export_events),
                 )
-                .route(
-                    "/api/admin/limits/plans",
-                    get(routes::admin_limits::list_plan_limits),
-                )
-                .route(
-                    "/api/admin/limits/plans/{plan}",
-                    put(routes::admin_limits::update_plan_limit),
-                )
-                .route(
-                    "/api/admin/limits/tenants/{tenant_id}",
-                    get(routes::admin_limits::get_tenant_limits)
-                        .put(routes::admin_limits::update_tenant_limits),
-                )
-                .route(
-                    "/api/admin/usage/tenants/{tenant_id}",
-                    get(routes::admin_limits::get_tenant_usage),
-                )
-                .route("/api/usage", get(routes::export::get_usage))
                 .layer(query_cors);
             app = app.merge(analytics);
         }
@@ -452,31 +452,6 @@ pub fn build_app(state: Arc<AppState>) -> Router {
                 .route("/api/auth/status", get(auth::handlers::auth_status))
                 .route("/api/auth/setup", post(auth::handlers::auth_setup))
                 .route("/api/auth/login", post(auth::handlers::auth_login));
-
-            // Cloud bearer-token routes use their own internal authz checks.
-            // Keep these outside cookie/API-key middleware so Clerk Bearer tokens
-            // can reach the handlers.
-            let cloud_token_routes = Router::new()
-                .route(
-                    "/api/admin/limits/plans",
-                    get(routes::admin_limits::list_plan_limits),
-                )
-                .route(
-                    "/api/admin/limits/plans/{plan}",
-                    put(routes::admin_limits::update_plan_limit),
-                )
-                .route(
-                    "/api/admin/limits/tenants/{tenant_id}",
-                    get(routes::admin_limits::get_tenant_limits)
-                        .put(routes::admin_limits::update_tenant_limits),
-                )
-                .route(
-                    "/api/admin/usage/tenants/{tenant_id}",
-                    get(routes::admin_limits::get_tenant_usage),
-                )
-                .route("/api/usage", get(routes::export::get_usage))
-                .layer(restricted_cors(&state.config.cors_origins));
-            app = app.merge(cloud_token_routes);
 
             // Protected routes (cookie or API key) — enforce CORS origins.
             let auth_state = Arc::clone(&state);

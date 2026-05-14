@@ -8,7 +8,7 @@
 Umami is a monorepo built with Next.js. The entire application (frontend + backend + API) lives in one Next.js project using API routes for the backend.
 
 **Key stats (v3):**
-- 35,200+ GitHub stars
+- ~6,400 GitHub stars
 - Node.js 18+ required
 - PostgreSQL 12+ only (MySQL dropped in v3)
 - pnpm as package manager

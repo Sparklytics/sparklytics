@@ -1,8 +1,10 @@
 mod common;
 
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -12,12 +14,38 @@ use sparklytics_core::billing::{BillingGate, NullBillingGate};
 use sparklytics_core::config::{AppMode, AuthMode, Config};
 use sparklytics_duckdb::DuckDbBackend;
 use sparklytics_server::app::build_app;
+use sparklytics_server::auth::api_keys::hash_api_key;
 use sparklytics_server::state::AppState;
 
 const TEST_PASSWORD: &str = "strong_password_123";
 const TEST_BOOTSTRAP_PASSWORD: &str = "install_secret_123";
 const DEFAULT_BOOTSTRAP_PASSWORD: &str = "sparklytics";
 const ROTATED_PASSWORD: &str = "rotated_password_456";
+
+static TRUSTED_PROXY_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+struct EnvGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            std::env::set_var(self.key, previous);
+        } else {
+            std::env::remove_var(self.key);
+        }
+    }
+}
 
 /// Build a test Config with AuthMode::Local and low argon2 memory for fast tests.
 fn auth_config() -> Config {
@@ -53,6 +81,12 @@ fn cloud_auth_config() -> Config {
 fn custom_bootstrap_auth_config() -> Config {
     let mut config = auth_config();
     config.bootstrap_password = Some(TEST_BOOTSTRAP_PASSWORD.to_string());
+    config
+}
+
+fn https_auth_config() -> Config {
+    let mut config = auth_config();
+    config.https = true;
     config
 }
 
@@ -114,6 +148,14 @@ async fn setup_auth() -> (Arc<AppState>, axum::Router) {
 async fn setup_auth_custom_bootstrap() -> (Arc<AppState>, axum::Router) {
     let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
     let config = custom_bootstrap_auth_config();
+    let state = Arc::new(AppState::new(db, config));
+    let app = build_app(Arc::clone(&state));
+    (state, app)
+}
+
+async fn setup_auth_https() -> (Arc<AppState>, axum::Router) {
+    let db = DuckDbBackend::open_in_memory().expect("in-memory DuckDB");
+    let config = https_auth_config();
     let state = Arc::new(AppState::new(db, config));
     let app = build_app(Arc::clone(&state));
     (state, app)
@@ -185,6 +227,17 @@ fn login_request(password: &str) -> Request<Body> {
         .header("x-forwarded-for", "10.0.0.1")
         .body(Body::from(body.to_string()))
         .expect("build request")
+}
+
+fn trusted_proxy_login_request(password: &str) -> Request<Body> {
+    let mut request = login_request(password);
+    request
+        .extensions_mut()
+        .insert(ConnectInfo(SocketAddr::from((
+            Ipv4Addr::new(10, 0, 0, 9),
+            3210,
+        ))));
+    request
 }
 
 fn change_password_request(
@@ -395,6 +448,45 @@ async fn test_login_sets_httponly_cookie() {
     );
 }
 
+#[tokio::test]
+async fn test_login_sets_secure_cookie_when_https_enabled() {
+    let (_state, app) = setup_auth_https().await;
+
+    let setup_response = app
+        .clone()
+        .oneshot(setup_request(TEST_PASSWORD))
+        .await
+        .expect("setup");
+    assert_eq!(setup_response.status(), StatusCode::CREATED);
+
+    let login_response = app
+        .clone()
+        .oneshot(login_request(TEST_PASSWORD))
+        .await
+        .expect("login");
+    assert_eq!(login_response.status(), StatusCode::OK);
+
+    let set_cookie = login_response
+        .headers()
+        .get("set-cookie")
+        .expect("Set-Cookie header must be present")
+        .to_str()
+        .expect("valid header string");
+
+    assert!(
+        set_cookie.contains("Secure"),
+        "cookie must have Secure flag when https=true"
+    );
+    assert!(
+        set_cookie.contains("HttpOnly"),
+        "cookie must keep HttpOnly flag when https=true"
+    );
+    assert!(
+        set_cookie.contains("SameSite=Strict"),
+        "cookie must keep SameSite=Strict when https=true"
+    );
+}
+
 // ============================================================
 // BDD: Login with wrong password returns 401
 // ============================================================
@@ -459,6 +551,40 @@ async fn test_login_rate_limit_returns_retry_after_header() {
         .to_str()
         .expect("retry-after string");
     assert_eq!(retry_after, "900");
+}
+
+#[tokio::test]
+async fn test_login_attempts_use_forwarded_for_when_proxy_is_trusted() {
+    let _lock = TRUSTED_PROXY_ENV_LOCK.lock().await;
+    let _env = EnvGuard::set("SPARKLYTICS_TRUSTED_PROXIES", "10.0.0.0/8");
+    let (state, app) = setup_auth().await;
+
+    let response = app
+        .clone()
+        .oneshot(setup_request(TEST_PASSWORD))
+        .await
+        .expect("setup");
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let response = app
+        .oneshot(trusted_proxy_login_request("wrong_password_123"))
+        .await
+        .expect("login");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let conn = state.db.conn_for_test().await;
+    let stored_ip: String = conn
+        .query_row(
+            "SELECT ip_address FROM login_attempts WHERE succeeded = false LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("login attempt");
+
+    assert_eq!(
+        stored_ip, "10.0.0.1",
+        "trusted proxy login attempts should store the forwarded client IP"
+    );
 }
 
 // ============================================================
@@ -586,15 +712,15 @@ async fn test_api_key_grants_analytics_access() {
 }
 
 // ============================================================
-// BDD: Cloud mode API key uses spk_live_ prefix
+// BDD: Public runtime API keys never use the cloud-only spk_live_ prefix
 // ============================================================
 #[tokio::test]
-async fn test_cloud_api_key_prefix_and_access() {
+async fn test_cloud_mode_does_not_generate_live_key_prefix() {
     let (_state, app) = setup_auth_cloud().await;
 
     let cookie = setup_and_login(&app).await;
 
-    let create_key_body = json!({ "name": "cloud-key" });
+    let create_key_body = json!({ "name": "public-runtime-key" });
     let request = Request::builder()
         .method("POST")
         .uri("/api/auth/keys")
@@ -611,8 +737,12 @@ async fn test_cloud_api_key_prefix_and_access() {
         .as_str()
         .expect("API key should be returned");
     assert!(
-        raw_key.starts_with("spk_live_"),
-        "API key must start with spk_live_ prefix in cloud mode"
+        raw_key.starts_with("spk_selfhosted_"),
+        "public runtime API keys must use the self-hosted prefix"
+    );
+    assert!(
+        !raw_key.starts_with("spk_live_"),
+        "spk_live_ keys belong to the private cloud runtime"
     );
 
     let request = Request::builder()
@@ -624,6 +754,39 @@ async fn test_cloud_api_key_prefix_and_access() {
 
     let response = app.clone().oneshot(request).await.expect("request");
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_bearer_auth_rejects_cloud_live_key_prefix_even_if_hash_exists() {
+    let (state, app) = setup_auth_custom_bootstrap().await;
+
+    let _cookie = setup_and_login(&app).await;
+
+    let raw_key = "spk_live_legacy0123456789abcdef";
+    state
+        .metadata
+        .create_api_key(
+            "key_legacy",
+            "legacy-cloud-key",
+            &hash_api_key(raw_key),
+            "spk_live_legacy",
+        )
+        .await
+        .expect("seed legacy key");
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/websites")
+        .header("authorization", format!("Bearer {}", raw_key))
+        .body(Body::empty())
+        .expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("request");
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "self-hosted Bearer auth must reject cloud-only spk_live_ keys"
+    );
 }
 
 // ============================================================

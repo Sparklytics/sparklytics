@@ -1,8 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-test('runtime auth mode none suppresses auth status requests', async ({ page }) => {
-  let authStatusCalls = 0;
-
+async function mockDashboardApi(page: Page, onAuthStatus: () => void) {
   await page.addInitScript(() => {
     (window as Window & { __SPARKLYTICS_AUTH_MODE__?: string }).__SPARKLYTICS_AUTH_MODE__ =
       'none';
@@ -20,7 +18,7 @@ test('runtime auth mode none suppresses auth status requests', async ({ page }) 
       });
 
     if (path === '/api/auth/status') {
-      authStatusCalls += 1;
+      onAuthStatus();
       return json(404, {
         error: { code: 'not_found', message: 'Not found', field: null },
       });
@@ -95,6 +93,14 @@ test('runtime auth mode none suppresses auth status requests', async ({ page }) 
       error: { code: 'not_found', message: 'Not found', field: null },
     });
   });
+}
+
+test('runtime auth mode none suppresses auth status requests on dashboard', async ({ page }) => {
+  let authStatusCalls = 0;
+
+  await mockDashboardApi(page, () => {
+    authStatusCalls += 1;
+  });
 
   await page.goto('/dashboard');
   await expect(page.getByRole('heading', { name: /Test Site/i })).toBeVisible();
@@ -102,3 +108,19 @@ test('runtime auth mode none suppresses auth status requests', async ({ page }) 
 
   expect(authStatusCalls).toBe(0);
 });
+
+for (const path of ['/setup', '/login', '/force-password']) {
+  test(`runtime auth mode none redirects ${path} without auth status request`, async ({ page }) => {
+    let authStatusCalls = 0;
+
+    await mockDashboardApi(page, () => {
+      authStatusCalls += 1;
+    });
+
+    await page.goto(path);
+    await expect(page.getByRole('heading', { name: /Test Site/i })).toBeVisible();
+    await page.waitForTimeout(300);
+
+    expect(authStatusCalls).toBe(0);
+  });
+}

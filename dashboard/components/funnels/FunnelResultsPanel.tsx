@@ -68,7 +68,7 @@ export function FunnelResultsPanel({ websiteId, funnelId }: FunnelResultsPanelPr
       <div className="overflow-x-auto">
         <table className="min-w-[520px] w-full text-sm" aria-label="Funnel step breakdown">
           <thead>
-            <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase tracking-wider">
+            <tr className="border-b border-line text-xs font-medium text-ink-3 uppercase">
               <th className="text-left py-2 font-normal pr-3">#</th>
               <th className="text-left py-2 font-normal">Step</th>
               <th className="text-right py-2 font-normal pl-3">Reached</th>
